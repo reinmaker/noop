@@ -36,6 +36,8 @@ struct WhoopRingGauge: View {
     var animated: Bool = true
     /// Optional label inside the ring under the number (the Sleep screen's "SLEEP PERFORMANCE").
     var caption: String? = nil
+    /// Optional band drawn on the track (the Strain ring's optimal range), in `maxValue` units.
+    var band: ClosedRange<Double>? = nil
 
     @State private var shown: Double = 0
 
@@ -57,6 +59,12 @@ struct WhoopRingGauge: View {
     var body: some View {
         ZStack {
             Circle().stroke(WhoopStyle.ringTrack, lineWidth: lineWidth)
+            if let band, maxValue > 0 {
+                Circle()
+                    .trim(from: min(1, band.lowerBound / maxValue), to: min(1, band.upperBound / maxValue))
+                    .stroke(StrandPalette.textTertiary.opacity(0.55), style: StrokeStyle(lineWidth: lineWidth))
+                    .rotationEffect(.degrees(-90))
+            }
             Circle()
                 .trim(from: 0, to: shown)
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
@@ -303,6 +311,7 @@ private struct WhoopOverviewCard<Content: View>: View {
 /// "My Day" header + the gradient "Day In Review" row, which opens the Coach-written review.
 struct WhoopMyDaySection: View {
     @EnvironmentObject private var router: NavRouter
+    @EnvironmentObject private var coach: AICoachEngine
     @State private var showReview = false
 
     var body: some View {
@@ -325,7 +334,16 @@ struct WhoopMyDaySection: View {
                 .accessibilityLabel(Text("Add"))
             }
             .padding(.top, NoopMetrics.space2)
-            Button { showReview = true } label: {
+            // WHOOP-style: the Day In Review is a Coach conversation. With the Coach set up, open it and
+            // let the Coach write the review as its first message; otherwise show the setup page.
+            Button {
+                if coach.isConfigured && coach.dataConsent {
+                    coach.nextOpener = .dayReview
+                    router.openCoach()
+                } else {
+                    showReview = true
+                }
+            } label: {
                 HStack(spacing: NoopMetrics.space3) {
                     Image(systemName: "moon")
                         .font(WhoopStyle.iconLarge)

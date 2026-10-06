@@ -16,6 +16,7 @@ struct WhoopCoachSheet: View {
     @State private var draft = ""
     @FocusState private var composerFocused: Bool
     @State private var showFullCoach = false
+    @State private var showMemory = false
 
     private static let starterPrompts = [
         "Why is my Recovery what it is today?",
@@ -38,6 +39,9 @@ struct WhoopCoachSheet: View {
                         }
                 }
             }
+        }
+        .sheet(isPresented: $showMemory) {
+            WhoopCoachMemoryView()
         }
         .sheet(isPresented: $showFullCoach) {
             NavigationStack {
@@ -111,6 +115,14 @@ struct WhoopCoachSheet: View {
                 .padding(.vertical, NoopMetrics.space1)
                 .background(Capsule().fill(WhoopStyle.ringTrack))
             Spacer()
+            Button { showMemory = true } label: {
+                HStack(spacing: NoopMetrics.space1) {
+                    Text("Memory").font(WhoopStyle.detail)
+                    Image(systemName: "lightbulb").font(WhoopStyle.detail)
+                }
+                .foregroundStyle(StrandPalette.textPrimary)
+            }
+            .buttonStyle(.plain)
             Menu {
                 Button {
                     coach.clearConversation()
@@ -149,7 +161,7 @@ struct WhoopCoachSheet: View {
 
     @ViewBuilder
     private func messageView(_ message: ChatMessage) -> some View {
-        let parts = AICoachEngine.splitReplies(message.text)
+        let parts = AICoachEngine.parseReply(message.text)
         switch message.role {
         case .assistant:
             if parts.body.isEmpty {
@@ -160,6 +172,9 @@ struct WhoopCoachSheet: View {
                         .markdownTheme(.strand)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                    if !parts.options.isEmpty && message.id == coach.messages.last?.id {
+                        optionCards(parts.options)
+                    }
                     HStack(spacing: NoopMetrics.space4) {
                         Button {
                             UIPasteboard.general.string = parts.body
@@ -187,6 +202,53 @@ struct WhoopCoachSheet: View {
                     .padding(.horizontal, NoopMetrics.space4)
                     .padding(.vertical, NoopMetrics.space3)
                     .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(WhoopStyle.userBubble))
+            }
+        }
+    }
+
+    /// WHOOP's activity cards: each suggested activity with a Commit button that tells the Coach.
+    private func optionCards(_ options: [(name: String, why: String)]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: NoopMetrics.space3) {
+                ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                        HStack(spacing: NoopMetrics.space2) {
+                            Image(systemName: "figure.run")
+                                .font(WhoopStyle.icon)
+                                .frame(width: 30, height: 30)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(WhoopStyle.ringTrack))
+                            Text(option.name.uppercased())
+                                .font(WhoopStyle.smallLabel)
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        if !option.why.isEmpty {
+                            Text(option.why)
+                                .font(WhoopStyle.caption)
+                                .foregroundStyle(StrandPalette.textSecondary)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Button { send("I'll do \(option.name) today.") } label: {
+                            HStack(spacing: NoopMetrics.space1) {
+                                Image(systemName: "plus").font(WhoopStyle.chevron)
+                                Text("COMMIT").font(WhoopStyle.smallLabel)
+                            }
+                            .foregroundStyle(WhoopStyle.chipText)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, NoopMetrics.space2)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(WhoopStyle.chipFill))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(coach.sending)
+                    }
+                    .padding(WhoopStyle.compactPadding)
+                    .frame(width: 230, height: 170, alignment: .topLeading)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(WhoopStyle.ringTrack.opacity(0.5)))
+                    .overlay(RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(WhoopStyle.reviewAccent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                }
             }
         }
     }
