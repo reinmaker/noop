@@ -541,15 +541,10 @@ struct SleepView: View {
             if let score {
                 // Same LiquidVessel gauge as Home (`LiquidTodayView` / `HeroScoreCell`).
                 VStack(spacing: 8) {
-                    LiquidScoreGauge(
-                        score: score,
-                        tint: StrandPalette.restColor,
-                        diameter: 184,
-                        animated: true,
-                        captionText: String(localized: "of 100"),
-                        numberColor: Color.white.opacity(0.98),
-                        captionColor: Color.white.opacity(0.52)
-                    )
+                    // WHOOP-style: one large ring with the score and "SLEEP PERFORMANCE" inside it.
+                    WhoopRingGauge(score: score, tint: StrandPalette.restColor,
+                                   diameter: 220, lineWidth: 16,
+                                   caption: String(localized: "SLEEP\nPERFORMANCE"))
                     Text(sleepScoreWord(score))
                         .font(StrandFont.subhead.weight(.semibold))
                         .foregroundStyle(Color.white.opacity(0.90))
@@ -580,6 +575,11 @@ struct SleepView: View {
                 tint: StrandPalette.restColor
             )
             .padding(.top, 8)
+
+            // WHOOP-style contributors under the ring: Hours vs. Needed, Consistency, Efficiency, Restorative.
+            WhoopSleepContributors(model: model)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
 
             // Subtle Customize at the hero foot — functional, not competing with the gauge.
             sleepArrangeAffordance

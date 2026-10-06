@@ -30,6 +30,9 @@ struct RootTabView: View {
     let homeScreenQuickActionsEnabled: Bool
 
     @EnvironmentObject private var repo: Repository
+    /// WHOOP-style floating Coach button: asks the Coach about the screen you're on.
+    @EnvironmentObject private var coach: AICoachEngine
+    @State private var showCoachSheet = false
     /// Cross-screen navigation requests (e.g. Live → "Manage devices"). Devices isn't a tab — it lives
     /// behind the More list — so a request presents it as a sheet, matching the quick-action screens.
     @EnvironmentObject private var router: NavRouter
@@ -192,6 +195,31 @@ struct RootTabView: View {
         }
         // Live's "Manage devices" affordance (and any future cross-screen link to Devices) routes here:
         // present the Devices manager in its own nav stack, the same way the quick-action screens do.
+        // WHOOP-style floating Coach button, bottom-right above the tab bar on every tab except Coach.
+        // Tapping it opens the Coach over the current screen and asks it to analyse that screen.
+        .overlay(alignment: .bottomTrailing) {
+            if coachEnabled && selectedTab != 3 {
+                CoachFloatingButton {
+                    if coach.isConfigured {
+                        coach.pendingPrompt = AICoachEngine.screenAnalysisPrompt(tab: selectedTab)
+                    }
+                    showCoachSheet = true
+                }
+                .padding(.trailing, 16)
+                .padding(.bottom, 66)
+            }
+        }
+        .sheet(isPresented: $showCoachSheet) {
+            NavigationStack {
+                CoachView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showCoachSheet = false }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
+        }
         .sheet(isPresented: $showDevices) {
             devicesScreen
         }
@@ -789,3 +817,26 @@ extension View {
         }
     }
 }
+
+#if os(iOS)
+/// The round Coach button WHOOP floats over every screen.
+private struct CoachFloatingButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "sparkles")
+                .font(WhoopStyle.coachIcon)
+                .foregroundStyle(WhoopStyle.onGradient)
+                .frame(width: WhoopStyle.coachButtonSize, height: WhoopStyle.coachButtonSize)
+                .background(Circle().fill(WhoopStyle.coachButtonFill))
+                .overlay(Circle().strokeBorder(
+                    AngularGradient(colors: WhoopStyle.coachButtonRing, center: .center),
+                    lineWidth: 2))
+                .shadow(color: WhoopStyle.coachButtonShadow, radius: 10, y: 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Ask Coach about this screen"))
+    }
+}
+#endif

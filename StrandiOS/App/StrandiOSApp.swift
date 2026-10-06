@@ -638,7 +638,7 @@ private struct OuraOnboardingDemoHost: View {
 #endif
 
 #if os(iOS)
-/// WHOOP-style fork preset: dark theme, WHOOP colour ramp, 0–21 Strain, plain black Today (no
+/// WHOOP-style fork preset: dark theme, WHOOP colour ramp, 0-21 Strain, plain black Today (no
 /// day-cycle sky) and the Anthropic (Claude) coach. Applied once per install so existing NOOP installs
 /// pick it up too; every value stays changeable afterwards in Settings.
 enum WhoopStylePreset {

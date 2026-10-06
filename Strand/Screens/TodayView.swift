@@ -868,8 +868,8 @@ struct TodayView: View {
         switch level {
         case .primed:       return String(localized: "Push")
         case .balanced:     return String(localized: "Maintain")
-        case .strained:     return String(localized: "Rest")
-        case .rundown:      return String(localized: "Rest")
+        case .strained:     return String(localized: "readiness.rest", defaultValue: "Rest")
+        case .rundown:      return String(localized: "readiness.rest", defaultValue: "Rest")
         case .insufficient: return nil
         }
     }
