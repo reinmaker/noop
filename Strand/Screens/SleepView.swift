@@ -581,6 +581,11 @@ struct SleepView: View {
             )
             .padding(.top, 8)
 
+            // WHOOP-style contributors under the ring: Hours vs. Needed, Consistency, Efficiency, Restorative.
+            WhoopSleepContributors(model: model)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+
             // Subtle Customize at the hero foot — functional, not competing with the gauge.
             sleepArrangeAffordance
                 .padding(.horizontal, 16)

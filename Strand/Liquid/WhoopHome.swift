@@ -423,3 +423,130 @@ struct DayInReviewSheet: View {
             ?? AttributedString(s)
     }
 }
+
+// MARK: - Sleep contributors
+
+/// WHOOP-style rows under the Sleep Performance ring: Hours vs. Needed, Sleep Consistency, Sleep
+/// Efficiency and Restorative Sleep, each with a Poor / Sufficient / Optimal three-segment bar. Values
+/// come straight from `SleepModel` (NOOP's own on-device sleep scoring; imported WHOOP figures win when
+/// present, exactly as the Sleep tiles do).
+struct WhoopSleepContributors: View {
+    let model: SleepModel
+
+    enum Band: Int { case poor = 0, sufficient = 1, optimal = 2 }
+
+    private struct Row: Identifiable {
+        let id: String
+        let label: String
+        let icon: String
+        let value: Double?
+        let sufficientFrom: Double
+        let optimalFrom: Double
+
+        var band: Band? {
+            guard let value else { return nil }
+            if value >= optimalFrom { return .optimal }
+            if value >= sufficientFrom { return .sufficient }
+            return .poor
+        }
+    }
+
+    private var rows: [Row] {
+        [
+            Row(id: "hours", label: String(localized: "HOURS VS. NEEDED"), icon: "moon.zzz",
+                value: model.hoursVsNeeded.latest, sufficientFrom: 70, optimalFrom: 85),
+            Row(id: "consistency", label: String(localized: "SLEEP CONSISTENCY"), icon: "calendar",
+                value: model.consistency.latest, sufficientFrom: 70, optimalFrom: 80),
+            Row(id: "efficiency", label: String(localized: "SLEEP EFFICIENCY"), icon: "bed.double",
+                value: model.efficiency.latest, sufficientFrom: 85, optimalFrom: 90),
+            Row(id: "restorative", label: String(localized: "RESTORATIVE SLEEP"), icon: "sparkles",
+                value: model.restorative.latest, sufficientFrom: 30, optimalFrom: 40),
+        ]
+    }
+
+    static func color(_ band: Band) -> Color {
+        switch band {
+        case .poor: return WhoopHomeStyle.rangeAmber
+        case .sufficient: return Color(light: "#8A94A4", dark: "#B8C0CC")
+        case .optimal: return WhoopHomeStyle.rangeGreen
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                HStack(spacing: 12) {
+                    Image(systemName: row.icon)
+                        .font(.system(size: 17))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .frame(width: 26)
+                    Text(row.label)
+                        .font(WhoopHomeStyle.smallLabel)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Spacer(minLength: 8)
+                    segments(row.band)
+                    Text(row.value.map { "\(Int($0.rounded()))%" } ?? "—")
+                        .font(.system(size: 20, weight: .bold).width(.condensed))
+                        .monospacedDigit()
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .frame(minWidth: 52, alignment: .trailing)
+                }
+                .padding(.vertical, 14)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(accessibility(row)))
+                if index < rows.count - 1 {
+                    Rectangle().fill(WhoopHomeStyle.cardStroke).frame(height: 1)
+                }
+            }
+            legend.padding(.top, 10)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .padding(.bottom, 8)
+        .whoopCard()
+    }
+
+    private func segments(_ band: Band?) -> some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { i in
+                Capsule()
+                    .fill(band?.rawValue == i ? Self.color(band ?? .sufficient) : WhoopHomeStyle.ringTrack)
+                    .frame(width: 18, height: 4)
+            }
+        }
+    }
+
+    private var legend: some View {
+        HStack(spacing: 14) {
+            legendItem(.poor, String(localized: "Poor"))
+            legendItem(.sufficient, String(localized: "Sufficient"))
+            legendItem(.optimal, String(localized: "Optimal"))
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(StrandPalette.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(WhoopHomeStyle.ringTrack.opacity(0.5)))
+    }
+
+    private func legendItem(_ band: Band, _ text: String) -> some View {
+        HStack(spacing: 6) {
+            Capsule().fill(Self.color(band)).frame(width: 14, height: 4)
+            Text(text)
+        }
+    }
+
+    private func accessibility(_ row: Row) -> String {
+        guard let value = row.value, let band = row.band else { return "\(row.label), no data" }
+        let word: String
+        switch band {
+        case .poor: word = String(localized: "Poor")
+        case .sufficient: word = String(localized: "Sufficient")
+        case .optimal: word = String(localized: "Optimal")
+        }
+        return "\(row.label), \(Int(value.rounded())) percent, \(word)"
+    }
+}
