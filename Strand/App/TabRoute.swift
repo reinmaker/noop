@@ -35,6 +35,9 @@ enum TabRoute: Hashable {
     case health
     case hydration
     case coupled
+    /// WHOOP-style Recovery and Strain score screens (the Home rings' tap-through).
+    case recovery
+    case strain
 }
 
 extension View {
@@ -68,10 +71,14 @@ extension View {
             case .workouts: WorkoutsView()
             case .dataSources: DataSourcesView()
             case .stress: StressView()
-            case .sleep: SleepView()
+            case .sleep:
+                SleepView()
+                    .safeAreaInset(edge: .bottom, spacing: 0) { WhoopCoachPill(screen: .sleep) }
             case .health: HealthView()
             case .hydration: HydrationView()
             case .coupled: CoupledView()
+            case .recovery: WhoopRecoveryScreen()
+            case .strain: WhoopStrainScreen()
             }
             }
             // WHOOP-style: the Coach opens about the screen being viewed.

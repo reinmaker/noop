@@ -276,6 +276,10 @@ struct RootTabView: View {
                 // WHOOP-style: the Coach opens as a sheet over the current screen. A caller that wants a
                 // question asked has already parked it in `AICoachEngine.pendingPrompt`.
                 showCoachSheet = true
+                // Opened from a screen's Coach pill: the Coach speaks first about that screen.
+                if coach.pendingPrompt == nil && coach.isConfigured {
+                    Task { await coach.openWithScreenContext() }
+                }
                 router.requestedDestination = nil
             case .trends:
                 // Trends is a primary tab on iPhone (not a pillar sheet) — switch to it.
