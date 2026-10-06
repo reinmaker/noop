@@ -541,15 +541,10 @@ struct SleepView: View {
             if let score {
                 // Same LiquidVessel gauge as Home (`LiquidTodayView` / `HeroScoreCell`).
                 VStack(spacing: 8) {
-                    // WHOOP-style: one large ring with the score and "SLEEP PERFORMANCE" inside.
-                    ZStack {
-                        WhoopRingGauge(score: score, tint: StrandPalette.restColor,
-                                       diameter: 220, lineWidth: 16)
-                        Text("SLEEP PERFORMANCE")
-                            .font(WhoopStyle.smallLabel)
-                            .foregroundStyle(StrandPalette.textPrimary)
-                            .offset(y: 44)
-                    }
+                    // WHOOP-style: one large ring with the score and "SLEEP PERFORMANCE" inside it.
+                    WhoopRingGauge(score: score, tint: StrandPalette.restColor,
+                                   diameter: 220, lineWidth: 16,
+                                   caption: String(localized: "SLEEP\nPERFORMANCE"))
                     Text(sleepScoreWord(score))
                         .font(StrandFont.subhead.weight(.semibold))
                         .foregroundStyle(Color.white.opacity(0.90))

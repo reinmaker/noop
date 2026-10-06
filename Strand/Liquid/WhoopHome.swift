@@ -34,12 +34,19 @@ struct WhoopRingGauge: View {
     var diameter: CGFloat = 96
     var lineWidth: CGFloat = 7
     var animated: Bool = true
+    /// Optional label inside the ring under the number (the Sleep screen's "SLEEP PERFORMANCE").
+    var caption: String? = nil
 
     @State private var shown: Double = 0
 
     private var fraction: Double {
         guard let score, maxValue > 0 else { return 0 }
         return min(1, max(0, score / maxValue))
+    }
+
+    /// Side of the square inscribed in the ring's inner edge, less a small gap.
+    private var innerBox: CGFloat {
+        max(0, (diameter - 2 * lineWidth) / 2.squareRoot() - 4)
     }
 
     private var valueText: String {
@@ -54,18 +61,30 @@ struct WhoopRingGauge: View {
                 .trim(from: 0, to: shown)
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(valueText)
-                    .font(WhoopStyle.number(diameter * 0.28))
-                    .monospacedDigit()
-                if showsPercent && score != nil {
-                    Text("%").font(WhoopStyle.number(diameter * 0.16))
+            // Number and caption stacked inside the ring's inner circle. The frame is the largest box
+            // that fits inside the inner edge, and both lines shrink to fit it, so they can never touch
+            // each other or the ring, at any number width or text size.
+            VStack(spacing: diameter * 0.03) {
+                HStack(alignment: .firstTextBaseline, spacing: 1) {
+                    Text(valueText)
+                        .font(WhoopStyle.number(diameter * (caption == nil ? 0.28 : 0.24)))
+                        .monospacedDigit()
+                    if showsPercent && score != nil {
+                        Text("%").font(WhoopStyle.number(diameter * (caption == nil ? 0.16 : 0.13)))
+                    }
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                if let caption {
+                    Text(caption)
+                        .font(WhoopStyle.smallLabel)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.6)
                 }
             }
             .foregroundStyle(StrandPalette.textPrimary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .padding(.horizontal, lineWidth + 6)
+            .frame(width: innerBox, height: innerBox)
         }
         .frame(width: diameter, height: diameter)
         .onAppear { update() }
