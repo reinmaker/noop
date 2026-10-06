@@ -152,21 +152,21 @@ public enum StrandPalette {
 
     // MARK: Classic (throwback) data ramps — the recognizable health-app scale. Light/dark tuned.
     // Recovery: red → orange → amber → lime → green.
-    static let cRecovery000 = Color(light: "#CB3A2F", dark: "#E5483B")
-    static let cRecovery030 = Color(light: "#D87328", dark: "#EE8B3C")
-    static let cRecovery055 = Color(light: "#CFA528", dark: "#F2C53D")
-    static let cRecovery078 = Color(light: "#74A53A", dark: "#A6D04E")
-    static let cRecovery100 = Color(light: "#2E9E4F", dark: "#46B45A")
+    static let cRecovery000 = Color(light: "#D8102E", dark: "#FF0026")
+    static let cRecovery030 = Color(light: "#E06A12", dark: "#FF7A1A")
+    static let cRecovery055 = Color(light: "#D9B400", dark: "#FFDE00")
+    static let cRecovery078 = Color(light: "#6DB51C", dark: "#9BE22A")
+    static let cRecovery100 = Color(light: "#12B806", dark: "#16EC06")
     static let cRecoveryStops: [Gradient.Stop] = [
         .init(color: cRecovery000, location: 0.00), .init(color: cRecovery030, location: 0.30),
         .init(color: cRecovery055, location: 0.55), .init(color: cRecovery078, location: 0.78),
         .init(color: cRecovery100, location: 1.00),
     ]
     // Strain: the classic light→deep blue cardiovascular ramp.
-    static let cStrain000 = Color(light: "#5E92D6", dark: "#7FB2E8")
-    static let cStrain033 = Color(light: "#3A74C4", dark: "#4A90E2")
-    static let cStrain066 = Color(light: "#284F9C", dark: "#2F6FCB")
-    static let cStrain100 = Color(light: "#1C3E80", dark: "#1E4FA0")
+    static let cStrain000 = Color(light: "#4FA8E8", dark: "#5CC2FF")
+    static let cStrain033 = Color(light: "#1F8FD9", dark: "#26A8F5")
+    static let cStrain066 = Color(light: "#0078C8", dark: "#0093E7")
+    static let cStrain100 = Color(light: "#005EA8", dark: "#0074C8")
     static let cStrainStops: [Gradient.Stop] = [
         .init(color: cStrain000, location: 0.00), .init(color: cStrain033, location: 0.33),
         .init(color: cStrain066, location: 0.66), .init(color: cStrain100, location: 1.00),
@@ -276,25 +276,25 @@ public enum StrandPalette {
     // full red→green / blue / green→red in Classic regardless of these.
 
     /// Charge (recovery) — gold world / Classic green.
-    public static var chargeColor: Color  { isClassic ? Color(light: "#2E9E4F", dark: "#46B45A") : Color(light: "#0F9D62", dark: "#03E095") }
+    public static var chargeColor: Color  { isClassic ? Color(light: "#12B806", dark: "#16EC06") : Color(light: "#0F9D62", dark: "#03E095") }
     public static var chargeDeep: Color    { isClassic ? Color(light: "#207A3C", dark: "#2E9E4F") : Color(light: "#0B7A4A", dark: "#0B9D62") }
     public static var chargeBright: Color  { isClassic ? Color(light: "#5FBE6E", dark: "#86D98E") : Color(light: "#5FD89A", dark: "#6BF0B4") }
-    public static var chargeGlow: Color    { isClassic ? Color(light: "#2E9E4F", dark: "#46B45A") : Color(light: "#0F9D62", dark: "#03E095") }
+    public static var chargeGlow: Color    { isClassic ? Color(light: "#12B806", dark: "#16EC06") : Color(light: "#0F9D62", dark: "#03E095") }
     /// Diagonal accent pair for the Charge card wash + gauge stroke (deep → bright).
     public static var chargeGradient: Gradient { Gradient(colors: [chargeDeep, chargeBright]) }
 
     /// Effort (strain) — amber world / Classic blue.
-    public static var effortColor: Color   { isClassic ? Color(light: "#3A74C4", dark: "#4A90E2") : Color(light: "#2A78C8", dark: "#4090E0") }
+    public static var effortColor: Color   { isClassic ? Color(light: "#0078C8", dark: "#0093E7") : Color(light: "#2A78C8", dark: "#4090E0") }
     public static var effortDeep: Color    { isClassic ? Color(light: "#284F9C", dark: "#2F6FCB") : Color(light: "#1E5B96", dark: "#2A6FB0") }
     public static var effortBright: Color  { isClassic ? Color(light: "#5E92D6", dark: "#7FB2E8") : Color(light: "#5AA0E0", dark: "#74B6F0") }
-    public static var effortGlow: Color    { isClassic ? Color(light: "#3A74C4", dark: "#4A90E2") : Color(light: "#2A78C8", dark: "#4090E0") }
+    public static var effortGlow: Color    { isClassic ? Color(light: "#0078C8", dark: "#0093E7") : Color(light: "#2A78C8", dark: "#4090E0") }
     public static var effortGradient: Gradient { Gradient(colors: [effortDeep, effortBright]) }
 
     /// Rest (sleep) — blue world / Classic indigo.
-    public static var restColor: Color     { isClassic ? Color(light: "#3A80D6", dark: "#6FA8E8") : Color(light: "#5E7896", dark: "#83A0B8") }
-    public static var restDeep: Color      { isClassic ? Color(light: "#203E73", dark: "#2A4C8F") : Color(light: "#234F9E", dark: "#2F6FCB") }
-    public static var restBright: Color    { isClassic ? Color(light: "#6A4FC0", dark: "#8E6FD6") : Color(light: "#5790DA", dark: "#6FA8E8") }
-    public static var restGlow: Color      { isClassic ? Color(light: "#3A80D6", dark: "#6FA8E8") : Color(light: "#3A80D6", dark: "#4A90E2") }
+    public static var restColor: Color     { isClassic ? Color(light: "#5D86A3", dark: "#7BA1BB") : Color(light: "#5E7896", dark: "#83A0B8") }
+    public static var restDeep: Color      { isClassic ? Color(light: "#3E6480", dark: "#4E7189") : Color(light: "#234F9E", dark: "#2F6FCB") }
+    public static var restBright: Color    { isClassic ? Color(light: "#86A9C2", dark: "#A9C6DA") : Color(light: "#5790DA", dark: "#6FA8E8") }
+    public static var restGlow: Color      { isClassic ? Color(light: "#5D86A3", dark: "#7BA1BB") : Color(light: "#3A80D6", dark: "#4A90E2") }
     /// The Rest family's most legible LINE colour — for strokes that must read on a busy or translucent
     /// surface, such as the body-clock dial's arcs over a custom background image.
     ///

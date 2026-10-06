@@ -2562,7 +2562,7 @@
       "de": { "stringUnit": { "state": "translated", "value": "Abgeschlossene Sitzungen landen hier – mit jedem Satz, den du aufgezeichnet hast." } }, "en": { "stringUnit": { "state": "translated", "value": "Finished sessions land here, with every set you logged." } }, "es": { "stringUnit": { "state": "translated", "value": "Las sesiones terminadas aparecen aquí, con cada serie que registraste." } }, "fr": { "stringUnit": { "state": "translated", "value": "Les séances terminées arrivent ici, avec chaque série que tu as enregistrée." } }, "it": { "stringUnit": { "state": "translated", "value": "Le sessioni concluse finiscono qui, con ogni serie che hai registrato." } }, "pl": { "stringUnit": { "state": "translated", "value": "Zakończone sesje trafiają tutaj, z każdą zapisaną serią." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "As sessões terminadas aparecem aqui, com todas as séries que registaste." } }, "ru": { "stringUnit": { "state": "translated", "value": "Завершённые сессии попадают сюда — со всеми записанными подходами." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "完成的训练会出现在这里，包含你记录的每一组。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "完成的訓練會出現在這裡，包含你記錄的每一組。" } }
     } },
     "Lifting figures are worked out from the sets above. Effort stays measured from heart rate and is never derived from weights and reps.": { "localizations": {
-      "de": { "stringUnit": { "state": "translated", "value": "Die Kraftzahlen werden aus den Sätzen oben berechnet. Die Belastung bleibt aus der Herzfrequenz gemessen und wird nie aus Gewichten und Wiederholungen abgeleitet." } }, "en": { "stringUnit": { "state": "translated", "value": "Lifting figures are worked out from the sets above. Effort stays measured from heart rate and is never derived from weights and reps." } }, "es": { "stringUnit": { "state": "translated", "value": "Las cifras de fuerza salen de las series de arriba. El Esfuerzo se sigue midiendo por frecuencia cardíaca y nunca se deriva de pesos y repeticiones." } }, "fr": { "stringUnit": { "state": "translated", "value": "Les chiffres de musculation sont calculés à partir des séries ci-dessus. L'Effort reste mesuré par la fréquence cardiaque et n'est jamais déduit des charges et répétitions." } }, "it": { "stringUnit": { "state": "translated", "value": "I numeri della forza sono calcolati dalle serie qui sopra. Lo Sforzo resta misurato dalla frequenza cardiaca e non viene mai derivato da pesi e ripetizioni." } }, "pl": { "stringUnit": { "state": "translated", "value": "Liczby siłowe wynikają z serii powyżej. Wysiłek nadal mierzony jest tętnem i nigdy nie jest wyprowadzany z ciężarów i powtórzeń." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Os números de força são calculados a partir das séries acima. O Esforço continua medido pela frequência cardíaca e nunca é derivado de pesos e repetições." } }, "ru": { "stringUnit": { "state": "translated", "value": "Силовые показатели считаются из подходов выше. Усилие по-прежнему измеряется по пульсу и никогда не выводится из весов и повторений." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "力量数据由上面的组次算出。消耗始终由心率测得，绝不会从重量和次数推导。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "力量數據由上面的組次算出。消耗始終由心率測得，絕不會從重量和次數推導。" } }
+      "de": { "stringUnit": { "state": "translated", "value": "Die Kraftzahlen werden aus den Sätzen oben berechnet. Die Belastung bleibt aus der Herzfrequenz gemessen und wird nie aus Gewichten und Wiederholungen abgeleitet." } }, "en": { "stringUnit": { "state": "translated", "value": "Lifting figures are worked out from the sets above. Strain stays measured from heart rate and is never derived from weights and reps." } }, "es": { "stringUnit": { "state": "translated", "value": "Las cifras de fuerza salen de las series de arriba. El Esfuerzo se sigue midiendo por frecuencia cardíaca y nunca se deriva de pesos y repeticiones." } }, "fr": { "stringUnit": { "state": "translated", "value": "Les chiffres de musculation sont calculés à partir des séries ci-dessus. L'Effort reste mesuré par la fréquence cardiaque et n'est jamais déduit des charges et répétitions." } }, "it": { "stringUnit": { "state": "translated", "value": "I numeri della forza sono calcolati dalle serie qui sopra. Lo Sforzo resta misurato dalla frequenza cardiaca e non viene mai derivato da pesi e ripetizioni." } }, "pl": { "stringUnit": { "state": "translated", "value": "Liczby siłowe wynikają z serii powyżej. Wysiłek nadal mierzony jest tętnem i nigdy nie jest wyprowadzany z ciężarów i powtórzeń." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Os números de força são calculados a partir das séries acima. O Esforço continua medido pela frequência cardíaca e nunca é derivado de pesos e repetições." } }, "ru": { "stringUnit": { "state": "translated", "value": "Силовые показатели считаются из подходов выше. Усилие по-прежнему измеряется по пульсу и никогда не выводится из весов и повторений." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "力量数据由上面的组次算出。消耗始终由心率测得，绝不会从重量和次数推导。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "力量數據由上面的組次算出。消耗始終由心率測得，絕不會從重量和次數推導。" } }
     } },
     "None of these exercises has a muscle group yet. Add one on the exercise and every future session counts toward it.": { "localizations": {
       "de": { "stringUnit": { "state": "translated", "value": "Noch keine dieser Übungen hat eine Muskelgruppe. Trag eine bei der Übung ein, und jede künftige Sitzung zählt darauf ein." } }, "en": { "stringUnit": { "state": "translated", "value": "None of these exercises has a muscle group yet. Add one on the exercise and every future session counts toward it." } }, "es": { "stringUnit": { "state": "translated", "value": "Ninguno de estos ejercicios tiene aún grupo muscular. Añade uno al ejercicio y todas las sesiones futuras contarán para él." } }, "fr": { "stringUnit": { "state": "translated", "value": "Aucun de ces exercices n'a encore de groupe musculaire. Ajoutes-en un à l'exercice et chaque séance future comptera dedans." } }, "it": { "stringUnit": { "state": "translated", "value": "Nessuno di questi esercizi ha ancora un gruppo muscolare. Aggiungine uno all'esercizio e ogni sessione futura conterà su di esso." } }, "pl": { "stringUnit": { "state": "translated", "value": "Żadne z tych ćwiczeń nie ma jeszcze grupy mięśniowej. Dodaj ją do ćwiczenia, a każda kolejna sesja będzie się na nią liczyć." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Nenhum destes exercícios tem ainda grupo muscular. Adiciona um ao exercício e todas as sessões futuras contam para ele." } }, "ru": { "stringUnit": { "state": "translated", "value": "Ни одно из этих упражнений пока не имеет мышечной группы. Добавь её к упражнению — и каждая следующая сессия пойдёт в зачёт." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "这些动作还没有肌群。给动作添加一个，之后每次训练都会计入其中。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "這些動作還沒有肌群。給動作新增一個，之後每次訓練都會計入其中。" } }
@@ -2754,7 +2754,7 @@
       "de": { "stringUnit": { "state": "translated", "value": "Programme, Sitzungen und Satz-für-Satz-Verlauf" } }, "en": { "stringUnit": { "state": "translated", "value": "Programs, sessions and per-set history" } }, "es": { "stringUnit": { "state": "translated", "value": "Programas, sesiones e historial por serie" } }, "fr": { "stringUnit": { "state": "translated", "value": "Programmes, séances et historique par série" } }, "it": { "stringUnit": { "state": "translated", "value": "Programmi, sessioni e storico per serie" } }, "pl": { "stringUnit": { "state": "translated", "value": "Programy, sesje i historia serii" } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Programas, sessões e histórico por série" } }, "ru": { "stringUnit": { "state": "translated", "value": "Программы, сессии и история по подходам" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "计划、训练与每组历史" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "計畫、訓練與每組歷史" } }
     } },
     "Lifting adds volume and set counts. It never changes your Effort, which stays measured from heart rate.": { "localizations": {
-      "de": { "stringUnit": { "state": "translated", "value": "Krafttraining ergänzt Volumen und Satzzahlen. Deine Belastung ändert es nie – die wird weiterhin aus der Herzfrequenz gemessen." } }, "en": { "stringUnit": { "state": "translated", "value": "Lifting adds volume and set counts. It never changes your Effort, which stays measured from heart rate." } }, "es": { "stringUnit": { "state": "translated", "value": "Las pesas añaden volumen y recuento de series. Nunca cambian tu Esfuerzo, que se sigue midiendo por la frecuencia cardíaca." } }, "fr": { "stringUnit": { "state": "translated", "value": "La musculation ajoute du volume et un décompte de séries. Elle ne change jamais ton Effort, toujours mesuré à partir de la fréquence cardiaque." } }, "it": { "stringUnit": { "state": "translated", "value": "I pesi aggiungono volume e conteggio delle serie. Non cambiano mai il tuo Sforzo, che resta misurato dalla frequenza cardiaca." } }, "pl": { "stringUnit": { "state": "translated", "value": "Trening siłowy dodaje objętość i liczbę serii. Nigdy nie zmienia Twojego Wysiłku, który nadal jest mierzony tętnem." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Os pesos acrescentam volume e contagem de séries. Nunca alteram o teu Esforço, que continua medido pela frequência cardíaca." } }, "ru": { "stringUnit": { "state": "translated", "value": "Силовые добавляют объём и число подходов. Они никогда не меняют твоё Усилие — оно по-прежнему измеряется по пульсу." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "力量训练会增加容量和组数统计，但绝不会改变你的消耗——消耗始终由心率测得。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "力量訓練會增加容量和組數統計，但絕不會改變你的消耗——消耗始終由心率測得。" } }
+      "de": { "stringUnit": { "state": "translated", "value": "Krafttraining ergänzt Volumen und Satzzahlen. Deine Belastung ändert es nie – die wird weiterhin aus der Herzfrequenz gemessen." } }, "en": { "stringUnit": { "state": "translated", "value": "Lifting adds volume and set counts. It never changes your Strain, which stays measured from heart rate." } }, "es": { "stringUnit": { "state": "translated", "value": "Las pesas añaden volumen y recuento de series. Nunca cambian tu Esfuerzo, que se sigue midiendo por la frecuencia cardíaca." } }, "fr": { "stringUnit": { "state": "translated", "value": "La musculation ajoute du volume et un décompte de séries. Elle ne change jamais ton Effort, toujours mesuré à partir de la fréquence cardiaque." } }, "it": { "stringUnit": { "state": "translated", "value": "I pesi aggiungono volume e conteggio delle serie. Non cambiano mai il tuo Sforzo, che resta misurato dalla frequenza cardiaca." } }, "pl": { "stringUnit": { "state": "translated", "value": "Trening siłowy dodaje objętość i liczbę serii. Nigdy nie zmienia Twojego Wysiłku, który nadal jest mierzony tętnem." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Os pesos acrescentam volume e contagem de séries. Nunca alteram o teu Esforço, que continua medido pela frequência cardíaca." } }, "ru": { "stringUnit": { "state": "translated", "value": "Силовые добавляют объём и число подходов. Они никогда не меняют твоё Усилие — оно по-прежнему измеряется по пульсу." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "力量训练会增加容量和组数统计，但绝不会改变你的消耗——消耗始终由心率测得。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "力量訓練會增加容量和組數統計，但絕不會改變你的消耗——消耗始終由心率測得。" } }
     } },
     "Programs": { "localizations": {
       "de": { "stringUnit": { "state": "translated", "value": "Programme" } }, "en": { "stringUnit": { "state": "translated", "value": "Programs" } }, "es": { "stringUnit": { "state": "translated", "value": "Programas" } }, "fr": { "stringUnit": { "state": "translated", "value": "Programmes" } }, "it": { "stringUnit": { "state": "translated", "value": "Programmi" } }, "pl": { "stringUnit": { "state": "translated", "value": "Programy" } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Programas" } }, "ru": { "stringUnit": { "state": "translated", "value": "Программы" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "计划" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "計畫" } }
@@ -4507,7 +4507,7 @@
       }
     },
     "%@ Effort": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%@ Strain"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -9736,7 +9736,7 @@
         "en": {
           "stringUnit": {
             "state": "new",
-            "value": "%1$@: %2$@ of Charge"
+            "value": "%1$@: %2$@ of Recovery"
           }
         },
         "es": {
@@ -16908,7 +16908,7 @@
       }
     },
     "%lld%% Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "%lld%% Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -25426,7 +25426,7 @@
       }
     },
     "A once-a-day nudge when your Effort reaches the low end of today's optimal strain range, worked out from your recovery.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "A once-a-day nudge when your Strain reaches the low end of today's optimal strain range, worked out from your recovery."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -25787,7 +25787,7 @@
       }
     },
     "A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: it shows whether your 7-night HRV baseline sits above, inside, or below your personal normal band. It changes nothing else - the Charge ring is identical whether this is on or off. This is rough / early testing, not yet validated against varying real data (n=1).": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: it shows whether your 7-night HRV baseline sits above, inside, or below your personal normal band. It changes nothing else - the Recovery ring is identical whether this is on or off. This is rough / early testing, not yet validated against varying real data (n=1)."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -26664,7 +26664,7 @@
       }
     },
     "A watch samples your heart-rate variability rather than streaming it all night, so your Charge score needs roughly seven nights to calibrate. Until then NOOP shows “needs more data”, never a guessed number.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "A watch samples your heart-rate variability rather than streaming it all night, so your Recovery score needs roughly seven nights to calibrate. Until then NOOP shows “needs more data”, never a guessed number."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -33502,7 +33502,7 @@
       }
     },
     "Apple's own sleep stages drive Rest directly. This is one of the watch's strengths.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Apple's own sleep stages drive Sleep directly. This is one of the watch's strengths."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -33560,7 +33560,7 @@
       }
     },
     "Apple's sleep stages are strong, and they drive your Rest score directly.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Apple's sleep stages are strong, and they drive your Sleep score directly."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -36192,7 +36192,7 @@
       }
     },
     "Avg HR is shown as typed. The HR graph, zones and Effort stay from the recorded session.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Avg HR is shown as typed. The HR graph, zones and Strain stay from the recorded session."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -47596,7 +47596,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge"
+            "value": "Recovery"
           }
         },
         "es": {
@@ -47650,7 +47650,7 @@
       }
     },
     "Charge %@%%": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery %@%%"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -47708,7 +47708,7 @@
       }
     },
     "Charge %lld today, so your band is %lld–%lld bpm.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery %lld today, so your band is %lld–%lld bpm."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -47766,7 +47766,7 @@
       }
     },
     "Charge (all history)": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery (all history)"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -47824,7 +47824,7 @@
       }
     },
     "Charge (past year)": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery (past year)"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -47892,7 +47892,7 @@
         "en": {
           "stringUnit": {
             "state": "new",
-            "value": "Charge baseline calibrating. %1$@, %2$@. %3$@."
+            "value": "Recovery baseline calibrating. %1$@, %2$@. %3$@."
           }
         },
         "es": {
@@ -47946,7 +47946,7 @@
       }
     },
     "Charge baseline recalibrating": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery baseline recalibrating"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48004,7 +48004,7 @@
       }
     },
     "Charge is low and sleep was consistent.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is low and sleep was consistent."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48062,7 +48062,7 @@
       }
     },
     "Charge is low but sleep ran short.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is low but sleep ran short."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48120,7 +48120,7 @@
       }
     },
     "Charge is low.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is low."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48178,7 +48178,7 @@
       }
     },
     "Charge is steady and sleep was consistent.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is steady and sleep was consistent."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48236,7 +48236,7 @@
       }
     },
     "Charge is steady but sleep ran short.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is steady but sleep ran short."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48294,7 +48294,7 @@
       }
     },
     "Charge is steady.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is steady."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48352,7 +48352,7 @@
       }
     },
     "Charge is strong and sleep was consistent.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is strong and sleep was consistent."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48410,7 +48410,7 @@
       }
     },
     "Charge is strong but sleep ran short.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is strong but sleep ran short."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48468,7 +48468,7 @@
       }
     },
     "Charge is strong.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is strong."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48526,7 +48526,7 @@
       }
     },
     "Charge model": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery model"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48584,7 +48584,7 @@
       }
     },
     "Charge scale, depleted to peaked": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery scale, depleted to peaked"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48642,7 +48642,7 @@
       }
     },
     "Charge trend": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery trend"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48700,7 +48700,7 @@
       }
     },
     "Charge weighs your HRV against your personal baseline (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0-%lld cardiovascular load from time in heart-rate zones. Rest is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery weighs your HRV against your personal baseline (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Strain is a 0-%lld cardiovascular load from time in heart-rate zones. Sleep is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48758,7 +48758,7 @@
       }
     },
     "Charge weighs your HRV against your personal baseline (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0–%@ cardiovascular load from time in heart-rate zones. Rest is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery weighs your HRV against your personal baseline (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Strain is a 0–%@ cardiovascular load from time in heart-rate zones. Sleep is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48874,7 +48874,7 @@
       }
     },
     "Charge · %@ pts": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery · %@ pts"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48932,7 +48932,7 @@
       }
     },
     "Charge · Effort · Rest": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery · Strain · Sleep"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -48990,7 +48990,7 @@
       }
     },
     "Charge → Next-day charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery → Next-day charge"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -49048,7 +49048,7 @@
       }
     },
     "Charge, Effort and Rest (and how they differ from WHOOP).": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery, Strain and Sleep (and how they differ from WHOOP)."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -49106,7 +49106,7 @@
       }
     },
     "Charge, Effort and Rest are scored on your own device from your strap data. Charge needs about four nights of sleep to learn your baseline (that's \"Calibrating\", counted as nights of 4 on the ring), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so that count can sit at 0 of 4 until you have worn it across a few nights. That's the strap's sync limit, not a fault. Before there's a number, NOOP shows what it can without faking one.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery, Strain and Sleep are scored on your own device from your strap data. Recovery needs about four nights of sleep to learn your baseline (that's \"Calibrating\", counted as nights of 4 on the ring), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so that count can sit at 0 of 4 until you have worn it across a few nights. That's the strap's sync limit, not a fault. Before there's a number, NOOP shows what it can without faking one."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -49164,7 +49164,7 @@
       }
     },
     "Charge, Effort and Rest become personal after a few nights of wear.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery, Strain and Sleep become personal after a few nights of wear."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -49222,7 +49222,7 @@
       }
     },
     "Charge, Effort and Rest build over your next few nights of wear.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery, Strain and Sleep build over your next few nights of wear."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -49280,7 +49280,7 @@
       }
     },
     "Charge, Effort, Rest, HRV, resting and live heart rate, and strap battery at a glance.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery, Strain, Sleep, HRV, resting and live heart rate, and strap battery at a glance."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -49338,7 +49338,7 @@
       }
     },
     "Charge: how recovered are you?": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery: how recovered are you?"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -50452,7 +50452,7 @@
       }
     },
     "Choose how distances, weights, heights, temperatures and Effort are shown. Your data is always stored the same way. This only changes the display.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Choose how distances, weights, heights, temperatures and Strain are shown. Your data is always stored the same way. This only changes the display."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -67536,7 +67536,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Effort"
+            "value": "Strain"
           }
         },
         "es": {
@@ -67590,7 +67590,7 @@
       }
     },
     "Effort (0–100)": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Strain (0–100)"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -67648,7 +67648,7 @@
       }
     },
     "Effort scale": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Strain scale"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -67706,7 +67706,7 @@
       }
     },
     "Effort this %@": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Strain this %@"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -67764,7 +67764,7 @@
       }
     },
     "Effort: how hard did your heart work?": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Strain: how hard did your heart work?"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -69193,7 +69193,7 @@
       }
     },
     "Estimate from today's effort, your typical sleep and your %lld-night recovery baseline, not a measurement. Your real Charge is scored from tomorrow's HRV when you wake.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Estimate from today's effort, your typical sleep and your %lld-night recovery baseline, not a measurement. Your real Recovery is scored from tomorrow's HRV when you wake."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -78167,7 +78167,7 @@
       }
     },
     "HR %@ · Effort %@": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "HR %@ · Strain %@"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -79861,7 +79861,7 @@
       }
     },
     "HRV ↔ Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "HRV ↔ Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -83644,7 +83644,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How Charge is calculated"
+            "value": "How Recovery is calculated"
           }
         },
         "es": {
@@ -83698,7 +83698,7 @@
       }
     },
     "How Charge is calculated. The method behind the score.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "How Recovery is calculated. The method behind the score."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -83756,7 +83756,7 @@
       }
     },
     "How Charge, Effort and Rest are calculated, and how they differ from WHOOP.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "How Recovery, Strain and Sleep are calculated, and how they differ from WHOOP."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -83824,7 +83824,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How Effort is calculated"
+            "value": "How Strain is calculated"
           }
         },
         "es": {
@@ -84004,7 +84004,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How Rest is calculated"
+            "value": "How Sleep is calculated"
           }
         },
         "es": {
@@ -88104,7 +88104,7 @@
       }
     },
     "Import your strength-training history from a Hevy CSV export or a Liftosaur JSON export. Each workout becomes a Strength session with a training-volume estimate (weight × reps). It's a volume figure, not a measured strain. It never changes your Effort.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Import your strength-training history from a Hevy CSV export or a Liftosaur JSON export. Each workout becomes a Strength session with a training-volume estimate (weight × reps). It's a volume figure, not a measured strain. It never changes your Strain."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -92639,7 +92639,7 @@
       }
     },
     "Last Charge breakdown": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Last Recovery breakdown"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -94833,7 +94833,7 @@
       }
     },
     "Led by your heart-rate variability (HRV) measured against your own personal baseline, plus resting heart rate, last night's Rest, breathing rate, and a skin-temperature signal (an early illness or overreach flag). Higher HRV versus your baseline means more Charge. NOOP needs a few nights to learn your baseline first. Until then you'll see “Calibrating”.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Led by your heart-rate variability (HRV) measured against your own personal baseline, plus resting heart rate, last night's Sleep, breathing rate, and a skin-temperature signal (an early illness or overreach flag). Higher HRV versus your baseline means more Recovery. NOOP needs a few nights to learn your baseline first. Until then you'll see “Calibrating”."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -96882,7 +96882,7 @@
       }
     },
     "Live machine data over Bluetooth FTMS. No sleep, recovery, skin temp or SpO₂. Effort needs the machine's heart rate; without it the session logs the machine metrics only.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Live machine data over Bluetooth FTMS. No sleep, recovery, skin temp or SpO₂. Strain needs the machine's heart rate; without it the session logs the machine metrics only."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -100038,7 +100038,7 @@
       "zh-Hans": { "stringUnit": { "state": "translated", "value": "一天开始于" } },
       "zh-Hant": { "stringUnit": { "state": "translated", "value": "一天開始於" } }
     } },
-    "Default. Steps and in-progress Effort restart at the beginning of detected main sleep. Naps do not start a new day; missing sleep falls back to local midnight.": { "localizations": {
+    "Default. Steps and in-progress Effort restart at the beginning of detected main sleep. Naps do not start a new day; missing sleep falls back to local midnight.": { "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Default. Steps and in-progress Strain restart at the beginning of detected main sleep. Naps do not start a new day; missing sleep falls back to local midnight."}}, 
       "de": { "stringUnit": { "state": "translated", "value": "Standard. Schritte und die laufende Anstrengung beginnen mit dem erkannten Hauptschlaf neu. Nickerchen starten keinen neuen Tag; bei fehlendem Schlaf verwendet NOOP ersatzweise die lokale Mitternacht." } },
       "es": { "stringUnit": { "state": "translated", "value": "Predeterminado. Los pasos y el Esfuerzo en curso se reinician al comienzo del sueño principal detectado. Las siestas no empiezan un nuevo día; si faltan datos de sueño, se usa la medianoche local." } },
       "fr": { "stringUnit": { "state": "translated", "value": "Par défaut. Les pas et l’Effort en cours repartent de zéro au début du sommeil principal détecté. Les siestes ne commencent pas une nouvelle journée ; en l’absence de sommeil, l’heure locale de minuit est utilisée." } },
@@ -104365,7 +104365,7 @@
       }
     },
     "Mostly over the band — harder than today's Charge could pay for.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Mostly over the band — harder than today's Recovery could pay for."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -105770,7 +105770,7 @@
       }
     },
     "NOOP Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "NOOP Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -105886,7 +105886,7 @@
       }
     },
     "NOOP can run off only an Apple Watch, no chest strap needed. The watch is the sensor; NOOP does the thinking on your phone, computing Charge, Rest, Effort and your Fitness Age from your Health data, all on-device.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "NOOP can run off only an Apple Watch, no chest strap needed. The watch is the sensor; NOOP does the thinking on your phone, computing Recovery, Sleep, Strain and your Fitness Age from your Health data, all on-device."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -106118,7 +106118,7 @@
       }
     },
     "NOOP gives you three daily scores (Charge, Effort and Rest), each on a 0-100 scale. They're built from your strap's raw signals using published, peer-reviewed sport science, and computed entirely on your device. They are NOT WHOOP's scores: we don't have WHOOP's private algorithms and don't pretend to. They aim at the same three questions using open science, so they'll usually track WHOOP's in direction, but won't match number-for-number. And that's the point.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "NOOP gives you three daily scores (Recovery, Strain and Sleep), each on a 0-100 scale. They're built from your strap's raw signals using published, peer-reviewed sport science, and computed entirely on your device. They are NOT WHOOP's scores: we don't have WHOOP's private algorithms and don't pretend to. They aim at the same three questions using open science, so they'll usually track WHOOP's in direction, but won't match number-for-number. And that's the point."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -106176,7 +106176,7 @@
       }
     },
     "NOOP gives you three daily scores (Charge, Effort and Rest), each on a 0–100 scale. They're built from your strap's raw signals using published, peer-reviewed sport science, and computed entirely on your device. They are NOT WHOOP's scores: we don't have WHOOP's private algorithms and don't pretend to. They aim at the same three questions using open science, so they'll usually track WHOOP's in direction, but won't match number-for-number. And that's the point.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "NOOP gives you three daily scores (Recovery, Strain and Sleep), each on a 0–100 scale. They're built from your strap's raw signals using published, peer-reviewed sport science, and computed entirely on your device. They are NOT WHOOP's scores: we don't have WHOOP's private algorithms and don't pretend to. They aim at the same three questions using open science, so they'll usually track WHOOP's in direction, but won't match number-for-number. And that's the point."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -108057,7 +108057,7 @@
       }
     },
     "NOOP's own Charge, Effort and Rest, computed on your device from published methods.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "NOOP's own Recovery, Strain and Sleep, computed on your device from published methods."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -110061,7 +110061,7 @@
       }
     },
     "No Charge banked today, so your band takes a careful middle course: %lld–%lld bpm.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "No Recovery banked today, so your band takes a careful middle course: %lld–%lld bpm."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -110119,7 +110119,7 @@
       }
     },
     "No Charge breakdown yet": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "No Recovery breakdown yet"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -110821,7 +110821,7 @@
       }
     },
     "No cardio load yet. Effort builds once your heart rate climbs into your effort zone (around 50% of your heart-rate reserve). A calm day honestly reads near zero.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "No cardio load yet. Strain builds once your heart rate climbs into your effort zone (around 50% of your heart-rate reserve). A calm day honestly reads near zero."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -110879,7 +110879,7 @@
       }
     },
     "No chest strap? No problem. NOOP can run off only your Apple Watch. It reads your watch's data through Apple Health and works out your Charge, Rest, Effort and Fitness Age right here on your phone. Everything stays on the device.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "No chest strap? No problem. NOOP can run off only your Apple Watch. It reads your watch's data through Apple Health and works out your Recovery, Sleep, Strain and Fitness Age right here on your phone. Everything stays on the device."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -125317,7 +125317,7 @@
       }
     },
     "Pick a wearable signal (resting HR, HRV, sleep, Charge, weight…) to line it up against this marker. NOOP averages the signal over the %@ before each reading.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Pick a wearable signal (resting HR, HRV, sleep, Recovery, weight…) to line it up against this marker. NOOP averages the signal over the %@ before each reading."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -126581,7 +126581,7 @@
       }
     },
     "Powers Charge, Effort, Rest and Sleep": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Powers Recovery, Strain, Sleep"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -126639,7 +126639,7 @@
       }
     },
     "Powers Charge, Effort, Rest, Sleep + Health Monitor": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Powers Recovery, Strain, Sleep + Health Monitor"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -126697,7 +126697,7 @@
       }
     },
     "Powers Effort now; Charge and Rest once enough nights and decode are confirmed": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Powers Strain now; Recovery and Sleep once enough nights and decode are confirmed"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -126755,7 +126755,7 @@
       }
     },
     "Powers Rest, Effort, Fitness Age and steps, plus Charge once recovery calibrates": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Powers Sleep, Strain, Fitness Age and steps, plus Recovery once recovery calibrates"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -126813,7 +126813,7 @@
       }
     },
     "Powers the live console + Effort. No Charge, Rest or Sleep": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Powers the live console + Strain. No Recovery, Sleep"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -130372,7 +130372,7 @@
       }
     },
     "Ranked, lag-aware: which of your habits actually move your Charge, plus your personal alcohol/caffeine dose-response.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Ranked, lag-aware: which of your habits actually move your Recovery, plus your personal alcohol/caffeine dose-response."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -130605,7 +130605,7 @@
       }
     },
     "Re-anchors every baseline that feeds Charge to your recent nights. No stored day is deleted.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Re-anchors every baseline that feeds Recovery to your recent nights. No stored day is deleted."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -132933,7 +132933,7 @@
       }
     },
     "Recalibrate Charge baseline": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recalibrate Recovery baseline"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -132991,7 +132991,7 @@
       }
     },
     "Recalibrate your Charge baseline?": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recalibrate your Recovery baseline?"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -134169,7 +134169,7 @@
       }
     },
     "Records a live machine workout, Effort-scored from HR when the machine reports it": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Records a live machine workout, Strain-scored from HR when the machine reports it"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -134291,7 +134291,7 @@
       }
     },
     "Recovery / Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -134524,7 +134524,7 @@
       }
     },
     "Recovery, NOOP's Charge score, is led by your heart-rate variability measured against your own personal baseline. A chest strap streams beat-to-beat data densely all night, so it can learn that baseline fast. An Apple Watch instead samples HRV, a handful of readings through the day plus overnight, so the signal is real but sparser.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recovery is led by your heart-rate variability measured against your own personal baseline. A chest strap streams beat-to-beat data densely all night, so it can learn that baseline fast. An Apple Watch instead samples HRV, a handful of readings through the day plus overnight, so the signal is real but sparser."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -138232,7 +138232,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rest"
+            "value": "Sleep"
           }
         },
         "es": {
@@ -138344,7 +138344,7 @@
       }
     },
     "Rest baseline": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sleep baseline"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -138402,7 +138402,7 @@
       }
     },
     "Rest quality": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sleep quality"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -138518,7 +138518,7 @@
       }
     },
     "Rest ↔ Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sleep ↔ Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -138576,7 +138576,7 @@
       }
     },
     "Rest: how restorative was your sleep?": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sleep: how restorative was your sleep?"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -138930,7 +138930,7 @@
       }
     },
     "Restarts the roughly 4-night build-up for Charge and your HRV baseline from tonight. Use it if a bad first week set your baseline off. Your history stays.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Restarts the roughly 4-night build-up for Recovery and your HRV baseline from tonight. Use it if a bad first week set your baseline off. Your history stays."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -139110,7 +139110,7 @@
       }
     },
     "Resting HR ↔ Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Resting HR ↔ Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -145560,7 +145560,7 @@
       }
     },
     "See how Charge, Effort and Rest are calculated, and how they differ from WHOOP.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "See how Recovery, Strain and Sleep are calculated, and how they differ from WHOOP."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -145676,7 +145676,7 @@
       }
     },
     "See what shaped your Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "See what shaped your Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -148852,7 +148852,7 @@
       }
     },
     "Silent strap coaching against today's Charge.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Silent strap coaching against today's Recovery."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -150223,7 +150223,7 @@
       }
     },
     "Sleep & Rest": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sleep"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -150281,7 +150281,7 @@
       }
     },
     "Sleep / Rest": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sleep"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -151396,7 +151396,7 @@
       }
     },
     "Sleep steadiness: Rest varied ±%@ pts night to night.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sleep steadiness: Sleep varied ±%@ pts night to night."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -153782,7 +153782,7 @@
       }
     },
     "Start a live session. Beta. Silent strap coaching against today's Charge.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Start a live session. Beta. Silent strap coaching against today's Recovery."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -155604,7 +155604,7 @@
       }
     },
     "Steps, active energy and logged workouts feed Effort. Dense and reliable.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Steps, active energy and logged workouts feed Strain. Dense and reliable."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -155662,7 +155662,7 @@
       }
     },
     "Steps, active energy and logged workouts feed your Effort. Dense and reliable.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Steps, active energy and logged workouts feed your Strain. Dense and reliable."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -164044,7 +164044,7 @@
       }
     },
     "That's why a watch-only Charge starts out “Calibrating”. NOOP needs about seven nights of your HRV to learn what normal looks like for you. Until it has them it withholds the score rather than guess. Once the baseline is set, your Charge appears with its confidence, on the same 0-100 scale as a strap's.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "That's why a watch-only Recovery starts out “Calibrating”. NOOP needs about seven nights of your HRV to learn what normal looks like for you. Until it has them it withholds the score rather than guess. Once the baseline is set, your Recovery appears with its confidence, on the same 0-100 scale as a strap's."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -164102,7 +164102,7 @@
       }
     },
     "That's why a watch-only Charge starts out “Calibrating”. NOOP needs about seven nights of your HRV to learn what normal looks like for you. Until it has them it withholds the score rather than guess. Once the baseline is set, your Charge appears with its confidence, on the same 0–100 scale as a strap's.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "That's why a watch-only Recovery starts out “Calibrating”. NOOP needs about seven nights of your HRV to learn what normal looks like for you. Until it has them it withholds the score rather than guess. Once the baseline is set, your Recovery appears with its confidence, on the same 0–100 scale as a strap's."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -164334,7 +164334,7 @@
       }
     },
     "The average above was edited. The graph, zones and Effort stay from the recorded session.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "The average above was edited. The graph, zones and Strain stay from the recorded session."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -166447,7 +166447,7 @@
       }
     },
     "This builds from the strap as it syncs. Effort and rest appear after you have worn it and slept a night. Charge needs about four nights of sleep to learn your baseline (you'll see \"Calibrating\" until then), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so the night count can climb slowly or sit at 0 of 4 until you have worn it across a few nights. That's its sync limit, not a fault. Import your WHOOP export to skip the wait.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "This builds from the strap as it syncs. Strain and rest appear after you have worn it and slept a night. Recovery needs about four nights of sleep to learn your baseline (you'll see \"Calibrating\" until then), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so the night count can climb slowly or sit at 0 of 4 until you have worn it across a few nights. That's its sync limit, not a fault. Import your WHOOP export to skip the wait."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -167745,7 +167745,7 @@
       }
     },
     "This restarts the roughly 4-night build-up for Charge and your HRV baseline. Your history stays.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "This restarts the roughly 4-night build-up for Recovery and your HRV baseline. Your history stays."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -167803,7 +167803,7 @@
       }
     },
     "This restarts the roughly 4-night build-up for Charge and your HRV baseline. Your history stays. Use it if a bad first week, like wearing it while sick, set your baseline off.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "This restarts the roughly 4-night build-up for Recovery and your HRV baseline. Your history stays. Use it if a bad first week, like wearing it while sick, set your baseline off."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -167919,7 +167919,7 @@
       }
     },
     "This session's contribution to the day's Effort, as captured during the workout.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "This session's contribution to the day's Strain, as captured during the workout."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -170171,7 +170171,7 @@
       }
     },
     "Tomorrow's Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Tomorrow's Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -170239,7 +170239,7 @@
         "en": {
           "stringUnit": {
             "state": "new",
-            "value": "Tomorrow's Charge estimate %1$lld plus or minus %2$lld"
+            "value": "Tomorrow's Recovery estimate %1$lld plus or minus %2$lld"
           }
         },
         "es": {
@@ -180670,7 +180670,7 @@
       }
     },
     "What shaped your Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "What shaped your Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -185058,7 +185058,7 @@
         "en": {
           "stringUnit": {
             "state": "new",
-            "value": "You'll likely wake around %1$lld ± %2$lld Charge if you sleep about %3$@ tonight."
+            "value": "You'll likely wake around %1$lld ± %2$lld Recovery if you sleep about %3$@ tonight."
           }
         },
         "es": {
@@ -185298,7 +185298,7 @@
       }
     },
     "You're connected. NOOP is reading your Apple Watch data now. Your Charge score will spend its first week or so calibrating, then settle in.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "You're connected. NOOP is reading your Apple Watch data now. Your Recovery score will spend its first week or so calibrating, then settle in."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -185942,7 +185942,7 @@
       }
     },
     "Your Charge (recovery) on the watch face, with Effort and Rest in the rectangular card.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Your Recovery on the watch face, with Strain and Sleep in the rectangular card."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -186000,7 +186000,7 @@
       }
     },
     "Your Charge score learns a personal baseline from your heart-rate variability, resting heart rate and more over time. If a bad first week set it off, you can re-learn it from tonight. Your history stays.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Your Recovery score learns a personal baseline from your heart-rate variability, resting heart rate and more over time. If a bad first week set it off, you can re-learn it from tonight. Your history stays."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -189898,7 +189898,7 @@
       }
     },
     "above baseline, too small to change Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "above baseline, too small to change Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -191012,7 +191012,7 @@
       }
     },
     "below baseline, too small to change Charge": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "below baseline, too small to change Recovery"}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -216275,7 +216275,7 @@
       }
     },
     "A training read, separate from your Charge score.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "A training read, separate from your Recovery score."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -216645,7 +216645,7 @@
       }
     },
     "Needs %lld+ consecutive days of Effort to begin. %lld so far.": {
-      "localizations": {
+      "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Needs %lld+ consecutive days of Strain to begin. %lld so far."}}, 
         "de": {
           "stringUnit": {
             "state": "translated",
@@ -217213,10 +217213,10 @@
       }
     },
     "Effort: exponential intensity scale": { "localizations": {
-      "de": { "stringUnit": { "state": "translated", "value": "Belastung: exponentielle Intensitätsskala" } }, "en": { "stringUnit": { "state": "translated", "value": "Effort: exponential intensity scale" } }, "es": { "stringUnit": { "state": "translated", "value": "Esfuerzo: escala de intensidad exponencial" } }, "fr": { "stringUnit": { "state": "translated", "value": "Effort : échelle d’intensité exponentielle" } }, "it": { "stringUnit": { "state": "translated", "value": "Sforzo: scala di intensità esponenziale" } }, "pl": { "stringUnit": { "state": "translated", "value": "Wysiłek: wykładnicza skala intensywności" } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Esforço: escala de intensidade exponencial" } }, "ru": { "stringUnit": { "state": "translated", "value": "Усилие: экспоненциальная шкала интенсивности" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "消耗：指数强度曲线" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "消耗：指數強度曲線" } }
+      "de": { "stringUnit": { "state": "translated", "value": "Belastung: exponentielle Intensitätsskala" } }, "en": { "stringUnit": { "state": "translated", "value": "Strain: exponential intensity scale" } }, "es": { "stringUnit": { "state": "translated", "value": "Esfuerzo: escala de intensidad exponencial" } }, "fr": { "stringUnit": { "state": "translated", "value": "Effort : échelle d’intensité exponentielle" } }, "it": { "stringUnit": { "state": "translated", "value": "Sforzo: scala di intensità esponenziale" } }, "pl": { "stringUnit": { "state": "translated", "value": "Wysiłek: wykładnicza skala intensywności" } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Esforço: escala de intensidade exponencial" } }, "ru": { "stringUnit": { "state": "translated", "value": "Усилие: экспоненциальная шкала интенсивности" } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "消耗：指数强度曲线" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "消耗：指數強度曲線" } }
     } },
     "Scores Effort on an exponential intensity curve (Banister TRIMP) instead of the default heart-rate zones (Edwards). The default earns nothing below half of your heart-rate reserve, so an hour of lifting — where hard sets average out against the rests — can score close to zero. The exponential curve has no floor and weights short, hard efforts far more heavily. Re-scores your history, and both scales reach the same maximum. Off by default.": { "localizations": {
-      "de": { "stringUnit": { "state": "translated", "value": "Bewertet die Belastung mit einer exponentiellen Intensitätskurve (Banister-TRIMP) statt der voreingestellten Herzfrequenzzonen (Edwards). Die Voreinstellung zählt nichts unter der Hälfte deiner Herzfrequenzreserve, sodass eine Stunde Krafttraining – bei der sich harte Sätze mit den Pausen ausmitteln – nahezu null ergeben kann. Die exponentielle Kurve hat keine Untergrenze und gewichtet kurze, harte Belastungen deutlich stärker. Bewertet deine Historie neu; beide Skalen erreichen dasselbe Maximum. Standardmäßig aus." } }, "en": { "stringUnit": { "state": "translated", "value": "Scores Effort on an exponential intensity curve (Banister TRIMP) instead of the default heart-rate zones (Edwards). The default earns nothing below half of your heart-rate reserve, so an hour of lifting — where hard sets average out against the rests — can score close to zero. The exponential curve has no floor and weights short, hard efforts far more heavily. Re-scores your history, and both scales reach the same maximum. Off by default." } }, "es": { "stringUnit": { "state": "translated", "value": "Puntúa el Esfuerzo con una curva de intensidad exponencial (TRIMP de Banister) en lugar de las zonas de frecuencia cardíaca predeterminadas (Edwards). La opción predeterminada no cuenta nada por debajo de la mitad de tu reserva de frecuencia cardíaca, así que una hora de pesas —donde las series duras se compensan con los descansos— puede puntuar casi cero. La curva exponencial no tiene umbral y pondera mucho más los esfuerzos cortos e intensos. Vuelve a puntuar tu historial y ambas escalas alcanzan el mismo máximo. Desactivado por defecto." } }, "fr": { "stringUnit": { "state": "translated", "value": "Calcule l’Effort selon une courbe d’intensité exponentielle (TRIMP de Banister) au lieu des zones de fréquence cardiaque par défaut (Edwards). Le réglage par défaut ne compte rien en dessous de la moitié de votre réserve de fréquence cardiaque : une heure de musculation — où les séries dures se compensent avec les temps de repos — peut donc être notée presque zéro. La courbe exponentielle n’a pas de seuil et pondère bien davantage les efforts courts et intenses. Recalcule votre historique, et les deux échelles atteignent le même maximum. Désactivé par défaut." } }, "it": { "stringUnit": { "state": "translated", "value": "Calcola lo Sforzo su una curva di intensità esponenziale (TRIMP di Banister) invece delle zone di frequenza cardiaca predefinite (Edwards). L’impostazione predefinita non conta nulla sotto la metà della tua riserva di frequenza cardiaca, quindi un’ora di pesi — dove le serie intense si compensano con i recuperi — può valere quasi zero. La curva esponenziale non ha soglia e pesa molto di più gli sforzi brevi e intensi. Ricalcola la cronologia ed entrambe le scale raggiungono lo stesso massimo. Disattivato per impostazione predefinita." } }, "pl": { "stringUnit": { "state": "translated", "value": "Ocenia Wysiłek według wykładniczej krzywej intensywności (TRIMP Banistera) zamiast domyślnych stref tętna (Edwards). Ustawienie domyślne nie liczy niczego poniżej połowy rezerwy tętna, więc godzina treningu siłowego — gdzie ciężkie serie uśredniają się z przerwami — może dać wynik bliski zeru. Krzywa wykładnicza nie ma progu i znacznie mocniej waży krótkie, intensywne wysiłki. Przelicza historię, a obie skale osiągają to samo maksimum. Domyślnie wyłączone." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Pontua o Esforço numa curva de intensidade exponencial (TRIMP de Banister) em vez das zonas de frequência cardíaca predefinidas (Edwards). A predefinição não conta nada abaixo de metade da tua reserva de frequência cardíaca, por isso uma hora de musculação — em que as séries duras se compensam com os descansos — pode pontuar quase zero. A curva exponencial não tem limiar e pondera muito mais os esforços curtos e intensos. Volta a pontuar o teu histórico e ambas as escalas atingem o mesmo máximo. Desativado por predefinição." } }, "ru": { "stringUnit": { "state": "translated", "value": "Оценивает Усилие по экспоненциальной кривой интенсивности (TRIMP Банистера) вместо стандартных пульсовых зон (Эдвардс). Стандартный вариант не засчитывает ничего ниже половины резерва пульса, поэтому час силовой тренировки — где тяжёлые подходы усредняются с отдыхом — может дать почти ноль. У экспоненциальной кривой нет порога, и она гораздо сильнее учитывает короткие интенсивные усилия. Пересчитывает историю, и обе шкалы достигают одного максимума. По умолчанию выключено." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "以指数强度曲线（Banister TRIMP）计算消耗，而不是默认的心率区间（Edwards）。默认方式对低于心率储备一半的部分完全不计分，因此一小时力量训练——组间休息拉低了平均强度——可能几乎得零分。指数曲线没有下限，会大幅提高短时高强度努力的权重。会重新计算你的历史数据，两种标度的最高值相同。默认关闭。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "以指數強度曲線（Banister TRIMP）計算消耗，而不是預設的心率區間（Edwards）。預設方式對低於心率儲備一半的部分完全不計分，因此一小時重量訓練——組間休息拉低了平均強度——可能幾乎得零分。指數曲線沒有下限，會大幅提高短時高強度努力的權重。會重新計算你的歷史資料，兩種尺度的最高值相同。預設關閉。" } }
+      "de": { "stringUnit": { "state": "translated", "value": "Bewertet die Belastung mit einer exponentiellen Intensitätskurve (Banister-TRIMP) statt der voreingestellten Herzfrequenzzonen (Edwards). Die Voreinstellung zählt nichts unter der Hälfte deiner Herzfrequenzreserve, sodass eine Stunde Krafttraining – bei der sich harte Sätze mit den Pausen ausmitteln – nahezu null ergeben kann. Die exponentielle Kurve hat keine Untergrenze und gewichtet kurze, harte Belastungen deutlich stärker. Bewertet deine Historie neu; beide Skalen erreichen dasselbe Maximum. Standardmäßig aus." } }, "en": { "stringUnit": { "state": "translated", "value": "Scores Strain on an exponential intensity curve (Banister TRIMP) instead of the default heart-rate zones (Edwards). The default earns nothing below half of your heart-rate reserve, so an hour of lifting — where hard sets average out against the rests — can score close to zero. The exponential curve has no floor and weights short, hard efforts far more heavily. Re-scores your history, and both scales reach the same maximum. Off by default." } }, "es": { "stringUnit": { "state": "translated", "value": "Puntúa el Esfuerzo con una curva de intensidad exponencial (TRIMP de Banister) en lugar de las zonas de frecuencia cardíaca predeterminadas (Edwards). La opción predeterminada no cuenta nada por debajo de la mitad de tu reserva de frecuencia cardíaca, así que una hora de pesas —donde las series duras se compensan con los descansos— puede puntuar casi cero. La curva exponencial no tiene umbral y pondera mucho más los esfuerzos cortos e intensos. Vuelve a puntuar tu historial y ambas escalas alcanzan el mismo máximo. Desactivado por defecto." } }, "fr": { "stringUnit": { "state": "translated", "value": "Calcule l’Effort selon une courbe d’intensité exponentielle (TRIMP de Banister) au lieu des zones de fréquence cardiaque par défaut (Edwards). Le réglage par défaut ne compte rien en dessous de la moitié de votre réserve de fréquence cardiaque : une heure de musculation — où les séries dures se compensent avec les temps de repos — peut donc être notée presque zéro. La courbe exponentielle n’a pas de seuil et pondère bien davantage les efforts courts et intenses. Recalcule votre historique, et les deux échelles atteignent le même maximum. Désactivé par défaut." } }, "it": { "stringUnit": { "state": "translated", "value": "Calcola lo Sforzo su una curva di intensità esponenziale (TRIMP di Banister) invece delle zone di frequenza cardiaca predefinite (Edwards). L’impostazione predefinita non conta nulla sotto la metà della tua riserva di frequenza cardiaca, quindi un’ora di pesi — dove le serie intense si compensano con i recuperi — può valere quasi zero. La curva esponenziale non ha soglia e pesa molto di più gli sforzi brevi e intensi. Ricalcola la cronologia ed entrambe le scale raggiungono lo stesso massimo. Disattivato per impostazione predefinita." } }, "pl": { "stringUnit": { "state": "translated", "value": "Ocenia Wysiłek według wykładniczej krzywej intensywności (TRIMP Banistera) zamiast domyślnych stref tętna (Edwards). Ustawienie domyślne nie liczy niczego poniżej połowy rezerwy tętna, więc godzina treningu siłowego — gdzie ciężkie serie uśredniają się z przerwami — może dać wynik bliski zeru. Krzywa wykładnicza nie ma progu i znacznie mocniej waży krótkie, intensywne wysiłki. Przelicza historię, a obie skale osiągają to samo maksimum. Domyślnie wyłączone." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Pontua o Esforço numa curva de intensidade exponencial (TRIMP de Banister) em vez das zonas de frequência cardíaca predefinidas (Edwards). A predefinição não conta nada abaixo de metade da tua reserva de frequência cardíaca, por isso uma hora de musculação — em que as séries duras se compensam com os descansos — pode pontuar quase zero. A curva exponencial não tem limiar e pondera muito mais os esforços curtos e intensos. Volta a pontuar o teu histórico e ambas as escalas atingem o mesmo máximo. Desativado por predefinição." } }, "ru": { "stringUnit": { "state": "translated", "value": "Оценивает Усилие по экспоненциальной кривой интенсивности (TRIMP Банистера) вместо стандартных пульсовых зон (Эдвардс). Стандартный вариант не засчитывает ничего ниже половины резерва пульса, поэтому час силовой тренировки — где тяжёлые подходы усредняются с отдыхом — может дать почти ноль. У экспоненциальной кривой нет порога, и она гораздо сильнее учитывает короткие интенсивные усилия. Пересчитывает историю, и обе шкалы достигают одного максимума. По умолчанию выключено." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "以指数强度曲线（Banister TRIMP）计算消耗，而不是默认的心率区间（Edwards）。默认方式对低于心率储备一半的部分完全不计分，因此一小时力量训练——组间休息拉低了平均强度——可能几乎得零分。指数曲线没有下限，会大幅提高短时高强度努力的权重。会重新计算你的历史数据，两种标度的最高值相同。默认关闭。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "以指數強度曲線（Banister TRIMP）計算消耗，而不是預設的心率區間（Edwards）。預設方式對低於心率儲備一半的部分完全不計分，因此一小時重量訓練——組間休息拉低了平均強度——可能幾乎得零分。指數曲線沒有下限，會大幅提高短時高強度努力的權重。會重新計算你的歷史資料，兩種尺度的最高值相同。預設關閉。" } }
     } },
     "A cardiovascular load from time in heart-rate zones (Edwards TRIMP): each zone is weighted so harder ones count for more, summed into one daily figure. Settings offers an exponential alternative (Banister) that credits short, hard efforts more.": { "localizations": {
       "de": { "stringUnit": { "state": "translated", "value": "Eine kardiovaskuläre Last aus der Zeit in den Herzfrequenzzonen (Edwards-TRIMP): Jede Zone wird gewichtet, sodass härtere Zonen mehr zählen, aufsummiert zu einer Tageszahl. In den Einstellungen gibt es eine exponentielle Alternative (Banister), die kurze, harte Belastungen stärker anrechnet." } }, "en": { "stringUnit": { "state": "translated", "value": "A cardiovascular load from time in heart-rate zones (Edwards TRIMP): each zone is weighted so harder ones count for more, summed into one daily figure. Settings offers an exponential alternative (Banister) that credits short, hard efforts more." } }, "es": { "stringUnit": { "state": "translated", "value": "Una carga cardiovascular a partir del tiempo en las zonas de frecuencia cardíaca (TRIMP de Edwards): cada zona se pondera para que las más duras cuenten más, sumado en una sola cifra diaria. En Ajustes hay una alternativa exponencial (Banister) que valora más los esfuerzos cortos e intensos." } }, "fr": { "stringUnit": { "state": "translated", "value": "Une charge cardiovasculaire issue du temps passé dans les zones de fréquence cardiaque (TRIMP d’Edwards) : chaque zone est pondérée pour que les plus intenses comptent davantage, additionnée en un seul chiffre journalier. Les Réglages proposent une alternative exponentielle (Banister) qui valorise davantage les efforts courts et intenses." } }, "it": { "stringUnit": { "state": "translated", "value": "Un carico cardiovascolare dato dal tempo nelle zone di frequenza cardiaca (TRIMP di Edwards): ogni zona è ponderata in modo che quelle più dure contino di più, sommato in un unico dato giornaliero. Nelle Impostazioni c’è un’alternativa esponenziale (Banister) che premia di più gli sforzi brevi e intensi." } }, "pl": { "stringUnit": { "state": "translated", "value": "Obciążenie układu krążenia wynikające z czasu w strefach tętna (TRIMP Edwardsa): każda strefa jest ważona tak, aby trudniejsze liczyły się bardziej, zsumowane w jedną wartość dzienną. W Ustawieniach jest alternatywa wykładnicza (Banister), która mocniej docenia krótkie, intensywne wysiłki." } }, "pt-PT": { "stringUnit": { "state": "translated", "value": "Uma carga cardiovascular a partir do tempo nas zonas de frequência cardíaca (TRIMP de Edwards): cada zona é ponderada para que as mais difíceis contem mais, resumido num valor diário. Nas Definições existe uma alternativa exponencial (Banister) que valoriza mais os esforços curtos e intensos." } }, "ru": { "stringUnit": { "state": "translated", "value": "Сердечно-сосудистая нагрузка по времени в пульсовых зонах (TRIMP Эдвардса): каждая зона взвешивается так, что более тяжёлые учитываются сильнее, и всё суммируется в одно дневное значение. В настройках есть экспоненциальная альтернатива (Banister), которая сильнее засчитывает короткие интенсивные усилия." } }, "zh-Hans": { "stringUnit": { "state": "translated", "value": "根据你在各心率区间的时长得出的心血管负荷（Edwards TRIMP）：区间越高权重越大，汇总为一个每日数字。设置中提供指数式替代方案（Banister），会更看重短时高强度的努力。" } }, "zh-Hant": { "stringUnit": { "state": "translated", "value": "根據你在各心率區間停留時間得出的心血管負荷（Edwards TRIMP）：區間越高權重越大，加總成每日一個數字。設定中提供指數式替代方案（Banister），會更看重短時高強度的努力。" } }
@@ -218743,7 +218743,7 @@
     } },
     "Open your Charge detail" : { "localizations" : {
         "de": {"stringUnit": {"state": "translated", "value": "Ladung im Detail öffnen"}},
-        "en": {"stringUnit": {"state": "translated", "value": "Open your Charge detail"}},
+        "en": {"stringUnit": {"state": "translated", "value": "Open your Recovery detail"}},
         "es": {"stringUnit": {"state": "translated", "value": "Abre el detalle de Carga"}},
         "fr": {"stringUnit": {"state": "translated", "value": "Ouvrir le détail de la charge"}},
         "it": {"stringUnit": {"state": "translated", "value": "Apri il dettaglio della carica"}},
@@ -218755,7 +218755,7 @@
     } },
     "Open your Effort detail" : { "localizations" : {
         "de": {"stringUnit": {"state": "translated", "value": "Belastung im Detail öffnen"}},
-        "en": {"stringUnit": {"state": "translated", "value": "Open your Effort detail"}},
+        "en": {"stringUnit": {"state": "translated", "value": "Open your Strain detail"}},
         "es": {"stringUnit": {"state": "translated", "value": "Abre el detalle de Esfuerzo"}},
         "fr": {"stringUnit": {"state": "translated", "value": "Ouvrir le détail de l'effort"}},
         "it": {"stringUnit": {"state": "translated", "value": "Apri il dettaglio dello sforzo"}},
@@ -218767,7 +218767,7 @@
     } },
     "Open your Rest detail" : { "localizations" : {
         "de": {"stringUnit": {"state": "translated", "value": "Erholung im Detail öffnen"}},
-        "en": {"stringUnit": {"state": "translated", "value": "Open your Rest detail"}},
+        "en": {"stringUnit": {"state": "translated", "value": "Open your Sleep detail"}},
         "es": {"stringUnit": {"state": "translated", "value": "Abre el detalle de Descanso"}},
         "fr": {"stringUnit": {"state": "translated", "value": "Ouvrir le détail du repos"}},
         "it": {"stringUnit": {"state": "translated", "value": "Apri il dettaglio del riposo"}},

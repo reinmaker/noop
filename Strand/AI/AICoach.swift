@@ -372,7 +372,7 @@ final class AICoachEngine: ObservableObject {
 
         // Restore persisted provider / model (falling back to sane defaults).
         let storedProvider = UserDefaults.standard.string(forKey: Self.providerKey)
-            .flatMap(AIProvider.init(rawValue:)) ?? .openAI
+            .flatMap(AIProvider.init(rawValue:)) ?? .anthropic
         self.provider = storedProvider
 
         let storedModel = UserDefaults.standard.string(forKey: Self.modelKey)

@@ -23,7 +23,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var defaultModel: String {
         switch self {
         case .openAI:    return "gpt-5-mini"
-        case .anthropic: return "claude-sonnet-4-6"
+        case .anthropic: return "claude-sonnet-5-5"
         case .gemini:    return "gemini-flash-latest"   // stable alias → current Flash, no version churn (#400)
         case .custom:    return ""   // the user picks the model their server serves
         }
@@ -57,6 +57,8 @@ enum AIProvider: String, CaseIterable, Identifiable {
             ]
         case .anthropic:
             return [
+                "claude-opus-5-5",
+                "claude-sonnet-5-5",
                 "claude-opus-4-8",
                 "claude-sonnet-4-6",
                 "claude-haiku-4-5-20251001",

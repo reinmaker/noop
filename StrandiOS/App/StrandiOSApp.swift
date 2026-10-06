@@ -55,6 +55,8 @@ struct StrandiOSApp: App {
         // #1008: pin the pre-change Overnight-only default for existing installs before
         // anything reads it. Idempotent; a no-op on fresh installs and after the first launch.
         PuffinExperiment.migrateContinuousHrvOvernightDefault()
+        // WHOOP-style fork: one-time preset applied before any @AppStorage below is read.
+        WhoopStylePreset.applyOnce()
         #if DEBUG
         // DEBUG-only promo-screenshot harness: when launched with `--demo-hour <Int>`, pin Today to that
         // hour's day-cycle scene + a per-hour stat frame. No-op (active stays nil) when the arg is absent.
@@ -632,5 +634,28 @@ private struct OuraOnboardingDemoHost: View {
         AddDeviceWizard(live: live, onClose: {}, startAt: (.oura, .prep))
     }
 
+}
+#endif
+
+#if os(iOS)
+/// WHOOP-style fork preset: dark theme, WHOOP colour ramp, 0–21 Strain, plain black Today (no
+/// day-cycle sky) and the Anthropic (Claude) coach. Applied once per install so existing NOOP installs
+/// pick it up too; every value stays changeable afterwards in Settings.
+enum WhoopStylePreset {
+    private static let appliedKey = "whoopStyle.preset.v1"
+
+    static func applyOnce(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: appliedKey) else { return }
+        defaults.set(AppearanceMode.dark.rawValue, forKey: AppearanceMode.storageKey)
+        defaults.set(ChartStyle.classic.rawValue, forKey: ChartStyle.storageKey)
+        defaults.set(SleepChartStyle.filled.rawValue, forKey: SleepChartStyle.storageKey)
+        defaults.set(AccentColor.whoopBlue.rawValue, forKey: AccentColor.storageKey)
+        defaults.set(EffortScale.whoop.rawValue, forKey: UnitPrefs.effortScaleKey)
+        defaults.set(false, forKey: SceneBackgroundPrefs.enabledKey)
+        defaults.set(false, forKey: SkyBehindCardsPrefs.enabledKey)
+        defaults.set(AIProvider.anthropic.rawValue, forKey: "ai.provider")
+        defaults.set(AIProvider.anthropic.defaultModel, forKey: "ai.model")
+        defaults.set(true, forKey: appliedKey)
+    }
 }
 #endif
