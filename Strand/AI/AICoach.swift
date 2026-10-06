@@ -942,10 +942,10 @@ final class AICoachEngine: ObservableObject {
     /// chat) and the headless `generateBrief()` below (used by the scheduled morning-brief notification).
     /// Kept in one place so the two paths never drift.
     private static let briefInstruction = """
-    Based on the data above, give me TODAY'S coaching brief in three short parts: \
-    (1) my readiness in one line, citing Recovery, HRV and Sleep; \
-    (2) exactly what training and Strain target to aim for today and what to avoid; \
-    (3) one specific thing to improve my Recovery. Be punchy and motivating.
+    Based on the data above, give me my Daily Outlook for today, the way the WHOOP coach does in the \
+    morning: today's readiness verdict from my Recovery and its main driver (against my normal), \
+    today's optimal Strain range, two or three suggested activities as short bullets with one emoji \
+    each, and a sleep target for tonight. Bold the key numbers. Keep it short and motivating.
     """
 
     /// K5: Generate today's coaching brief WITHOUT touching the visible chat transcript. Used by the
@@ -1233,6 +1233,10 @@ final class AICoachEngine: ObservableObject {
         }
     }
 
+    /// A one-shot opener to use instead of the screen opener (Home's "Day In Review" row sets it).
+    enum Opener { case dayReview }
+    var nextOpener: Opener?
+
     /// The screen the wearer is on, as last marked by `View.coachScreen(_:)`.
     var currentScreen: CoachScreen { CoachScreenState.current }
 
@@ -1267,8 +1271,14 @@ final class AICoachEngine: ObservableObject {
 
         let context = dataConsent ? await buildFullContext() : noConsentNote
         var wire = wireMessages(context: context)
-        let instruction = Self.screenOpenerInstruction(currentScreen,
+        let instruction: String
+        if nextOpener == .dayReview {
+            instruction = Self.dayReviewInstruction + " Then the special lines."
+        } else {
+            instruction = Self.screenOpenerInstruction(currentScreen,
                                                        hour: Calendar.current.component(.hour, from: Date()))
+        }
+        nextOpener = nil
         wire.append((.user, wire.isEmpty ? context + "\n\n---\n\n" + instruction : instruction))
 
         let placeholder = ChatMessage(role: .assistant, text: "")
