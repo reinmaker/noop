@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """WHOOP-style fork: rename NOOP's score names in the English string catalogs.
 
-Charge -> Recovery, Effort -> Strain, Rest -> Sleep. Only the English ("en") localization is
+Charge -> Recovery, Effort -> Strain, Rest -> Sleep, and the app name NOOP -> Yoop. Only the English ("en") localization is
 written; catalog keys and other languages are untouched, so the Swift code needs no changes.
 Battery "Charge" (charge the strap) and gym "Rest" (rest period / resting HR) are left alone.
 Idempotent: re-running after an upstream merge re-applies the rename.
@@ -22,6 +22,8 @@ def rename(text: str) -> str:
         text = re.sub(r"\bCharge\b", "Recovery", text)
         text = re.sub(r"\bRest\b", "Sleep", text)
     text = re.sub(r"\bEffort\b", "Strain", text)
+    # The fork's app name.
+    text = re.sub(r"\bNOOP\b", "Yoop", text)
     # Tidy phrases that now say the same word twice.
     text = text.replace("Recovery / Recovery", "Recovery")
     text = text.replace("Recovery, NOOP's Recovery score,", "Recovery")
@@ -85,6 +87,13 @@ def patch(raw: str):
                 continue
             unit = {"state": "translated", "value": new}
             ins = '"en": {"stringUnit": ' + json.dumps(unit, ensure_ascii=False) + '}'
+            if "localizations" not in data["strings"][key]:
+                # An entry with no localizations block at all: add one right inside the entry.
+                empty = not data["strings"][key]
+                edits.append((km.end(), km.end(), '"localizations": {' + ins + '}' + ("" if empty else ", ")))
+                exp.setdefault("localizations", {})["en"] = {"stringUnit": unit}
+                count += 1
+                continue
             lm = re.compile(r'"localizations"\s*:\s*\{').search(raw, km.end())
             if lm and not re.compile(r'^\s*\}').match(raw, lm.end()):
                 edits.append((lm.end(), lm.end(), ins + ", "))
