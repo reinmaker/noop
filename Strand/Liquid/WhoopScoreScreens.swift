@@ -21,10 +21,14 @@ struct WhoopCoachPill: View {
 
     private var cacheKey: String {
         let d = repo.days.last
-        let fingerprint = [d?.day ?? "", d?.recovery.map { String(Int($0)) } ?? "",
-                           d?.totalSleepMin.map { String(Int($0)) } ?? "",
-                           d?.strain.map { String(Int(AICoachEngine.strain21($0))) } ?? ""].joined(separator: "|")
-        return "whoopStyle.pill.\(screen.rawValue).\(fingerprint)"
+        var parts: [String] = [d?.day ?? ""]
+        let recovery: Double? = d?.recovery
+        let sleep: Double? = d?.totalSleepMin
+        let strain: Double? = d?.strain.map { AICoachEngine.strain21($0) }
+        parts.append(recovery.map { String(Int($0)) } ?? "")
+        parts.append(sleep.map { String(Int($0)) } ?? "")
+        parts.append(strain.map { String(Int($0)) } ?? "")
+        return "whoopStyle.pill." + screen.rawValue + "." + parts.joined(separator: "|")
     }
 
     var body: some View {
