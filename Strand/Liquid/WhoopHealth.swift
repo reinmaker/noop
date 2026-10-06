@@ -74,9 +74,17 @@ struct WhoopHealthHeader: View {
 
     // MARK: Health Monitor grid
 
-    private static let gridOrder: [(key: String, label: String, icon: String)] = [
-        ("resp", "RESP", "lungs"), ("spo2", "SPO₂", "drop"), ("rhr", "RHR", "heart"),
-        ("hrv", "HRV", "waveform.path.ecg"), ("skin", "TEMP", "thermometer.medium"),
+    private struct VitalCell: Identifiable {
+        let key: String
+        let label: String
+        let icon: String
+        var id: String { key }
+    }
+
+    private static let gridOrder = [
+        VitalCell(key: "resp", label: "RESP", icon: "lungs"), VitalCell(key: "spo2", label: "SPO₂", icon: "drop"),
+        VitalCell(key: "rhr", label: "RHR", icon: "heart"), VitalCell(key: "hrv", label: "HRV", icon: "waveform.path.ecg"),
+        VitalCell(key: "skin", label: "TEMP", icon: "thermometer.medium"),
     ]
 
     private var healthMonitor: some View {
@@ -88,7 +96,7 @@ struct WhoopHealthHeader: View {
         return NavigationLink(value: TabRoute.health) {
             WhoopTitledCard(title: String(localized: "HEALTH MONITOR")) {
                 HStack(spacing: 0) {
-                    ForEach(Self.gridOrder, id: \.key) { item in
+                    ForEach(Self.gridOrder) { item in
                         let band = byKey[item.key]?.banding.band ?? .noData
                         VStack(spacing: NoopMetrics.space2) {
                             Image(systemName: item.icon)

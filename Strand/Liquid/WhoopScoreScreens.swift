@@ -279,14 +279,16 @@ struct WhoopRecoveryScreen: View {
                     .padding(.top, NoopMetrics.space2)
                 WhoopWeeklyBars(title: String(localized: "RECOVERY"),
                                 points: week.compactMap { d in
-                                    d.recovery.map { (WhoopDays.short(d.day), $0, "\(Int($0.rounded()))%",
-                                                      StrandPalette.recoveryColor($0)) }
+                                    d.recovery.map { r -> (day: String, value: Double, label: String, color: Color) in
+                                        (WhoopDays.short(d.day), r, "\(Int(r.rounded()))%", StrandPalette.recoveryColor(r))
+                                    }
                                 },
                                 maxValue: 100)
                 WhoopWeeklyBars(title: String(localized: "HEART RATE VARIABILITY"),
                                 points: week.compactMap { d in
-                                    d.avgHrv.map { (WhoopDays.short(d.day), $0, "\(Int($0.rounded()))",
-                                                    StrandPalette.restColor) }
+                                    d.avgHrv.map { h -> (day: String, value: Double, label: String, color: Color) in
+                                        (WhoopDays.short(d.day), h, "\(Int(h.rounded()))", StrandPalette.restColor)
+                                    }
                                 },
                                 maxValue: max(1, week.compactMap(\.avgHrv).max() ?? 1))
             }
