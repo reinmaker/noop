@@ -161,6 +161,8 @@ struct LiquidTodayView: View {
     // Custom liquid pull-to-refresh: a vessel that FILLS as you drag, releases into a refresh (replaces
     // the system spinner). Driven by the scroll's top overscroll offset.
     @State private var pullY: CGFloat = 0
+    /// WHOOP-style: once the rings scroll away, a compact ring bar sticks to the top.
+    @State private var ringsCollapsed = false
     @State private var refreshArmed = false
     @State private var refreshing = false
     @State private var pullHaptic = 0
@@ -412,6 +414,13 @@ struct LiquidTodayView: View {
             #endif
         }
         .coordinateSpace(name: Self.pullSpace)
+        .overlay(alignment: .top) {
+            if ringsCollapsed {
+                compactRingsBar
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: ringsCollapsed)
         #if os(iOS)
         // #697 parity: ScreenScaffold already stops a vertical scroll from drifting/bouncing the
         // screen left-right on every other tab. Liquid Today runs its own ScrollView (not
@@ -528,6 +537,9 @@ struct LiquidTodayView: View {
     /// Arm the refresh once the pull passes the threshold; FIRE it when the finger releases (the pull
     /// springs back toward zero). Guarded so it can't double-fire or re-trigger mid-refresh.
     private func handlePull(_ y: CGFloat) {
+        // Flip only on the threshold crossing, so scrolling does not re-render the dashboard per frame.
+        let collapsed = y < -Self.ringsCollapseOffset
+        if collapsed != ringsCollapsed { ringsCollapsed = collapsed }
         let nextPullY = max(0, y)
         // Normal upward scrolling keeps reporting negative offsets. Avoid invalidating the whole
         // dashboard for every such frame when the visible pull indicator is already at zero.
@@ -688,6 +700,42 @@ struct LiquidTodayView: View {
         }
         .buttonStyle(LiquidPressStyle())
         .accessibilityLabel("Start a live session. Beta. Silent strap coaching against today's Charge.")
+    }
+
+    /// Scroll distance (points) after which the rings count as scrolled away.
+    private static let ringsCollapseOffset: CGFloat = 290
+
+    /// The compact sticky bar WHOOP shows once its rings scroll off: a small ring and label per score.
+    private var compactRingsBar: some View {
+        let strain = effortStrain(displayDay).map { UnitFormatter.effortValue($0, scale: .whoop) }
+        return HStack {
+            miniRing(String(localized: "SLEEP"), fraction: restScore.map { $0 / 100 }, tint: StrandPalette.restColor)
+            Spacer()
+            miniRing(String(localized: "RECOVERY"), fraction: chargeDisplay.pct.map { $0 / 100 },
+                     tint: chargeDisplay.pct.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor)
+            Spacer()
+            miniRing(String(localized: "STRAIN"), fraction: strain.map { $0 / 21 }, tint: StrandPalette.effortColor)
+        }
+        .padding(.horizontal, NoopMetrics.space5)
+        .padding(.vertical, NoopMetrics.space3)
+        .frame(maxWidth: .infinity)
+        .background(StrandPalette.surfaceBase.opacity(0.96).ignoresSafeArea(edges: .top))
+    }
+
+    private func miniRing(_ label: String, fraction: Double?, tint: Color) -> some View {
+        HStack(spacing: NoopMetrics.space2) {
+            ZStack {
+                Circle().stroke(WhoopStyle.ringTrack, lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: min(1, max(0, fraction ?? 0)))
+                    .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 22, height: 22)
+            Text(label)
+                .font(WhoopStyle.smallLabel)
+                .foregroundStyle(StrandPalette.textPrimary)
+        }
     }
 
     /// WHOOP-style Home: the daily insight, the Health / Stress Monitor overview cards and My Day.
