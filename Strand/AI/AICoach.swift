@@ -1346,6 +1346,16 @@ final class AICoachEngine: ObservableObject {
         return parsed
     }
 
+    /// The one-line summary on a score screen's Coach pill (WHOOP's "Nice work, you gave yourself a long
+    /// night..."). Non-streaming, outside the chat transcript; nil when the Coach is not set up.
+    func screenSummary(_ screen: CoachScreen) async -> String? {
+        await headlessReply("""
+        In one or two sentences (under 30 words), give the headline of my \(screen.describedForCoach) \
+        for today: the key number against my normal and what it means for me. Speak to me directly, \
+        plain text, at most one emoji, and leave out the special lines.
+        """)
+    }
+
     /// Pure: a reply's shown body and its quick replies.
     nonisolated static func splitReplies(_ text: String) -> (body: String, replies: [String]) {
         let p = parseReply(text)

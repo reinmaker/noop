@@ -36,6 +36,8 @@ struct WhoopRingGauge: View {
     var animated: Bool = true
     /// Optional label inside the ring under the number (the Sleep screen's "SLEEP PERFORMANCE").
     var caption: String? = nil
+    /// Optional band drawn on the track (the Strain ring's optimal range), in `maxValue` units.
+    var band: ClosedRange<Double>? = nil
 
     @State private var shown: Double = 0
 
@@ -57,6 +59,12 @@ struct WhoopRingGauge: View {
     var body: some View {
         ZStack {
             Circle().stroke(WhoopStyle.ringTrack, lineWidth: lineWidth)
+            if let band, maxValue > 0 {
+                Circle()
+                    .trim(from: min(1, band.lowerBound / maxValue), to: min(1, band.upperBound / maxValue))
+                    .stroke(StrandPalette.textTertiary.opacity(0.55), style: StrokeStyle(lineWidth: lineWidth))
+                    .rotationEffect(.degrees(-90))
+            }
             Circle()
                 .trim(from: 0, to: shown)
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
