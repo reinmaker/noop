@@ -20,7 +20,7 @@ struct CoachPlan: Codable, Equatable {
     }
 
     /// Record a commitment for today.
-    static func commit(name: String, why: String) {
+    @MainActor static func commit(name: String, why: String) {
         let plan = CoachPlan(day: Repository.logicalDayKey(Date()), name: name, why: why)
         UserDefaults.standard.set(plan.encoded, forKey: storageKey)
     }
