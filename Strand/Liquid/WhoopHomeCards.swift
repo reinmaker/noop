@@ -1,0 +1,592 @@
+import SwiftUI
+import Charts
+import StrandAnalytics
+import StrandDesign
+import WhoopStore
+
+// WHOOP-style fork: the "My Day" and dashboard cards under the Home rings (Tonight's Sleep, Activities,
+// My Journal, My Dashboard, the Stress Monitor chart and the 7-day Strain & Recovery chart). Every value
+// comes from NOOP's own on-device data and existing helpers; nothing new is computed for scoring.
+
+// MARK: - Shared pieces
+
+/// A WHOOP-style card: UPPERCASE title with an optional chevron, then content.
+struct WhoopTitledCard<Content: View>: View {
+    let title: String
+    var showsChevron: Bool = true
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+            HStack {
+                Text(title)
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: NoopMetrics.space1)
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(WhoopStyle.detail)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(WhoopStyle.compactPadding)
+        .whoopCard()
+    }
+}
+
+/// A wide, quiet WHOOP-style action button ("EDIT ALARM", "ADD ACTIVITY").
+struct WhoopActionButtonLabel: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: NoopMetrics.space2) {
+            Image(systemName: systemImage).font(WhoopStyle.detail)
+            Text(title).font(WhoopStyle.smallLabel)
+        }
+        .foregroundStyle(StrandPalette.textPrimary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, NoopMetrics.space3)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(WhoopStyle.ringTrack))
+    }
+}
+
+private enum WhoopTime {
+    static func clock(_ date: Date) -> String {
+        date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+    }
+
+    static func duration(minutes: Double) -> String {
+        let m = Int(minutes.rounded())
+        return String(format: "%d:%02d", m / 60, m % 60)
+    }
+}
+
+// MARK: - Tonight's Sleep
+
+/// "TONIGHT'S SLEEP": recommended bedtime (wake time minus sleep need) and the strap alarm.
+///
+/// The alarm half uses the same gate and resolver as the Alarms screen (`smartAlarmEnabled`, the strap
+/// arm check and `AppModel.nextSmartAlarmDate` with the per-day overrides), so it can never show an
+/// alarm that will not fire. Without an armed alarm, bedtime counts back from the usual wake time.
+struct WhoopTonightsSleepCard: View {
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var behavior: BehaviorStore
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var router: NavRouter
+
+    private var strapAlarmWillArm: Bool {
+        !(model.whoop5Detected && !PuffinExperiment.isEnabled)
+    }
+
+    private func nextAlarm(from now: Date) -> Date? {
+        guard behavior.smartAlarmEnabled, strapAlarmWillArm else { return nil }
+        return AppModel.nextSmartAlarmDate(minutes: behavior.smartAlarmMinutes,
+                                           weekdays: behavior.smartAlarmWeekdays,
+                                           overrides: WindDownNudge.perDayWakeOverrides,
+                                           from: now)
+    }
+
+    /// The next occurrence of the usual wake time, used when no alarm is armed.
+    private func usualWake(from now: Date) -> Date {
+        let cal = Calendar.current
+        let minutes = WindDownNudge.wakeMinutes
+        let today = cal.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: now) ?? now
+        return today > now ? today : (cal.date(byAdding: .day, value: 1, to: today) ?? today)
+    }
+
+    var body: some View {
+        let now = Date()
+        let alarm = nextAlarm(from: now)
+        let wake = alarm ?? usualWake(from: now)
+        let needMin = SleepModel.sleepNeedMin(days: repo.days)
+        let bedtime = wake.addingTimeInterval(-needMin * 60)
+        let bedtimeText = bedtime <= now ? String(localized: "Now") : WhoopTime.clock(bedtime)
+
+        Button { router.openAlarms() } label: {
+            WhoopTitledCard(title: String(localized: "TONIGHT'S SLEEP")) {
+                HStack(alignment: .top) {
+                    VStack(spacing: NoopMetrics.space1) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sunset").font(WhoopStyle.icon)
+                            Text(bedtimeText).font(WhoopStyle.number(24))
+                        }
+                        Text("RECOMMENDED\nBEDTIME")
+                            .font(WhoopStyle.smallLabel)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    Rectangle()
+                        .fill(WhoopStyle.ringTrack)
+                        .frame(height: 1)
+                        .frame(maxWidth: 60)
+                        .padding(.top, NoopMetrics.space3)
+                    VStack(spacing: NoopMetrics.space1) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "alarm").font(WhoopStyle.icon)
+                            Text(WhoopTime.clock(wake)).font(WhoopStyle.number(24))
+                        }
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(alarm != nil ? WhoopStyle.rangeGreen : StrandPalette.textTertiary)
+                                .frame(width: 6, height: 6)
+                            Text(alarm != nil ? String(localized: "ALARM ON") : String(localized: "USUAL WAKE"))
+                                .font(WhoopStyle.smallLabel)
+                                .foregroundStyle(alarm != nil ? WhoopStyle.rangeGreen : StrandPalette.textSecondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .foregroundStyle(StrandPalette.textPrimary)
+                WhoopActionButtonLabel(title: String(localized: "EDIT ALARM"), systemImage: "pencil")
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Activities
+
+/// "ACTIVITIES": last night's sleep and today's workouts as rows, with Add / Start buttons. Start uses
+/// the same sport picker and live-workout flow as NOOP's own Start workout control.
+struct WhoopActivitiesCard: View {
+    let sleepMinutes: Double?
+    let sleepStart: Date?
+    let sleepEnd: Date?
+    let workouts: [WorkoutRow]
+
+    @EnvironmentObject private var model: AppModel
+    @State private var showLiveWorkout = false
+    @State private var showStartSport = false
+
+    var body: some View {
+        WhoopTitledCard(title: String(localized: "ACTIVITIES"), showsChevron: false) {
+            VStack(spacing: NoopMetrics.space2) {
+                if let sleepMinutes {
+                    NavigationLink(value: TabRoute.sleep) {
+                        row(icon: "moon.fill", chip: WhoopTime.duration(minutes: sleepMinutes),
+                            chipColor: StrandPalette.restColor, name: String(localized: "SLEEP"),
+                            start: sleepStart, end: sleepEnd)
+                    }
+                    .buttonStyle(.plain)
+                }
+                ForEach(workouts, id: \.startTs) { w in
+                    NavigationLink(value: TabRoute.workouts) {
+                        row(icon: "figure.run",
+                            chip: w.strain.map { String(format: "%.1f", AICoachEngine.strain21($0)) } ?? "–",
+                            chipColor: StrandPalette.effortColor,
+                            name: WorkoutSource.displaySport(w.sport).uppercased(),
+                            start: Date(timeIntervalSince1970: TimeInterval(w.startTs)),
+                            end: Date(timeIntervalSince1970: TimeInterval(w.endTs)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                if sleepMinutes == nil && workouts.isEmpty {
+                    Text("No activities yet today")
+                        .font(WhoopStyle.body)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            HStack(spacing: NoopMetrics.space2) {
+                NavigationLink(value: TabRoute.workouts) {
+                    WhoopActionButtonLabel(title: String(localized: "ADD ACTIVITY"), systemImage: "plus")
+                }
+                .buttonStyle(.plain)
+                Button {
+                    if model.activeWorkout == nil { showStartSport = true } else { showLiveWorkout = true }
+                } label: {
+                    WhoopActionButtonLabel(
+                        title: model.activeWorkout == nil ? String(localized: "START ACTIVITY")
+                                                          : String(localized: "VIEW ACTIVITY"),
+                        systemImage: "stopwatch")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $showLiveWorkout) {
+            LiveWorkoutView(onClose: { showLiveWorkout = false })
+                .environmentObject(model.live)
+        }
+        .workoutSelectionCover(isPresented: $showStartSport) {
+            StartWorkoutSheet { name in
+                model.startWorkout(sport: name)
+                showLiveWorkout = true
+            }
+        }
+    }
+
+    private func row(icon: String, chip: String, chipColor: Color, name: String,
+                     start: Date?, end: Date?) -> some View {
+        HStack(spacing: NoopMetrics.space3) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(WhoopStyle.icon)
+                Text(chip).font(WhoopStyle.number(18))
+            }
+            .foregroundStyle(WhoopStyle.onGradient)
+            .frame(width: 88, height: 40)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(chipColor))
+            Text(name)
+                .font(WhoopStyle.smallLabel)
+                .foregroundStyle(StrandPalette.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: NoopMetrics.space1)
+            VStack(alignment: .trailing, spacing: 2) {
+                if let start { Text(WhoopTime.clock(start)) }
+                if let end { Text(WhoopTime.clock(end)) }
+            }
+            .font(WhoopStyle.caption)
+            .foregroundStyle(StrandPalette.textSecondary)
+        }
+        .padding(NoopMetrics.space2)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(WhoopStyle.ringTrack.opacity(0.6)))
+    }
+}
+
+// MARK: - My Journal
+
+/// "MY JOURNAL": the last seven days with a check for each day that has journal answers, plus the
+/// Behavior Insights button (NOOP's "What Moves You" hub).
+struct WhoopJournalCard: View {
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var router: NavRouter
+    @State private var loggedDays: Set<String> = []
+
+    private var lastSevenDays: [Date] {
+        let cal = Calendar.current
+        let today = Repository.logicalDay(Date())
+        return (0..<7).reversed().compactMap { cal.date(byAdding: .day, value: -$0, to: today) }
+    }
+
+    var body: some View {
+        WhoopTitledCard(title: String(localized: "MY JOURNAL")) {
+            Button { router.openJournal() } label: {
+                HStack(spacing: 0) {
+                    ForEach(lastSevenDays, id: \.self) { day in
+                        dayColumn(day)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            Button { router.openInsightsHub() } label: {
+                WhoopActionButtonLabel(title: String(localized: "BEHAVIOR INSIGHTS"), systemImage: "lightbulb")
+            }
+            .buttonStyle(.plain)
+        }
+        .task {
+            let entries = await repo.journalEntries(days: 8)
+            loggedDays = Set(entries.map(\.day))
+        }
+    }
+
+    private func dayColumn(_ day: Date) -> some View {
+        let key = Repository.localDayKey(day)
+        let logged = loggedDays.contains(key)
+        let isToday = Calendar.current.isDate(day, inSameDayAs: Repository.logicalDay(Date()))
+        return VStack(spacing: NoopMetrics.space2) {
+            Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                .font(WhoopStyle.smallLabel)
+                .foregroundStyle(StrandPalette.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            ZStack {
+                Capsule()
+                    .fill(logged ? WhoopStyle.rangeGreen : WhoopStyle.ringTrack)
+                    .frame(width: isToday ? 40 : 22, height: 22)
+                Image(systemName: logged ? "checkmark" : "plus")
+                    .font(WhoopStyle.chevron)
+                    .foregroundStyle(logged ? StrandPalette.surfaceBase : StrandPalette.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - My Dashboard
+
+/// "My Dashboard": WHOOP-style metric rows (icon, UPPERCASE name, today's value, the 30-day average
+/// under it, and an arrow coloured by whether the move is good or bad for that metric).
+struct WhoopDashboardSection: View {
+    let today: DailyMetric?
+    let days: [DailyMetric]
+    let steps: Double?
+    let calories: Double?
+    let vo2max: Double?
+    let onCustomize: () -> Void
+
+    private struct Row: Identifiable {
+        let id: String
+        let label: String
+        let icon: String
+        let value: Double?
+        let average: Double?
+        let decimals: Int
+        let higherIsBetter: Bool
+        let route: TabRoute?
+    }
+
+    private func average(_ pick: (DailyMetric) -> Double?) -> Double? {
+        let prior = days.filter { $0.day != today?.day }.suffix(30).compactMap(pick)
+        return prior.isEmpty ? nil : prior.reduce(0, +) / Double(prior.count)
+    }
+
+    private var rows: [Row] {
+        [
+            Row(id: "hrv", label: String(localized: "HEART RATE VARIABILITY"), icon: "waveform.path.ecg",
+                value: today?.avgHrv, average: average { $0.avgHrv }, decimals: 0, higherIsBetter: true,
+                route: .metric("hrv")),
+            Row(id: "rhr", label: String(localized: "RESTING HEART RATE"), icon: "heart",
+                value: today?.restingHr.map(Double.init), average: average { $0.restingHr.map(Double.init) },
+                decimals: 0, higherIsBetter: false, route: .metric("rhr")),
+            Row(id: "resp", label: String(localized: "RESPIRATORY RATE"), icon: "lungs",
+                value: today?.respRateBpm, average: average { $0.respRateBpm }, decimals: 1,
+                higherIsBetter: false, route: .metric("resp_rate")),
+            Row(id: "spo2", label: String(localized: "BLOOD OXYGEN"), icon: "drop",
+                value: today?.spo2Pct, average: average { $0.spo2Pct }, decimals: 0, higherIsBetter: true,
+                route: nil),
+            Row(id: "steps", label: String(localized: "STEPS"), icon: "shoeprints.fill",
+                value: steps, average: average { $0.steps.map(Double.init) }, decimals: 0,
+                higherIsBetter: true, route: nil),
+            Row(id: "kcal", label: String(localized: "CALORIES"), icon: "flame",
+                value: calories, average: average { $0.activeKcalEst }, decimals: 0, higherIsBetter: true,
+                route: nil),
+            Row(id: "vo2", label: String(localized: "VO₂ MAX"), icon: "bicycle",
+                value: vo2max, average: nil, decimals: 0, higherIsBetter: true, route: nil),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            HStack {
+                Text("My Dashboard")
+                    .font(WhoopStyle.sectionTitle)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Spacer()
+                Button(action: onCustomize) {
+                    HStack(spacing: 6) {
+                        Text("CUSTOMIZE").font(WhoopStyle.smallLabel)
+                        Image(systemName: "pencil").font(WhoopStyle.chevron)
+                    }
+                    .foregroundStyle(WhoopStyle.onGradient)
+                    .padding(.horizontal, NoopMetrics.space3)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(WhoopStyle.reviewGradient))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, NoopMetrics.space2)
+            ForEach(rows.filter { $0.value != nil }) { row in
+                if let route = row.route {
+                    NavigationLink(value: route) { rowView(row) }.buttonStyle(.plain)
+                } else {
+                    rowView(row)
+                }
+            }
+        }
+    }
+
+    private func format(_ v: Double, _ decimals: Int) -> String {
+        decimals > 0 ? String(format: "%.\(decimals)f", v) : Int(v.rounded()).formatted()
+    }
+
+    private func rowView(_ row: Row) -> some View {
+        HStack(spacing: NoopMetrics.space3) {
+            Image(systemName: row.icon)
+                .font(WhoopStyle.icon)
+                .foregroundStyle(StrandPalette.textSecondary)
+                .frame(width: 24)
+            Text(row.label)
+                .font(WhoopStyle.smallLabel)
+                .foregroundStyle(StrandPalette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer(minLength: NoopMetrics.space1)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(row.value.map { format($0, row.decimals) } ?? "—")
+                    .font(WhoopStyle.number(20))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                if let avg = row.average {
+                    Text(format(avg, row.decimals))
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+            }
+            arrow(row)
+        }
+        .padding(.horizontal, WhoopStyle.compactPadding)
+        .padding(.vertical, NoopMetrics.space3)
+        .whoopCard()
+    }
+
+    @ViewBuilder private func arrow(_ row: Row) -> some View {
+        if let v = row.value, let avg = row.average, abs(v - avg) > 0.0001 {
+            let up = v > avg
+            let good = up == row.higherIsBetter
+            Image(systemName: up ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                .font(WhoopStyle.chevron)
+                .foregroundStyle(good ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
+                .frame(width: 10)
+        } else {
+            Color.clear.frame(width: 10)
+        }
+    }
+}
+
+// MARK: - Stress Monitor chart
+
+/// "STRESS MONITOR": today's 0-3 stress line, from the same `StressDayCurve` the Stress screen uses.
+struct WhoopStressChartCard: View {
+    let currentStress: Double?
+
+    @EnvironmentObject private var repo: Repository
+    @State private var points: [DaytimeStress.HourPoint] = []
+
+    private struct StressSample: Identifiable {
+        let time: Date
+        let level: Double
+        var id: Date { time }
+    }
+
+    private var level: (word: String, color: Color) {
+        guard let s = currentStress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
+        switch s {
+        case ..<1: return (String(localized: "LOW"), WhoopStyle.rangeGreen)
+        case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.rangeYellow)
+        default: return (String(localized: "HIGH"), WhoopStyle.rangeAmber)
+        }
+    }
+
+    var body: some View {
+        NavigationLink(value: TabRoute.stress) {
+            WhoopTitledCard(title: String(localized: "STRESS MONITOR")) {
+                HStack {
+                    Text("Today")
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                    Spacer()
+                    Text(level.word).font(WhoopStyle.smallLabel).foregroundStyle(level.color)
+                    Text(currentStress.map { String(format: "%.1f", $0) } ?? "—")
+                        .font(WhoopStyle.number(18))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                }
+                let scored = points.compactMap { p in
+                    p.level.map { StressSample(time: Date(timeIntervalSince1970: TimeInterval(p.startTs)), level: $0) }
+                }
+                if scored.count >= 2 {
+                    Chart(scored) { item in
+                        LineMark(x: .value("Time", item.time), y: .value("Stress", item.level))
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(Gradient(colors: [WhoopStyle.rangeGreen, WhoopStyle.rangeYellow,
+                                                               WhoopStyle.rangeAmber]))
+                    }
+                    .chartYScale(domain: 0...3)
+                    .chartYAxis {
+                        AxisMarks(values: [0, 1, 2, 3]) { _ in
+                            AxisGridLine().foregroundStyle(WhoopStyle.ringTrack)
+                            AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
+                        }
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                            AxisValueLabel(format: .dateTime.hour()).foregroundStyle(StrandPalette.textTertiary)
+                        }
+                    }
+                    .frame(height: 140)
+                } else {
+                    Text("Builds through the day as your strap syncs.")
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .task {
+            let result = await StressDayCurve.today(
+                repo: repo, personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled)?.result
+            points = result?.timeline ?? []
+        }
+    }
+}
+
+// MARK: - Strain & Recovery
+
+/// "STRAIN & RECOVERY": the last seven days, Strain (0-21, blue) and Recovery (%, coloured) on one chart.
+struct WhoopStrainRecoveryCard: View {
+    let days: [DailyMetric]
+
+    private struct Point: Identifiable {
+        let id = UUID()
+        let day: String
+        let series: String
+        let value: Double
+        let label: String
+        let color: Color
+    }
+
+    private static let dayParser: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private func shortDay(_ key: String) -> String {
+        guard let d = Self.dayParser.date(from: key) else { return key }
+        return d.formatted(.dateTime.weekday(.abbreviated))
+    }
+
+    private var points: [Point] {
+        days.suffix(7).flatMap { d -> [Point] in
+            var out: [Point] = []
+            if let s = d.strain {
+                let v = AICoachEngine.strain21(s)
+                out.append(Point(day: shortDay(d.day), series: "Strain", value: v,
+                                 label: String(format: "%.1f", v), color: StrandPalette.effortColor))
+            }
+            if let r = d.recovery {
+                out.append(Point(day: shortDay(d.day), series: "Recovery", value: r * 21 / 100,
+                                 label: "\(Int(r.rounded()))%", color: StrandPalette.recoveryColor(r)))
+            }
+            return out
+        }
+    }
+
+    var body: some View {
+        WhoopTitledCard(title: String(localized: "STRAIN & RECOVERY"), showsChevron: false) {
+            if points.isEmpty {
+                Text("Fills in as days are scored.")
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            } else {
+                Chart(points) { p in
+                    LineMark(x: .value("Day", p.day), y: .value("Value", p.value))
+                        .foregroundStyle(by: .value("Series", p.series))
+                    PointMark(x: .value("Day", p.day), y: .value("Value", p.value))
+                        .foregroundStyle(p.color)
+                        .annotation(position: .top, spacing: 2) {
+                            Text(p.label).font(WhoopStyle.chevron).foregroundStyle(p.color)
+                        }
+                }
+                .chartForegroundStyleScale(["Strain": StrandPalette.effortColor,
+                                            "Recovery": StrandPalette.textTertiary])
+                .chartLegend(.hidden)
+                .chartYScale(domain: 0...23)
+                .chartYAxis {
+                    AxisMarks(values: [0, 7, 14, 21]) { _ in
+                        AxisGridLine().foregroundStyle(WhoopStyle.ringTrack)
+                        AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks { _ in AxisValueLabel().foregroundStyle(StrandPalette.textSecondary) }
+                }
+                .frame(height: 190)
+            }
+        }
+    }
+}

@@ -358,7 +358,7 @@ struct LiquidTodayView: View {
                     // here as the SAME leaf the classic TodayView renders (and Android's WorkoutInProgressCard),
                     // pinned above the reorderable block so an active manual workout is immediately visible
                     // and opens the existing workout flow. Today also offers Start when no workout is active.
-                    ActiveWorkoutIndicatorSection(showStart: selectedDayOffset == 0)
+                    ActiveWorkoutIndicatorSection(showStart: false)
                     // #today-layout (parity with Android): every Today section — the Charge/Effort/Rest hero
                     // and Start-session included — renders in the user's saved order. Reorder via the Arrange
                     // sheet (the header's up/down button; native drag rows); the order persists under the
@@ -565,90 +565,84 @@ struct LiquidTodayView: View {
 
     // MARK: - Scene (sky title + controls + hero)
 
+    /// The centred "< TODAY >" pill: arrows step a day, the label opens the calendar.
+    private var whoopDayPill: some View {
+        HStack(spacing: 0) {
+            Button { stepDay(1) } label: {
+                Image(systemName: "chevron.left")
+                    .font(WhoopStyle.detail)
+                    .frame(width: 32, height: 32)
+            }
+            .disabled(selectedDayOffset >= earliestDayOffset)
+            .accessibilityLabel(Text("Previous day"))
+            Button { showDayPicker = true } label: {
+                Text(dayTitle.uppercased())
+                    .font(WhoopStyle.smallLabel)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, NoopMetrics.space4)
+                    .padding(.vertical, NoopMetrics.space2)
+                    .background(Capsule().fill(WhoopStyle.ringTrack))
+            }
+            .accessibilityLabel("\(dayTitle). Tap to pick a day.")
+            .popover(isPresented: $showDayPicker) {
+                DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
+                           displayedComponents: [.date])
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .padding(12)
+                    .frame(minWidth: 320, minHeight: 360)
+                    .liquidPopoverAdaptation()
+            }
+            Button { stepDay(-1) } label: {
+                Image(systemName: "chevron.right")
+                    .font(WhoopStyle.detail)
+                    .frame(width: 32, height: 32)
+            }
+            .disabled(selectedDayOffset == 0)
+            .accessibilityLabel(Text("Next day"))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(StrandPalette.textPrimary)
+        .padding(3)
+        .background(Capsule().fill(WhoopStyle.cardFill))
+    }
+
+    /// Step the shown day: +1 is one day older, -1 one day newer (the swipe's convention).
+    private func stepDay(_ delta: Int) {
+        let next = Self.clampedDayOffset(current: selectedDayOffset, delta: delta, maxOffset: earliestDayOffset)
+        guard next != selectedDayOffset else { return }
+        withAnimation(StrandMotion.interactive) { selectedDayOffset = next }
+    }
+
     private var scene: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .topTrailing) {
-                Button { showDayPicker = true } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(dayTitle)
-                            .font(StrandFont.rounded(28))
-                            .foregroundStyle(StrandPalette.textPrimary)
-                            .shadow(color: .black.opacity(0.4), radius: 10, y: 1)
-                        Text(dateLine)
-                            .font(StrandFont.caption)
-                            .foregroundStyle(StrandPalette.textSecondary)
-                            .shadow(color: .black.opacity(0.35), radius: 8, y: 1)
-                    }
-                    .contentShape(Rectangle())
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // WHOOP-style header: profile on the left, a centred date pill with day arrows, strap battery
+            // on the right. Customize moved to My Dashboard and "+" to My Day, as in the WHOOP app.
+            HStack(spacing: NoopMetrics.space2) {
+                // Profile pic (the one set in Settings) → opens Settings, matching the classic Today.
+                Button { showSettings = true } label: {
+                    Color.clear.frame(
+                        width: NoopMetrics.compactControlSize,
+                        height: NoopMetrics.compactControlSize
+                    )
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(dayTitle). Tap to pick a day, swipe to change day.")
-                .popover(isPresented: $showDayPicker) {
-                    DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
-                               displayedComponents: [.date])
-                        .datePickerStyle(.graphical)
-                        .labelsHidden()
-                        .padding(12)
-                        .frame(minWidth: 320, minHeight: 360)
-                        .liquidPopoverAdaptation()
-                }
-                // Long names fade beneath the trailing controls while an expanded transient control
-                // participates in layout and pushes its preceding siblings left. The reserve is the
-                // cluster's MEASURED width, not a constant: a constant is only ever right for the exact
-                // set of controls it was written against, and this row has already gained one (Customize,
-                // #1207) since. Measuring also means the fade tracks the sync capsule as it expands,
-                // which is the push-left behaviour rather than a separate approximation of it.
-                .headerTrailingControlFadeMask(reserving: headerControlsWidth)
-                HStack(spacing: headerClusterSpacing) {
-                    // Profile pic (the one set in Settings) → opens Settings, matching the classic Today.
-                    Button { showSettings = true } label: {
-                        Color.clear.frame(
-                            width: NoopMetrics.compactControlSize,
-                            height: NoopMetrics.compactControlSize
-                        )
-                    }
-                    .nativeLiquidGlassHeaderButton()
-                    .overlay {
-                        GeometryReader { proxy in
-                            let diameter = min(proxy.size.width, proxy.size.height)
-                            ProfileAvatarView(imageData: profile.avatarImageData, size: diameter)
-                                .frame(width: diameter, height: diameter)
-                                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                        }
-                        .allowsHitTesting(false)
-                    }
-                    .nativeLiquidGlassPhotoFinish()
-                    .accessibilityLabel("Profile and settings")
-                    LiquidAddButton()
-                    LiquidBatteryButton()
-                    // One entry point for section order/visibility and both nested card editors.
-                    Button { customizationDestination = .today } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(StrandPalette.textPrimary)
-                            .frame(
-                                width: NoopMetrics.compactControlSize,
-                                height: NoopMetrics.compactControlSize
-                            )
-                    }
-                    .nativeLiquidGlassHeaderButton()
-                    .accessibilityLabel("Customize Today")
-                }
-                .background(
+                .nativeLiquidGlassHeaderButton()
+                .overlay {
                     GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: HeaderControlsWidthKey.self,
-                            value: proxy.size.width
-                        )
+                        let diameter = min(proxy.size.width, proxy.size.height)
+                        ProfileAvatarView(imageData: profile.avatarImageData, size: diameter)
+                            .frame(width: diameter, height: diameter)
+                            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                     }
-                )
-                .zIndex(1)
-            }
-            .onPreferenceChange(HeaderControlsWidthKey.self) { measured in
-                // Ignore sub-point churn so a rounding wobble cannot re-render the mask every frame.
-                guard measured > 0, abs(measured - headerControlsWidth) > 0.5 else { return }
-                headerControlsWidth = measured
+                    .allowsHitTesting(false)
+                }
+                .nativeLiquidGlassPhotoFinish()
+                .accessibilityLabel("Profile and settings")
+                Spacer(minLength: NoopMetrics.space1)
+                whoopDayPill
+                Spacer(minLength: NoopMetrics.space1)
+                LiquidBatteryButton()
             }
             // Subtle NOOP wordmark in the sky between header and hero. Perfectly centred (a letter row has
             // no trailing tracking gap the way `Text(...).tracking()` does), with a tap easter egg.
@@ -706,7 +700,25 @@ struct LiquidTodayView: View {
                 StressMonitorCard(stress: stress)
             }
             WhoopMyDaySection()
+            WhoopTonightsSleepCard()
+            WhoopActivitiesCard(sleepMinutes: displayDay?.totalSleepMin,
+                                sleepStart: lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.effectiveStartTs)) },
+                                sleepEnd: lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.endTs)) },
+                                workouts: workouts)
+            WhoopJournalCard()
+            WhoopDashboardSection(today: displayDay, days: repo.days, steps: stepCount,
+                                  calories: caloriesCount, vo2max: vo2max,
+                                  onCustomize: { customizationDestination = .today })
+            WhoopStressChartCard(currentStress: stress)
+            WhoopStrainRecoveryCard(days: repo.days)
         }
+    }
+
+    /// Last night's main sleep block, when it ended within the last 18 hours.
+    private var lastNightSleep: CachedSleepSession? {
+        guard let last = repo.sleeps.last,
+              Date().timeIntervalSince1970 - TimeInterval(last.endTs) < 18 * 3600 else { return nil }
+        return last
     }
 
     private var heroCard: some View {
@@ -717,18 +729,8 @@ struct LiquidTodayView: View {
             // today's own accumulation, so yesterday's number would be a false statement, not a stale one.
             HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
                           animated: dataLoaded, onGuide: { guideSection = .rest },
-                          detailRoute: .metric(HeroRingMetric.rest))
-                .overlay(alignment: .top) {
-                    if let sourceLabel = heroSourceLabel {
-                        SourceBadge("\(sourceLabel)", tint: StrandPalette.textSecondary)
-                            // Match the badge's trailing edge to the Rest vessel and centre it on the card border.
-                            .fixedSize()
-                            .frame(width: HeroScoreCell.vesselDiameter, alignment: .trailing)
-                            .offset(y: -(NoopMetrics.space4 + NoopMetrics.sourceBadgeHeight / 2))
-                            .allowsHitTesting(false)
-                            .accessibilityLabel(Text("Source: \(sourceLabel)"))
-                    }
-                }
+                          // WHOOP-style: the Sleep ring opens the full Sleep screen (Sleep is no longer a tab).
+                          detailRoute: .sleep)
             HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct,
                           tint: chargeDisplay.pct.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
                           animated: dataLoaded, onGuide: { guideSection = .charge },
@@ -2192,7 +2194,7 @@ private struct LiquidWordmark: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            ForEach(Array("NOOP".enumerated()), id: \.offset) { _, ch in
+            ForEach(Array("YOOP".enumerated()), id: \.offset) { _, ch in
                 Text(String(ch))
                     .font(StrandFont.rounded(16, weight: .bold))
                     .foregroundStyle(StrandPalette.textTertiary)

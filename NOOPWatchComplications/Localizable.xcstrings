@@ -588,7 +588,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recovery out of date, last synced %@. Open NOOP on iPhone."
+            "value": "Recovery out of date, last synced %@. Open Yoop on iPhone."
           }
         },
         "pt-PT": {
@@ -1036,7 +1036,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "NOOP Recovery"
+            "value": "Yoop Recovery"
           }
         },
         "es": {
@@ -1100,7 +1100,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "NOOP · open on iPhone"
+            "value": "Yoop · open on iPhone"
           }
         },
         "pt-PT": {
@@ -1164,7 +1164,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "NOOP. %@, %@, %@."
+            "value": "Yoop. %@, %@, %@."
           }
         },
         "pt-PT": {
@@ -1228,7 +1228,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "NOOP. No data yet, open NOOP on your iPhone to sync."
+            "value": "Yoop. No data yet, open Yoop on your iPhone to sync."
           }
         },
         "pt-PT": {
@@ -1292,7 +1292,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "NOOP. Scores out of date, last synced %@. Open NOOP on iPhone to refresh."
+            "value": "Yoop. Scores out of date, last synced %@. Open Yoop on iPhone to refresh."
           }
         },
         "pt-PT": {
@@ -1356,7 +1356,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No data, open NOOP on iPhone"
+            "value": "No data, open Yoop on iPhone"
           }
         },
         "pt-PT": {
@@ -1420,7 +1420,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open NOOP"
+            "value": "Open Yoop"
           }
         },
         "pt-PT": {

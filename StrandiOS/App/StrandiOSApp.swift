@@ -57,6 +57,7 @@ struct StrandiOSApp: App {
         PuffinExperiment.migrateContinuousHrvOvernightDefault()
         // WHOOP-style fork: one-time preset applied before any @AppStorage below is read.
         WhoopStylePreset.applyOnce()
+        WhoopStylePreset.applyHomeLayoutOnce()
         #if DEBUG
         // DEBUG-only promo-screenshot harness: when launched with `--demo-hour <Int>`, pin Today to that
         // hour's day-cycle scene + a per-hour stat frame. No-op (active stays nil) when the arg is absent.
@@ -656,6 +657,25 @@ enum WhoopStylePreset {
         defaults.set(AIProvider.anthropic.rawValue, forKey: "ai.provider")
         defaults.set(AIProvider.anthropic.defaultModel, forKey: "ai.model")
         defaults.set(true, forKey: appliedKey)
+    }
+
+    private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
+    /// NOOP Home sections that WHOOP-style cards replace (Synthesis by the insight card, Key Metrics by
+    /// My Dashboard, Workouts by Activities, Journal by My Journal, Recovery Vitals and Heart Rate by the
+    /// score screens). Hidden, not removed: each can be switched back on under Customize.
+    private static let replacedSections = ["liveSession", "synthesis", "keyMetrics", "workouts",
+                                           "heartRate", "recoveryVitals", "yourCards", "journal"]
+
+    /// One-time: hide the replaced sections, keeping anything the wearer had already hidden.
+    static func applyHomeLayoutOnce(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: homeLayoutKey) else { return }
+        let key = TodayLayoutPrefs.hiddenKey
+        let existing = (defaults.string(forKey: key) ?? "")
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        var merged = existing
+        for section in replacedSections where !merged.contains(section) { merged.append(section) }
+        defaults.set(merged.joined(separator: ","), forKey: key)
+        defaults.set(true, forKey: homeLayoutKey)
     }
 }
 #endif

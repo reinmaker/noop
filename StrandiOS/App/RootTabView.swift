@@ -84,6 +84,9 @@ struct RootTabView: View {
         Binding(
             get: { selectedTab },
             set: { tag in
+                // WHOOP-style: the round Coach button never becomes the selected tab; it opens the
+                // Coach as a sheet over whatever screen the wearer is on.
+                if tag == 3 { openCoachSheet(); return }
                 if tag == selectedTab {
                     reselectTab(tag)
                 } else {
@@ -117,32 +120,71 @@ struct RootTabView: View {
                 guard selectedTab != 0 else { return }
                 let dx = v.translation.width, dy = v.translation.height
                 guard abs(dx) > 60, abs(dx) > abs(dy) * 1.6 else { return }
-                let next = min(4, max(0, selectedTab + (dx < 0 ? 1 : -1)))
+                guard let index = Self.swipeOrder.firstIndex(of: selectedTab) else { return }
+                let nextIndex = min(Self.swipeOrder.count - 1, max(0, index + (dx < 0 ? 1 : -1)))
+                let next = Self.swipeOrder[nextIndex]
                 if next != selectedTab {
                     withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = next }
                 }
             }
     }
 
+    /// The tab tags in the order the bar shows them (Home, Health, Trends, More). Coach (tag 3) is the
+    /// separate round button, so it is not part of the swipe sequence.
+    private static let swipeOrder = [0, 2, 1, 4]
+
+    /// Open the Coach over the current screen. WHOOP-style, the Coach speaks first: it writes an
+    /// opening message about the screen the wearer is on (marked by `View.coachScreen(_:)`).
+    private func openCoachSheet() {
+        guard coachEnabled else { return }
+        showCoachSheet = true
+        if coach.isConfigured {
+            Task { await coach.openWithScreenContext() }
+        }
+    }
+
+    /// WHOOP-style tab bar: Home, Health, Trends, More, and the Coach as a separate round button. On
+    /// iOS 18+ the Coach is a `.search`-role tab, which iOS 26 draws as its own circle beside the bar;
+    /// iOS 17 shows it as a regular fifth item. Sleep is reached from the Sleep ring on Home.
+    @ViewBuilder private var tabContainer: some View {
+        if #available(iOS 18.0, *) {
+            TabView(selection: nativeTabSelection) {
+                Tab("Home", systemImage: "house", value: 0) {
+                    tabStack(todayTabRoot.coachScreen(.home), path: $tabPaths[0], scrollSignal: scrollTop[0])
+                }
+                Tab("Health", systemImage: "heart.text.square", value: 2) {
+                    tabStack(HealthView().coachScreen(.health), path: $tabPaths[2], scrollSignal: scrollTop[2])
+                }
+                Tab("Trends", systemImage: "chart.line.uptrend.xyaxis", value: 1) {
+                    tabStack(TrendsView().coachScreen(.trends), path: $tabPaths[1], scrollSignal: scrollTop[1])
+                }
+                Tab("More", systemImage: "line.3.horizontal", value: 4) {
+                    moreStack(path: $tabPaths[4], scrollSignal: scrollTop[4]).coachScreen(.other)
+                }
+                if coachEnabled {
+                    Tab("Coach", systemImage: "sparkles", value: 3, role: .search) {
+                        Color.clear
+                    }
+                }
+            }
+        } else {
+            TabView(selection: nativeTabSelection) {
+                tab(todayTabRoot.coachScreen(.home), "Home", "house", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
+                tab(HealthView().coachScreen(.health), "Health", "heart.text.square", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
+                tab(TrendsView().coachScreen(.trends), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
+                moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
+                if coachEnabled {
+                    Color.clear.tabItem { Label("Coach", systemImage: "sparkles") }.tag(3)
+                }
+            }
+        }
+    }
+
     var body: some View {
         // The platform tab bar is intentionally left fully native. iOS 26 supplies Liquid Glass and
         // its dynamic interaction with scrolling content automatically; older supported releases use
         // the corresponding system material and safe-area behaviour from the same TabView.
-        TabView(selection: nativeTabSelection) {
-            tab(todayTabRoot, "Home", "house", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
-            tab(TrendsView(), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
-            tab(SleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            // K3: Coach promoted to a top-level tab (was behind the More list). The sparkles icon
-            // matches the More-tab row and the macOS sidebar entry.
-            // Conditional on the master switch. The tags stay LITERAL rather than being renumbered when
-            // Coach is absent: `tabPaths` and `scrollTop` are indexed by tag, and More stays tag 4 in both
-            // shapes, so a wearer's More tab keeps its identity, its navigation path and its scroll
-            // position across a flip instead of inheriting Coach's.
-            if coachEnabled {
-                tab(CoachView(), "Coach", "sparkles", path: $tabPaths[3], scrollSignal: scrollTop[3]).tag(3)
-            }
-            moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
-        }
+        tabContainer
         .tint(StrandPalette.accent)
         // Switching Coach off while STANDING on it leaves `selectedTab` pointing at a tag no tab claims
         // any more, which renders as an empty tab rather than as an error. Send that wearer to Today, and
@@ -193,33 +235,13 @@ struct RootTabView: View {
         .sheet(item: $quickAction) { action in
             quickActionDestination(action)
         }
+        .sheet(isPresented: $showCoachSheet) {
+            WhoopCoachSheet()
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         // Live's "Manage devices" affordance (and any future cross-screen link to Devices) routes here:
         // present the Devices manager in its own nav stack, the same way the quick-action screens do.
-        // WHOOP-style floating Coach button, bottom-right above the tab bar on every tab except Coach.
-        // Tapping it opens the Coach over the current screen and asks it to analyse that screen.
-        .overlay(alignment: .bottomTrailing) {
-            if coachEnabled && selectedTab != 3 {
-                CoachFloatingButton {
-                    if coach.isConfigured {
-                        coach.pendingPrompt = AICoachEngine.screenAnalysisPrompt(tab: selectedTab)
-                    }
-                    showCoachSheet = true
-                }
-                .padding(.trailing, 16)
-                .padding(.bottom, 66)
-            }
-        }
-        .sheet(isPresented: $showCoachSheet) {
-            NavigationStack {
-                CoachView()
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showCoachSheet = false }
-                        }
-                    }
-            }
-            .presentationDetents([.large])
-        }
         .sheet(isPresented: $showDevices) {
             devicesScreen
         }
@@ -251,7 +273,9 @@ struct RootTabView: View {
                     router.requestedDestination = nil
                     break
                 }
-                withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = 3 }
+                // WHOOP-style: the Coach opens as a sheet over the current screen. A caller that wants a
+                // question asked has already parked it in `AICoachEngine.pendingPrompt`.
+                showCoachSheet = true
                 router.requestedDestination = nil
             case .trends:
                 // Trends is a primary tab on iPhone (not a pillar sheet) — switch to it.
@@ -461,6 +485,12 @@ struct RootTabView: View {
 
     private func tab<V: View>(_ view: V, _ title: LocalizedStringKey, _ icon: String,
                               path: Binding<NavigationPath>, scrollSignal: Int) -> some View {
+        tabStack(view, path: path, scrollSignal: scrollSignal)
+            .tabItem { Label(title, systemImage: icon) }
+    }
+
+    /// A primary tab's navigation stack (shared by the iOS 18 `Tab` bar and the iOS 17 `tabItem` bar).
+    private func tabStack<V: View>(_ view: V, path: Binding<NavigationPath>, scrollSignal: Int) -> some View {
         // Each primary tab gets its OWN NavigationStack so the in-content NavigationLinks (e.g. the Today
         // dashboard card rows) both navigate AND render opaque. An ORPHANED NavigationLink (no
         // NavigationStack ancestor) renders its whole label in a disabled/translucent state — that was
@@ -478,7 +508,6 @@ struct RootTabView: View {
         // Drive this tab's root scroll-to-top on an at-root re-tap (#198 follow-up); read by ScreenScaffold
         // / LiquidTodayView inside. Only THIS tab's token changes on its reselect, so the others don't scroll.
         .environment(\.scrollToTopSignal, scrollSignal)
-        .tabItem { Label(title, systemImage: icon) }
     }
 
     // The "More" tab is the app's catch-all index. It was a plain SwiftUI `List` with system large-title
@@ -487,6 +516,11 @@ struct RootTabView: View {
     // ScreenScaffold for the title1 "More" + subtitle, a `SectionHeader` overline per group, and the group's
     // rows in a single grouped NoopCard with hairline dividers — the same row idiom Settings/Health use.
     private func moreTab(path: Binding<NavigationPath>, scrollSignal: Int) -> some View {
+        moreStack(path: path, scrollSignal: scrollSignal)
+            .tabItem { Label("More", systemImage: "line.3.horizontal") }
+    }
+
+    private func moreStack(path: Binding<NavigationPath>, scrollSignal: Int) -> some View {
         NavigationStack(path: path) {
             ScreenScaffold(title: "More", subtitle: "Everything else, one tap away",
                            onRefresh: { await repo.refresh() },
@@ -562,7 +596,6 @@ struct RootTabView: View {
         }
         // Scroll the More index to the top on an at-root re-tap (#198 follow-up); read by its ScreenScaffold.
         .environment(\.scrollToTopSignal, scrollSignal)
-        .tabItem { Label("More", systemImage: "ellipsis") }
     }
 
     /// One titled, COLLAPSIBLE group in the More index (S2): the app's overline (UPPERCASE) becomes a
@@ -817,26 +850,3 @@ extension View {
         }
     }
 }
-
-#if os(iOS)
-/// The round Coach button WHOOP floats over every screen.
-private struct CoachFloatingButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "sparkles")
-                .font(WhoopStyle.coachIcon)
-                .foregroundStyle(WhoopStyle.onGradient)
-                .frame(width: WhoopStyle.coachButtonSize, height: WhoopStyle.coachButtonSize)
-                .background(Circle().fill(WhoopStyle.coachButtonFill))
-                .overlay(Circle().strokeBorder(
-                    AngularGradient(colors: WhoopStyle.coachButtonRing, center: .center),
-                    lineWidth: 2))
-                .shadow(color: WhoopStyle.coachButtonShadow, radius: 10, y: 4)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Ask Coach about this screen"))
-    }
-}
-#endif

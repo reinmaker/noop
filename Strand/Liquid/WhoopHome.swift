@@ -302,14 +302,29 @@ private struct WhoopOverviewCard<Content: View>: View {
 
 /// "My Day" header + the gradient "Day In Review" row, which opens the Coach-written review.
 struct WhoopMyDaySection: View {
+    @EnvironmentObject private var router: NavRouter
     @State private var showReview = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            Text("My Day")
-                .font(WhoopStyle.sectionTitle)
-                .foregroundStyle(StrandPalette.textPrimary)
-                .padding(.top, NoopMetrics.space2)
+            HStack {
+                Text("My Day")
+                    .font(WhoopStyle.sectionTitle)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Spacer()
+                // WHOOP's white "+" (log something). Opens NOOP's quick actions: workout, journal, breathe.
+                Button { router.requestQuickActions() } label: {
+                    Image(systemName: "plus")
+                        .font(WhoopStyle.headline)
+                        .foregroundStyle(StrandPalette.surfaceBase)
+                        .frame(width: 40, height: 40)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(StrandPalette.textPrimary))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Add"))
+            }
+            .padding(.top, NoopMetrics.space2)
             Button { showReview = true } label: {
                 HStack(spacing: NoopMetrics.space3) {
                     Image(systemName: "moon")
