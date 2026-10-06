@@ -1236,6 +1236,9 @@ final class AICoachEngine: ObservableObject {
     /// A one-shot opener to use instead of the screen opener (Home's "Day In Review" row sets it).
     enum Opener { case dayReview }
     var nextOpener: Opener?
+    /// The last screen opener written and when, so reopening the same screen soon after does not
+    /// stack another opener into the chat.
+    private var lastScreenOpener: (screen: CoachScreen, at: Date)?
 
     /// The screen the wearer is on, as last marked by `View.coachScreen(_:)`.
     var currentScreen: CoachScreen { CoachScreenState.current }
@@ -1264,6 +1267,13 @@ final class AICoachEngine: ObservableObject {
         guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending,
               let key = resolvedKey else { return }
         retireStaleConversationIfNeeded()
+        // Reopening the same screen within 15 minutes continues the conversation instead.
+        if nextOpener == nil, let last = lastScreenOpener, last.screen == currentScreen,
+           Date().timeIntervalSince(last.at) < 15 * 60, !messages.isEmpty {
+            return
+        }
+        if nextOpener == nil { lastScreenOpener = (currentScreen, Date()) }
+
         conversationDay = Self.localEpochDay()
         errorText = nil
         sending = true
