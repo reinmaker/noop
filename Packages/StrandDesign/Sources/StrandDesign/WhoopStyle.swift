@@ -59,7 +59,7 @@ public enum WhoopStyle {
     public static let iconLarge = Font.system(size: 20)
     public static let coachIcon = Font.system(size: 22, weight: .semibold)
 
-    /// Bold condensed numerals — the score inside a ring, a monitor value, a contributor percentage.
+    /// Bold condensed numerals: the score inside a ring, a monitor value, a contributor percentage.
     public static func number(_ size: CGFloat) -> Font {
         Font.system(size: size, weight: .bold).width(.condensed)
     }

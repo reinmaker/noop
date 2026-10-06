@@ -3,7 +3,7 @@ import StrandAnalytics
 import StrandDesign
 import WhoopStore
 
-// WHOOP-style fork: the Home screen pieces modelled on the WHOOP app — thin score rings, the daily
+// WHOOP-style fork: the Home screen pieces modelled on the WHOOP app: thin score rings, the daily
 // insight card, the Health / Stress Monitor overview cards and the "My Day" Day in Review row. All data
 // is NOOP's own on-device data; the insight and the review are written by the user's own AI Coach
 // (bring-your-own-key) and fall back to NOOP's local text when the Coach is not set up.
@@ -175,7 +175,7 @@ struct WhoopInsightCard: View {
 
 // MARK: - Overview cards
 
-/// "HEALTH MONITOR — WITHIN RANGE n/n Metrics": the same personal-baseline banding the Health screen's
+/// "HEALTH MONITOR: WITHIN RANGE n/n Metrics": the same personal-baseline banding the Health screen's
 /// vital-signs tiles use (HRV, resting HR, respiration, SpO2, skin temperature).
 struct HealthMonitorCard: View {
     @EnvironmentObject private var repo: Repository
@@ -214,7 +214,7 @@ struct HealthMonitorCard: View {
     }
 }
 
-/// "STRESS MONITOR — 2.8 HIGH": NOOP's 0–3 stress score, banded the way WHOOP bands its own 0–3 scale.
+/// "STRESS MONITOR: 2.8 HIGH". NOOP's 0-3 stress score, banded the way WHOOP bands its own 0-3 scale.
 struct StressMonitorCard: View {
     let stress: Double?
 

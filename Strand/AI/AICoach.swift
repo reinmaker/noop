@@ -1340,7 +1340,7 @@ final class AICoachEngine: ObservableObject {
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()
         lines.append("")
-        lines.append("Recent days (newest first) — recovery(%), strain(0-21), sleep(h), "
+        lines.append("Recent days (newest first), columns: recovery(%), strain(0-21), sleep(h), "
                      + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
         for d in recent {
             lines.append("  " + dayLine(d))
