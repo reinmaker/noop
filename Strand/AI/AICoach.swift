@@ -267,27 +267,35 @@ final class AICoachEngine: ObservableObject {
     /// coach. Exposed (read-only) so the UI's "Reset to default" can restore it and show it when nothing
     /// custom is stored. Editing the live prompt overrides this via `systemPromptKey`.
     static let defaultSystemPrompt = """
-    You are the user's WHOOP-style performance coach: warm, direct and data-driven, like the coach \
-    inside the WHOOP app. You are given a summary of the user's own wearable data from their strap: \
-    daily Recovery (0-100%), Strain (0-21, logarithmic day strain), Sleep (hours, deep/REM/light stages, \
-    efficiency), HRV, resting heart rate, respiration, SpO2, skin temperature, steps, calories, stress \
-    (0-3) and recent workouts, plus their profile and how today compares with their 30-day normal. \
-    A dash in the data means that value was NOT MEASURED that day - say so rather than treating it as a zero. \
-    Today's row is still in progress, so its Strain keeps rising through the day.
-    Coach the WHOOP way:
-    \u{2022} Recovery drives the day: green 67-100% = primed, push Strain (about 14-18); yellow 34-66% = \
-    maintain, moderate Strain (about 10-14), quality over volume; red 0-33% = prioritise recovery, light \
-    Strain (under 10): Zone 2, mobility, extra sleep.
-    \u{2022} Explain WHY: connect today's Recovery to its drivers (HRV and resting HR vs their normal, last \
-    night's sleep vs need, yesterday's Strain, stress, behaviours like late meals or alcohol when known).
-    \u{2022} Sleep is the biggest lever: give a concrete bedtime and sleep target when it helps.
-    \u{2022} Always cite the user's ACTUAL numbers, keep it short and specific, and finish with a clear next step.
-    You are NOT a doctor - never diagnose; suggest a professional for genuine health concerns.
-    Format replies in simple Markdown, chat-sized: short paragraphs, **bold** for key numbers, \
-    bullet or numbered lists for plans, ### headings only when structure genuinely helps, and a \
-    small table only for a week-ahead plan. No code blocks.
-    End EVERY reply with one final line in exactly this form: "Replies: <reply 1> | <reply 2>", two short \
-    natural replies (under 8 words each) the user might tap next, written in the user's own voice.
+    You are the user's personal performance coach inside Yoop, an app that reads their WHOOP strap on \
+    their own phone. Coach like the WHOOP coach: warm, direct, data-driven and honest, with a mix of \
+    tough love and motivation unless their coaching preferences say otherwise.
+    You receive the user's data: daily Recovery (0-100%: green 67-100, yellow 34-66, red 0-33), Strain \
+    (0-21, logarithmic) with today's optimal Strain range, Sleep (hours against need, stages, efficiency), \
+    HRV, resting heart rate, respiratory rate, SpO2, skin temperature, steps, calories, stress (0-3) and \
+    workouts, plus their profile and what you remember about them. A dash means not measured: say so \
+    rather than treating it as zero. Today's row is still in progress.
+    How you talk:
+    \u{2022} Use their first name when you know it, now and then, not in every sentence.
+    \u{2022} Lead with the verdict, then the numbers. Bold the key numbers and always compare them with \
+    their normal or the optimal range (for example "**11.7** against an optimal range of **10-14**", \
+    "**41 ms** vs your usual **52**").
+    \u{2022} Name the single biggest limiter or driver ("the limiter tonight is stress, not effort").
+    \u{2022} Give ONE highest-leverage action and, in a few words, the physiology behind it.
+    \u{2022} Keep it short: two to four short paragraphs at most. A one-line question gets a one-line answer.
+    \u{2022} At most one emoji per message. No headings unless asked; lists only for plans or options.
+    \u{2022} End most coaching messages with one probing question about how they feel or what is going on.
+    \u{2022} Take what you remember into account: injuries and health conditions limit training advice, \
+    goals and events shape plans, and their coaching preferences set your style.
+    You are NOT a doctor: never diagnose; suggest a professional for genuine health concerns.
+    Special lines, each on its own line at the very end of a reply and nowhere else:
+    \u{2022} When you suggest activities to choose from, add "Options: <activity>: <why, under 12 words> | \
+    <activity>: <why>" with two or three options.
+    \u{2022} When the user tells you something lasting about themselves (an injury or health condition, a \
+    goal, an upcoming event, or how they like to be coached), add "Memory: <Health condition|Goal|Event|\
+    Coaching preference> | <short title> | <one-sentence summary>".
+    \u{2022} Always finish with "Replies: <reply 1> | <reply 2>", two short replies (under 8 words each) \
+    the user might tap next, written in their own voice.
     """
 
     /// The system prompt actually sent, read FRESH from UserDefaults on every request so an edit in
@@ -688,6 +696,12 @@ final class AICoachEngine: ObservableObject {
     /// mutations don't hammer the store. Fire-and-forget; a store failure never blocks the UI — the
     /// in-memory transcript (what the user sees) is unaffected either way.
     private func persistMessages() {
+        // WHOOP-style memory: keep anything the Coach flagged with a "Memory:" line.
+        if let last = messages.last, last.role == .assistant {
+            for memory in Self.parseReply(last.text).memories {
+                CoachMemoryStore.shared.add(memory)
+            }
+        }
         let snapshot = messages
         let providerId = provider.rawValue
         Task {
@@ -957,6 +971,13 @@ final class AICoachEngine: ObservableObject {
     /// when the second consent is on). Used when the user has granted data access.
     func buildFullContext() async -> String {
         var ctx = buildContext()
+        if let memory = CoachMemoryStore.shared.contextBlock() {
+            ctx = memory + "\n\n" + ctx
+        }
+        if let stress = await StressDayCurve.today(
+            repo: repo, personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled)?.result {
+            ctx += "\n\nToday's stress so far: \(stress.highStressMinutes) minutes in high stress (0-3 scale, high is 2 and up)."
+        }
         ctx += "\n\n" + (await recentWorkoutsBlock())
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
         // way StressView does. Gated here under `dataConsent` (the caller only reaches buildFullContext()
@@ -1215,14 +1236,22 @@ final class AICoachEngine: ObservableObject {
     /// The screen the wearer is on, as last marked by `View.coachScreen(_:)`.
     var currentScreen: CoachScreen { CoachScreenState.current }
 
-    private static func screenOpenerInstruction(_ screen: CoachScreen) -> String {
-        """
-        The user just opened the Coach while looking at their \(screen.describedForCoach). Write the \
-        Coach's opening message, like the WHOOP coach: two or three short sentences, warm and direct, \
-        speaking to them about the most notable thing on that screen with their actual numbers, and end \
-        with one question about how they feel or what they want to do. No headings, no lists. Then the \
-        final "Replies:" line.
-        """
+    private static func screenOpenerInstruction(_ screen: CoachScreen, hour: Int) -> String {
+        let focus: String
+        switch (screen, hour) {
+        case (.home, ..<12):
+            focus = "Make it their Daily Outlook for this morning: today's readiness verdict from Recovery and its " +
+                "main driver, today's optimal Strain range, two or three suggested activities as short bullets " +
+                "(one emoji each), and a sleep target for tonight. Ask which they will do, and add the Options line."
+        case (.home, 18...):
+            focus = "Make it an evening check-in on their day: today's Strain against the optimal range, stress, " +
+                "and what tonight's sleep needs. Name the limiter and one action for tonight, then ask a probing question."
+        default:
+            focus = "Speak to them about the most notable thing on that screen, with their actual numbers compared " +
+                "with their normal, and end with one question about how they feel or what they want to do."
+        }
+        return "The user just opened the Coach while looking at their \(screen.describedForCoach). Write the " +
+            "Coach's opening message. \(focus) Two or three short paragraphs at most, then the special lines."
     }
 
     /// WHOOP-style: the Coach speaks first, about the screen the wearer opened it from. The instruction
@@ -1238,7 +1267,8 @@ final class AICoachEngine: ObservableObject {
 
         let context = dataConsent ? await buildFullContext() : noConsentNote
         var wire = wireMessages(context: context)
-        let instruction = Self.screenOpenerInstruction(currentScreen)
+        let instruction = Self.screenOpenerInstruction(currentScreen,
+                                                       hour: Calendar.current.component(.hour, from: Date()))
         wire.append((.user, wire.isEmpty ? context + "\n\n---\n\n" + instruction : instruction))
 
         let placeholder = ChatMessage(role: .assistant, text: "")
@@ -1271,22 +1301,55 @@ final class AICoachEngine: ObservableObject {
         }
     }
 
-    /// Pure: split a reply into its body and the "Replies: a | b" quick replies on its last line.
-    /// A partial "Replies:" line while streaming is hidden too.
+    /// A Coach reply split into what is shown and the special lines at its end.
+    struct ParsedReply {
+        var body: String
+        var replies: [String] = []
+        /// Suggested activities from an "Options:" line: (name, why).
+        var options: [(name: String, why: String)] = []
+        var memories: [CoachMemory] = []
+    }
+
+    /// Pure: pull the "Replies:", "Options:" and "Memory:" lines out of a reply. A partial special line
+    /// while streaming is hidden too, so it never flashes up in the transcript.
+    nonisolated static func parseReply(_ text: String) -> ParsedReply {
+        var kept: [String] = []
+        var parsed = ParsedReply(body: "")
+        let junk = CharacterSet(charactersIn: "\"*").union(.whitespaces)
+        func fields(_ rest: Substring) -> [String] {
+            rest.split(separator: "|").map { $0.trimmingCharacters(in: junk) }.filter { !$0.isEmpty }
+        }
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: junk)
+            let lower = trimmed.lowercased()
+            if lower.hasPrefix("replies:") {
+                parsed.replies = Array(fields(trimmed.dropFirst("replies:".count)).prefix(3))
+            } else if lower.hasPrefix("options:") {
+                parsed.options = fields(trimmed.dropFirst("options:".count)).prefix(3).map {
+                    option -> (name: String, why: String) in
+                    let parts = option.split(separator: ":", maxSplits: 1)
+                    let name = parts.first.map { $0.trimmingCharacters(in: junk) } ?? option
+                    let why = parts.count > 1 ? parts[1].trimmingCharacters(in: junk) : ""
+                    return (name, why)
+                }
+            } else if lower.hasPrefix("memory:") {
+                let f = fields(trimmed.dropFirst("memory:".count))
+                if f.count >= 2 {
+                    parsed.memories.append(CoachMemory(category: .parse(f[0]), title: f[1],
+                                                       detail: f.count > 2 ? f[2] : f[1]))
+                }
+            } else {
+                kept.append(line)
+            }
+        }
+        parsed.body = kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return parsed
+    }
+
+    /// Pure: a reply's shown body and its quick replies.
     nonisolated static func splitReplies(_ text: String) -> (body: String, replies: [String]) {
-        guard let range = text.range(of: "Replies:", options: [.caseInsensitive, .backwards]) else {
-            return (text, [])
-        }
-        let lineStart = text[..<range.lowerBound].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
-        guard text[lineStart..<range.lowerBound].trimmingCharacters(in: .whitespaces).isEmpty else {
-            return (text, [])
-        }
-        let body = String(text[..<lineStart]).trimmingCharacters(in: .whitespacesAndNewlines)
-        let replies = text[range.upperBound...]
-            .split(separator: "|")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"*")) }
-            .filter { !$0.isEmpty }
-        return (body, Array(replies.prefix(3)))
+        let p = parseReply(text)
+        return (p.body, p.replies)
     }
 
     // MARK: - WHOOP-style Home insight, Day in Review, screen analysis
@@ -1307,12 +1370,12 @@ final class AICoachEngine: ObservableObject {
     """
 
     private static let dayReviewInstruction = """
-    Write my Day in Review for today, like the WHOOP app's Day in Review. Use these bold labels, each \
-    followed by one or two short sentences that cite my actual numbers and compare them with my 30-day \
-    averages: **Sleep**, **Recovery**, **Strain & activity** (workouts, steps, calories), **Stress**, and \
-    **Tonight** (when to go to bed and how many hours to aim for, given today's Strain and my usual sleep). \
-    Finish with one line starting "**Tomorrow:**" naming the single most important thing to do. \
-    No headings, no tables, no code blocks.
+    Write my Day In Review for today, the way the WHOOP coach does in the evening: start with my name if \
+    you know it and the headline (did I hit today's optimal Strain range? with the numbers), then how \
+    stress, sleep debt and recovery shaped the day against my normal, name tonight's limiter, give the \
+    single highest-leverage action for tonight with the physiology behind it, and say when to go to bed \
+    and how long to sleep. Two to four short paragraphs, bold key numbers, at most one emoji, no headings. \
+    End with one probing question about my day.
     """
 
     /// Generate the Home insight card (non-streaming, never touches the chat transcript).
@@ -1442,6 +1505,10 @@ final class AICoachEngine: ObservableObject {
                      + "(logarithmic: under 10 light, 10-13 moderate, 14-17 strenuous, 18+ all out); "
                      + "Sleep in hours. The newest row is today and is IN PROGRESS (its Strain is still rising).")
         if let normal = Self.todayVsNormalLine(days) { lines.append(normal) }
+        if let band = CoupledView.optimalStrainRange(recovery: days.last?.recovery) {
+            lines.append("Today's optimal Strain range, from today's Recovery: \(band.lowerBound)-\(band.upperBound) of 21.")
+        }
+        lines.append(String(format: "Personal sleep need: about %.1fh a night.", SleepModel.debtNeedMin(days: days) / 60))
 
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()
