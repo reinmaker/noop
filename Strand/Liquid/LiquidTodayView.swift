@@ -596,7 +596,7 @@ struct LiquidTodayView: View {
                     .padding(.vertical, NoopMetrics.space2)
                     .background(Capsule().fill(WhoopStyle.ringTrack))
             }
-            .accessibilityLabel("\(dayTitle). Tap to pick a day.")
+            .accessibilityLabel("\(dayTitle). Tap to pick a day, swipe to change day.")
             .popover(isPresented: $showDayPicker) {
                 DatePicker("", selection: dayPickerBinding, in: ...Repository.logicalDay(Date()),
                            displayedComponents: [.date])
@@ -714,7 +714,7 @@ struct LiquidTodayView: View {
             miniRing(String(localized: "RECOVERY"), fraction: chargeDisplay.pct.map { $0 / 100 },
                      tint: chargeDisplay.pct.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor)
             Spacer()
-            miniRing(String(localized: "STRAIN"), fraction: strain.map { $0 / 21 }, tint: StrandPalette.effortColor)
+            miniRing(String(localized: "Effort").uppercased(), fraction: strain.map { $0 / 21 }, tint: StrandPalette.effortColor)
         }
         .padding(.horizontal, NoopMetrics.space5)
         .padding(.vertical, NoopMetrics.space3)
@@ -754,6 +754,7 @@ struct LiquidTodayView: View {
                                 sleepEnd: lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.endTs)) },
                                 workouts: workouts)
             WhoopJournalCard()
+            WhoopPlanCard()
             WhoopDashboardSection(today: displayDay, days: repo.days, steps: stepCount,
                                   calories: caloriesCount, vo2max: vo2max,
                                   onCustomize: { customizationDestination = .today })

@@ -590,3 +590,53 @@ struct WhoopStrainRecoveryCard: View {
         }
     }
 }
+
+// MARK: - My Plan
+
+/// "My Plan": the activity committed from the Coach's suggestion cards today, with a Done check.
+struct WhoopPlanCard: View {
+    @AppStorage(CoachPlan.storageKey) private var planRaw = ""
+
+    var body: some View {
+        if let plan = CoachPlan.decode(planRaw), plan.day == Repository.logicalDayKey(Date()) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                Text("My Plan")
+                    .font(WhoopStyle.sectionTitle)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .padding(.top, NoopMetrics.space2)
+                Button {
+                    var updated = plan
+                    updated.done.toggle()
+                    planRaw = updated.encoded
+                } label: {
+                    WhoopTitledCard(title: String(localized: "TODAY'S PLAN"), showsChevron: false) {
+                        HStack(alignment: .top, spacing: NoopMetrics.space3) {
+                            Image(systemName: plan.done ? "checkmark.circle.fill" : "circle")
+                                .font(WhoopStyle.headline)
+                                .foregroundStyle(plan.done ? WhoopStyle.rangeGreen : StrandPalette.textTertiary)
+                            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                                Text(plan.name)
+                                    .font(WhoopStyle.headline)
+                                    .foregroundStyle(StrandPalette.textPrimary)
+                                    .strikethrough(plan.done)
+                                if !plan.why.isEmpty {
+                                    Text(plan.why)
+                                        .font(WhoopStyle.body)
+                                        .foregroundStyle(StrandPalette.textSecondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        ProgressView(value: plan.done ? 1 : 0)
+                            .tint(WhoopStyle.rangeGreen)
+                        Text(plan.done ? String(localized: "100% ACCOMPLISHED") : String(localized: "0% ACCOMPLISHED"))
+                            .font(WhoopStyle.smallLabel)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}

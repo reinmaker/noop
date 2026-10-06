@@ -230,7 +230,10 @@ struct WhoopCoachSheet: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 0)
-                        Button { send("I'll do \(option.name) today.") } label: {
+                        Button {
+                            CoachPlan.commit(name: option.name, why: option.why)
+                            send("I'll do \(option.name) today.")
+                        } label: {
                             HStack(spacing: NoopMetrics.space1) {
                                 Image(systemName: "plus").font(WhoopStyle.chevron)
                                 Text("COMMIT").font(WhoopStyle.smallLabel)

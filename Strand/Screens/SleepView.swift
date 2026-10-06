@@ -188,6 +188,9 @@ struct SleepView: View {
                         ForEach(Array(sleepVisibleSections.enumerated()), id: \.element) { idx, section in
                             sleepSectionView(section, resolved).staggeredAppear(index: idx + 1)
                         }
+                        // WHOOP-style "Weekly Trends" at the end of the Sleep screen.
+                        WhoopWeeklyBars(title: String(localized: "HOURS OF SLEEP"),
+                                        points: weeklySleepBars, maxValue: 10)
                     }
                 } else {
                     emptyState
@@ -505,6 +508,19 @@ struct SleepView: View {
         let c = Calendar.current.dateComponents([.hour, .minute],
                                                 from: Date(timeIntervalSince1970: TimeInterval(ts)))
         return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60.0
+    }
+
+    /// The last seven nights' hours asleep, for the WHOOP-style weekly bars.
+    private var weeklySleepBars: [(day: String, value: Double, label: String, color: Color)] {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.dateFormat = "yyyy-MM-dd"
+        return repo.days.suffix(7).compactMap { d -> (day: String, value: Double, label: String, color: Color)? in
+            guard let minutes = d.totalSleepMin else { return nil }
+            let label = parser.date(from: d.day).map { $0.formatted(.dateTime.weekday(.abbreviated)) } ?? d.day
+            let text = String(format: "%d:%02d", Int(minutes) / 60, Int(minutes) % 60)
+            return (label, minutes / 60, text, StrandPalette.restColor)
+        }
     }
 
     /// The compact "Customize" affordance above the arrangeable cards — opens the Arrange sheet. Mirrors
