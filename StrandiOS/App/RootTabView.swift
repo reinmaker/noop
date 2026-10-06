@@ -826,16 +826,14 @@ private struct CoachFloatingButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "sparkles")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Color.white)
-                .frame(width: 58, height: 58)
-                .background(Circle().fill(Color(hex: "#1C2230")))
+                .font(WhoopStyle.coachIcon)
+                .foregroundStyle(WhoopStyle.onGradient)
+                .frame(width: WhoopStyle.coachButtonSize, height: WhoopStyle.coachButtonSize)
+                .background(Circle().fill(WhoopStyle.coachButtonFill))
                 .overlay(Circle().strokeBorder(
-                    AngularGradient(colors: [Color(hex: "#5B8CFF"), Color(hex: "#A86BFF"),
-                                             Color(hex: "#3FD0E0"), Color(hex: "#5B8CFF")],
-                                    center: .center),
+                    AngularGradient(colors: WhoopStyle.coachButtonRing, center: .center),
                     lineWidth: 2))
-                .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
+                .shadow(color: WhoopStyle.coachButtonShadow, radius: 10, y: 4)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Ask Coach about this screen"))

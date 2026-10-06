@@ -546,7 +546,7 @@ struct SleepView: View {
                         WhoopRingGauge(score: score, tint: StrandPalette.restColor,
                                        diameter: 220, lineWidth: 16)
                         Text("SLEEP PERFORMANCE")
-                            .font(WhoopHomeStyle.smallLabel)
+                            .font(WhoopStyle.smallLabel)
                             .foregroundStyle(StrandPalette.textPrimary)
                             .offset(y: 44)
                     }

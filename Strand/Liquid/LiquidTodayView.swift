@@ -698,8 +698,8 @@ struct LiquidTodayView: View {
 
     /// WHOOP-style Home: the daily insight, the Health / Stress Monitor overview cards and My Day.
     private var whoopHomeExtras: some View {
-        VStack(spacing: 12) {
-            WhoopInsightCard(fallbackTitle: readinessWord ?? String(localized: "Today's Recovery"),
+        VStack(spacing: WhoopStyle.rowGap) {
+            WhoopInsightCard(fallbackTitle: readinessWord ?? String(localized: "Charge"),
                              fallbackBody: chargeDisplay.calibrationDetail ?? synthLine)
             HStack(alignment: .top, spacing: 10) {
                 HealthMonitorCard()
@@ -2307,9 +2307,9 @@ private struct HeroScoreCell: View {
                 HStack(spacing: 3) {
                     // #74: one line, shrink-to-fit rather than wrap under large Dynamic Type (mirrors the
                     // score number above) so CHARGE/EFFORT/REST never grow the hero card to two lines.
-                    Text(label.uppercased()).font(WhoopHomeStyle.label)
+                    Text(label.uppercased()).font(WhoopStyle.label)
                         .lineLimit(1).minimumScaleFactor(0.7)
-                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).opacity(0.7)
+                    Image(systemName: "chevron.right").font(WhoopStyle.chevron).opacity(0.7)
                 }
                 // WHOOP-style: bold, wide, primary-colour labels under the rings.
                 .foregroundStyle(StrandPalette.textPrimary)

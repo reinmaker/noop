@@ -8,28 +8,12 @@ import WhoopStore
 // is NOOP's own on-device data; the insight and the review are written by the user's own AI Coach
 // (bring-your-own-key) and fall back to NOOP's local text when the Coach is not set up.
 
-// MARK: - Palette
-
-enum WhoopHomeStyle {
-    static let cardFill = Color(light: "#FFFFFF", dark: "#22272D")
-    static let cardStroke = Color(light: "#0000001A", dark: "#FFFFFF12")
-    static let ringTrack = Color(light: "#0000001F", dark: "#FFFFFF1F")
-    static let rangeGreen = Color(light: "#0E9F6E", dark: "#16D9A0")
-    static let rangeAmber = Color(light: "#C77C00", dark: "#F5A623")
-    static let reviewGradient = LinearGradient(
-        colors: [Color(light: "#5B4AA8", dark: "#3A2F66"), Color(light: "#2C6F7E", dark: "#1F4752")],
-        startPoint: .leading, endPoint: .trailing)
-
-    static let label = Font.system(size: 13, weight: .bold).width(.expanded)
-    static let smallLabel = Font.system(size: 11, weight: .bold).width(.expanded)
-}
-
 private struct WhoopCardBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(WhoopHomeStyle.cardFill))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(WhoopHomeStyle.cardStroke, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: WhoopStyle.cardRadius, style: .continuous).fill(WhoopStyle.cardFill))
+            .overlay(RoundedRectangle(cornerRadius: WhoopStyle.cardRadius, style: .continuous)
+                .strokeBorder(WhoopStyle.cardStroke, lineWidth: 1))
     }
 }
 
@@ -65,17 +49,17 @@ struct WhoopRingGauge: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(WhoopHomeStyle.ringTrack, lineWidth: lineWidth)
+            Circle().stroke(WhoopStyle.ringTrack, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: shown)
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(valueText)
-                    .font(.system(size: diameter * 0.28, weight: .bold).width(.condensed))
+                    .font(WhoopStyle.number(diameter * 0.28))
                     .monospacedDigit()
                 if showsPercent && score != nil {
-                    Text("%").font(.system(size: diameter * 0.16, weight: .bold).width(.condensed))
+                    Text("%").font(WhoopStyle.number(diameter * 0.16))
                 }
             }
             .foregroundStyle(StrandPalette.textPrimary)
@@ -126,31 +110,31 @@ struct WhoopInsightCard: View {
 
     var body: some View {
         Button(action: openCoach) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: NoopMetrics.space3) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(insight?.title ?? fallbackTitle)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(WhoopStyle.headline)
                         .foregroundStyle(StrandPalette.textPrimary)
                     if loading && insight == nil {
                         Text("Analyzing…")
-                            .font(.system(size: 15))
+                            .font(WhoopStyle.body)
                             .foregroundStyle(StrandPalette.textTertiary)
                     } else {
                         Text(insight?.body ?? fallbackBody)
-                            .font(.system(size: 15))
+                            .font(WhoopStyle.body)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(WhoopStyle.icon)
                     .foregroundStyle(StrandPalette.accent)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(WhoopHomeStyle.ringTrack))
+                    .padding(NoopMetrics.space2)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(WhoopStyle.ringTrack))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(WhoopStyle.cardPadding)
             .whoopCard()
         }
         .buttonStyle(.plain)
@@ -206,19 +190,19 @@ struct HealthMonitorCard: View {
             WhoopOverviewCard(title: String(localized: "HEALTH MONITOR")) {
                 HStack(spacing: 10) {
                     Image(systemName: measured.isEmpty ? "hourglass" : (allGood ? "checkmark" : "exclamationmark"))
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(allGood ? WhoopHomeStyle.rangeGreen : WhoopHomeStyle.rangeAmber)
+                        .font(WhoopStyle.detail)
+                        .foregroundStyle(allGood ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
                         .frame(width: 32, height: 32)
                         .background(RoundedRectangle(cornerRadius: 7)
-                            .fill((allGood ? WhoopHomeStyle.rangeGreen : WhoopHomeStyle.rangeAmber).opacity(0.18)))
-                    VStack(alignment: .leading, spacing: 2) {
+                            .fill((allGood ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber).opacity(0.18)))
+                    VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
                         Text(measured.isEmpty ? String(localized: "CALIBRATING")
                              : (allGood ? String(localized: "WITHIN RANGE") : String(localized: "OUT OF RANGE")))
-                            .font(WhoopHomeStyle.smallLabel)
-                            .foregroundStyle(allGood ? WhoopHomeStyle.rangeGreen : WhoopHomeStyle.rangeAmber)
+                            .font(WhoopStyle.smallLabel)
+                            .foregroundStyle(allGood ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
                         Text(measured.isEmpty ? String(localized: "Wear it tonight")
                              : "\(inRange)/\(measured.count) " + String(localized: "Metrics"))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(WhoopStyle.detail)
                             .foregroundStyle(StrandPalette.textSecondary)
                     }
                     .lineLimit(1)
@@ -237,9 +221,9 @@ struct StressMonitorCard: View {
     private var level: (word: String, color: Color) {
         guard let s = stress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
         switch s {
-        case ..<1: return (String(localized: "LOW"), WhoopHomeStyle.rangeGreen)
-        case ..<2: return (String(localized: "MEDIUM"), Color(light: "#B59A00", dark: "#F2D24B"))
-        default: return (String(localized: "HIGH"), WhoopHomeStyle.rangeAmber)
+        case ..<1: return (String(localized: "LOW"), WhoopStyle.rangeGreen)
+        case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.rangeYellow)
+        default: return (String(localized: "HIGH"), WhoopStyle.rangeAmber)
         }
     }
 
@@ -248,17 +232,17 @@ struct StressMonitorCard: View {
             WhoopOverviewCard(title: String(localized: "STRESS MONITOR")) {
                 HStack(spacing: 10) {
                     Text(stress.map { String(format: "%.1f", $0) } ?? "—")
-                        .font(.system(size: 14, weight: .bold).width(.condensed))
+                        .font(WhoopStyle.number(14))
                         .monospacedDigit()
                         .foregroundStyle(level.color)
                         .frame(width: 32, height: 32)
                         .background(RoundedRectangle(cornerRadius: 7).fill(level.color.opacity(0.18)))
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
                         Text(level.word)
-                            .font(WhoopHomeStyle.smallLabel)
+                            .font(WhoopStyle.smallLabel)
                             .foregroundStyle(level.color)
                         Text(Date(), format: .dateTime.hour().minute())
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(WhoopStyle.detail)
                             .foregroundStyle(StrandPalette.textSecondary)
                     }
                     .lineLimit(1)
@@ -278,19 +262,19 @@ private struct WhoopOverviewCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text(title)
-                    .font(WhoopHomeStyle.smallLabel)
+                    .font(WhoopStyle.smallLabel)
                     .foregroundStyle(StrandPalette.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(WhoopStyle.detail)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(WhoopStyle.compactPadding)
         .whoopCard()
     }
 }
@@ -302,26 +286,26 @@ struct WhoopMyDaySection: View {
     @State private var showReview = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
             Text("My Day")
-                .font(.system(size: 26, weight: .semibold))
+                .font(WhoopStyle.sectionTitle)
                 .foregroundStyle(StrandPalette.textPrimary)
-                .padding(.top, 8)
+                .padding(.top, NoopMetrics.space2)
             Button { showReview = true } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: NoopMetrics.space3) {
                     Image(systemName: "moon")
-                        .font(.system(size: 20, weight: .regular))
+                        .font(WhoopStyle.iconLarge)
                     Text("Your Day In Review")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(WhoopStyle.headline)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color(light: "#3A7BD5", dark: "#7FB2FF"))
+                        .font(WhoopStyle.icon)
+                        .foregroundStyle(WhoopStyle.reviewAccent)
                 }
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(WhoopHomeStyle.reviewGradient))
+                .foregroundStyle(WhoopStyle.onGradient)
+                .padding(.horizontal, NoopMetrics.space4)
+                .padding(.vertical, NoopMetrics.space4)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(WhoopStyle.reviewGradient))
             }
             .buttonStyle(.plain)
         }
@@ -346,10 +330,10 @@ struct DayInReviewSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: NoopMetrics.space4) {
                     if let text {
                         Text(Self.markdown(text))
-                            .font(.system(size: 16))
+                            .font(WhoopStyle.reading)
                             .foregroundStyle(StrandPalette.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -358,12 +342,12 @@ struct DayInReviewSheet: View {
                             ProgressView()
                             Text("Analyzing your day…").foregroundStyle(StrandPalette.textSecondary)
                         }
-                        .padding(.top, 40)
+                        .padding(.top, NoopMetrics.space10)
                         .frame(maxWidth: .infinity)
                     } else if !coach.isConfigured || !coach.dataConsent {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                             Text("Your Day in Review is written by the Coach.")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(WhoopStyle.headline)
                             Text("Open Coach, add your Anthropic API key and allow it to read your data. Then come back here for a recap of your sleep, recovery, strain and stress.")
                                 .foregroundStyle(StrandPalette.textSecondary)
                             Button("Open Coach") { dismiss(); router.openCoach() }
@@ -374,7 +358,7 @@ struct DayInReviewSheet: View {
                             .foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
-                .padding(20)
+                .padding(NoopMetrics.space5)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(StrandPalette.surfaceBase.ignoresSafeArea())
@@ -466,29 +450,29 @@ struct WhoopSleepContributors: View {
 
     static func color(_ band: Band) -> Color {
         switch band {
-        case .poor: return WhoopHomeStyle.rangeAmber
-        case .sufficient: return Color(light: "#8A94A4", dark: "#B8C0CC")
-        case .optimal: return WhoopHomeStyle.rangeGreen
+        case .poor: return WhoopStyle.rangeAmber
+        case .sufficient: return WhoopStyle.sufficientGray
+        case .optimal: return WhoopStyle.rangeGreen
         }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                HStack(spacing: 12) {
+                HStack(spacing: NoopMetrics.space3) {
                     Image(systemName: row.icon)
-                        .font(.system(size: 17))
+                        .font(WhoopStyle.iconMedium)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .frame(width: 26)
                     Text(row.label)
-                        .font(WhoopHomeStyle.smallLabel)
+                        .font(WhoopStyle.smallLabel)
                         .foregroundStyle(StrandPalette.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                     Spacer(minLength: 8)
                     segments(row.band)
                     Text(row.value.map { "\(Int($0.rounded()))%" } ?? "—")
-                        .font(.system(size: 20, weight: .bold).width(.condensed))
+                        .font(WhoopStyle.number(20))
                         .monospacedDigit()
                         .foregroundStyle(StrandPalette.textPrimary)
                         .frame(minWidth: 52, alignment: .trailing)
@@ -497,14 +481,14 @@ struct WhoopSleepContributors: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(accessibility(row)))
                 if index < rows.count - 1 {
-                    Rectangle().fill(WhoopHomeStyle.cardStroke).frame(height: 1)
+                    Rectangle().fill(WhoopStyle.cardStroke).frame(height: 1)
                 }
             }
             legend.padding(.top, 10)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, WhoopStyle.compactPadding)
         .padding(.vertical, 6)
-        .padding(.bottom, 8)
+        .padding(.bottom, NoopMetrics.space2)
         .whoopCard()
     }
 
@@ -512,7 +496,7 @@ struct WhoopSleepContributors: View {
         HStack(spacing: 3) {
             ForEach(0..<3, id: \.self) { i in
                 Capsule()
-                    .fill(band?.rawValue == i ? Self.color(band ?? .sufficient) : WhoopHomeStyle.ringTrack)
+                    .fill(band?.rawValue == i ? Self.color(band ?? .sufficient) : WhoopStyle.ringTrack)
                     .frame(width: 18, height: 4)
             }
         }
@@ -525,11 +509,11 @@ struct WhoopSleepContributors: View {
             legendItem(.optimal, String(localized: "Optimal"))
             Spacer(minLength: 0)
         }
-        .font(.system(size: 13))
+        .font(WhoopStyle.caption)
         .foregroundStyle(StrandPalette.textSecondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(WhoopHomeStyle.ringTrack.opacity(0.5)))
+        .background(RoundedRectangle(cornerRadius: 10).fill(WhoopStyle.ringTrack.opacity(0.5)))
     }
 
     private func legendItem(_ band: Band, _ text: String) -> some View {
