@@ -41,6 +41,14 @@ public enum WhoopStyle {
     public static let coachButtonShadow = Color(hex: "#00000073")
     public static let coachButtonSize: CGFloat = 58
 
+    // MARK: Coach sheet
+
+    public static let sheetFill = Color(light: "#F4F5F7", dark: "#141922")
+    /// Quick-reply chips: light capsules with dark text on the dark sheet (inverted in light mode).
+    public static let chipFill = Color(light: "#1C2230", dark: "#F4F6F8")
+    public static let chipText = Color(light: "#F4F6F8", dark: "#141922")
+    public static let userBubble = Color(light: "#E3E6EB", dark: "#2A303A")
+
     // MARK: Type
 
     /// Ring labels ("SLEEP", "RECOVERY", "STRAIN").

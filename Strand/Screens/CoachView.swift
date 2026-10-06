@@ -552,7 +552,7 @@ struct CoachView: View {
             // The reply sits on a frosted Charge-tinted surface, a card, not a flat box.
             // K8: context menu (long-press / right-click) with Copy, Share, and Save actions.
             HStack {
-                Markdown(message.text)
+                Markdown(AICoachEngine.splitReplies(message.text).body)
                     .markdownTheme(.strand)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)

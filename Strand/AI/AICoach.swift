@@ -286,6 +286,8 @@ final class AICoachEngine: ObservableObject {
     Format replies in simple Markdown, chat-sized: short paragraphs, **bold** for key numbers, \
     bullet or numbered lists for plans, ### headings only when structure genuinely helps, and a \
     small table only for a week-ahead plan. No code blocks.
+    End EVERY reply with one final line in exactly this form: "Replies: <reply 1> | <reply 2>", two short \
+    natural replies (under 8 words each) the user might tap next, written in the user's own voice.
     """
 
     /// The system prompt actually sent, read FRESH from UserDefaults on every request so an edit in
@@ -947,7 +949,7 @@ final class AICoachEngine: ObservableObject {
         let wire: [(role: ChatMessage.Role, content: String)] =
             [(.user, context + "\n\n---\n\n" + Self.briefInstruction)]
         guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
-        let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = Self.splitReplies(reply).body.trimmingCharacters(in: .whitespacesAndNewlines)
         return clean.isEmpty ? nil : clean
     }
 
@@ -1173,7 +1175,14 @@ final class AICoachEngine: ObservableObject {
     private func wireMessages(context: String) -> [(role: ChatMessage.Role, content: String)] {
         var out: [(role: ChatMessage.Role, content: String)] = []
         var contextInjected = false
-        for m in windowedMessages() {
+        let windowed = windowedMessages()
+        // WHOOP-style openers mean the coach can speak first. Providers expect the first turn to be the
+        // user's, so a transcript that starts with the coach gets the data context as its opening turn.
+        if windowed.first?.role == .assistant {
+            out.append((.user, context + "\n\n---\n\n(The user opened the Coach.)"))
+            contextInjected = true
+        }
+        for m in windowed {
             if m.role == .user && !contextInjected {
                 contextInjected = true
                 out.append((.user, context + "\n\n---\n\nQuestion: " + m.text))
@@ -1182,6 +1191,102 @@ final class AICoachEngine: ObservableObject {
             }
         }
         return out
+    }
+
+    // MARK: - WHOOP-style screen-aware opener
+
+    /// The screen the wearer is looking at, so the Coach can open with a message about it.
+    enum CoachScreen: String {
+        case home, sleep, recovery, strain, health, trends, other
+
+        var describedForCoach: String {
+            switch self {
+            case .home: return "Home screen (today's Sleep, Recovery and Strain at a glance)"
+            case .sleep: return "Sleep screen (last night's Sleep performance, hours vs needed, consistency, efficiency and stages)"
+            case .recovery: return "Recovery screen (today's Recovery and its drivers: HRV, resting heart rate, respiratory rate and sleep)"
+            case .strain: return "Strain screen (today's Strain so far, heart-rate zones, workouts and steps)"
+            case .health: return "Health screen (vitals against their normal ranges, and stress)"
+            case .trends: return "Trends screen (the last 30 days of Recovery, Strain, Sleep and HRV)"
+            case .other: return "app"
+            }
+        }
+    }
+
+    /// The screen the wearer is on, as last marked by `View.coachScreen(_:)`.
+    var currentScreen: CoachScreen { CoachScreenState.current }
+
+    private static func screenOpenerInstruction(_ screen: CoachScreen) -> String {
+        """
+        The user just opened the Coach while looking at their \(screen.describedForCoach). Write the \
+        Coach's opening message, like the WHOOP coach: two or three short sentences, warm and direct, \
+        speaking to them about the most notable thing on that screen with their actual numbers, and end \
+        with one question about how they feel or what they want to do. No headings, no lists. Then the \
+        final "Replies:" line.
+        """
+    }
+
+    /// WHOOP-style: the Coach speaks first, about the screen the wearer opened it from. The instruction
+    /// is never shown; only the Coach's message is added to the conversation.
+    func openWithScreenContext() async {
+        guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending,
+              let key = resolvedKey else { return }
+        retireStaleConversationIfNeeded()
+        conversationDay = Self.localEpochDay()
+        errorText = nil
+        sending = true
+        defer { sending = false; persistMessages() }
+
+        let context = dataConsent ? await buildFullContext() : noConsentNote
+        var wire = wireMessages(context: context)
+        let instruction = Self.screenOpenerInstruction(currentScreen)
+        wire.append((.user, wire.isEmpty ? context + "\n\n---\n\n" + instruction : instruction))
+
+        let placeholder = ChatMessage(role: .assistant, text: "")
+        appendMessage(placeholder)
+        var accumulated = ""
+        func replaceLast(_ text: String) {
+            if let i = messages.indices.last, messages[i].role == .assistant {
+                messages[i] = ChatMessage(id: placeholder.id, role: .assistant, text: text)
+            }
+        }
+        func dropPlaceholder() {
+            if let i = messages.indices.last, messages[i].id == placeholder.id { messages.remove(at: i) }
+        }
+        do {
+            try await streamProvider(key: key, messages: wire) { delta in
+                accumulated += delta
+                replaceLast(accumulated)
+            }
+            let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+            if clean.isEmpty { dropPlaceholder() } else { replaceLast(clean) }
+            keyRejected = false
+        } catch let e as AICoachError {
+            if accumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { dropPlaceholder() }
+            errorText = e.errorDescription
+            if case .badKey = e { keyRejected = true } else { keyRejected = false }
+        } catch {
+            if accumulated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { dropPlaceholder() }
+            errorText = AICoachError.network(error.localizedDescription).errorDescription
+            keyRejected = false
+        }
+    }
+
+    /// Pure: split a reply into its body and the "Replies: a | b" quick replies on its last line.
+    /// A partial "Replies:" line while streaming is hidden too.
+    nonisolated static func splitReplies(_ text: String) -> (body: String, replies: [String]) {
+        guard let range = text.range(of: "Replies:", options: [.caseInsensitive, .backwards]) else {
+            return (text, [])
+        }
+        let lineStart = text[..<range.lowerBound].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        guard text[lineStart..<range.lowerBound].trimmingCharacters(in: .whitespaces).isEmpty else {
+            return (text, [])
+        }
+        let body = String(text[..<lineStart]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let replies = text[range.upperBound...]
+            .split(separator: "|")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"*")) }
+            .filter { !$0.isEmpty }
+        return (body, Array(replies.prefix(3)))
     }
 
     // MARK: - WHOOP-style Home insight, Day in Review, screen analysis
@@ -1243,20 +1348,21 @@ final class AICoachEngine: ObservableObject {
         let wire: [(role: ChatMessage.Role, content: String)] =
             [(.user, context + "\n\n---\n\n" + instruction)]
         guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
-        let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = Self.splitReplies(reply).body.trimmingCharacters(in: .whitespacesAndNewlines)
         return clean.isEmpty ? nil : clean
     }
 
-    /// The question the floating Coach button asks for the tab the user is looking at (WHOOP's
-    /// "Analyzing…" on the current screen). Tags match `RootTabView`'s tab tags.
+    /// The question the round Coach button asks for the tab the user is looking at (WHOOP's
+    /// "Analyzing..." on the current screen). Tags match `RootTabView`'s tab tags (0 Home, 1 Trends,
+    /// 2 Health, 4 More).
     nonisolated static func screenAnalysisPrompt(tab: Int) -> String {
         switch tab {
         case 1:
             return "Analyze my trends on this screen: how my Recovery, HRV, resting HR, Strain and Sleep have "
                 + "moved over the last 30 days, what's improving, what's slipping, and why."
         case 2:
-            return "Analyze last night's sleep: hours vs what I needed, consistency, efficiency, stages and "
-                + "how it compares with my prior 30 days. What should I do differently tonight?"
+            return "Analyze my health metrics: HRV, resting heart rate, breathing rate, blood oxygen and skin "
+                + "temperature against my normal, plus today's stress. Is anything out of range?"
         case 4:
             return "Give me a quick overall check-in: how am I doing this week and what's the one thing to focus on?"
         default:
