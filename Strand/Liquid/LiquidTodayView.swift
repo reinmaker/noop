@@ -369,6 +369,7 @@ struct LiquidTodayView: View {
                         case .hero:
                             heroCard
                             if chargeLegacyRRGap { ChargeLegacyRRGapNote() }
+                            if selectedDayOffset == 0 { whoopHomeExtras }
                         case .liveSession: if liveSessionsBeta { liveSessionStartRow }
                         case .synthesis: synthesisSection
                         case .keyMetrics: keyMetricsSection
@@ -695,27 +696,25 @@ struct LiquidTodayView: View {
         .accessibilityLabel("Start a live session. Beta. Silent strap coaching against today's Charge.")
     }
 
+    /// WHOOP-style Home: the daily insight, the Health / Stress Monitor overview cards and My Day.
+    private var whoopHomeExtras: some View {
+        VStack(spacing: 12) {
+            WhoopInsightCard(fallbackTitle: readinessWord ?? String(localized: "Today's Recovery"),
+                             fallbackBody: chargeDisplay.calibrationDetail ?? synthLine)
+            HStack(alignment: .top, spacing: 10) {
+                HealthMonitorCard()
+                StressMonitorCard(stress: stress)
+            }
+            WhoopMyDaySection()
+        }
+    }
+
     private var heroCard: some View {
         HStack(alignment: .top, spacing: 4) {
             // #543 carry: an unscored today shows the last scored night's REAL Charge (labelled as prior by
             // the state pill) rather than an empty vessel, matching the classic Today, the widget/watch/Live
             // Activity (`Repository.widgetAnchor`) and Android. Effort deliberately does NOT carry — it is
             // today's own accumulation, so yesterday's number would be a false statement, not a stale one.
-            HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct,
-                          tint: chargeDisplay.pct.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
-                          animated: dataLoaded, onGuide: { guideSection = .charge },
-                          detailRoute: .metric(HeroRingMetric.charge))
-            // #45: the hero Effort must honour the user's Effort scale like every other Effort read-out.
-            // Show the value on the chosen scale (0–100 or WHOOP 0–21) with the matching vessel max, and
-            // one decimal on the compressed 0–21 axis to match the app-wide `effortDisplay` convention
-            // (12.6, not a rounded "13"); the 0–100 hero stays a whole number as before.
-            HeroScoreCell(label: String(localized: "Effort"),
-                          score: effortStrain(displayDay).map { UnitFormatter.effortValue($0, scale: effortScale) },
-                          tint: StrandPalette.effortColor, animated: dataLoaded,
-                          onGuide: { guideSection = .effort },
-                          maxValue: effortScale == .whoop ? 21 : 100,
-                          decimals: effortScale == .whoop ? 1 : 0,
-                          detailRoute: .metric(HeroRingMetric.effort))
             HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
                           animated: dataLoaded, onGuide: { guideSection = .rest },
                           detailRoute: .metric(HeroRingMetric.rest))
@@ -730,10 +729,26 @@ struct LiquidTodayView: View {
                             .accessibilityLabel(Text("Source: \(sourceLabel)"))
                     }
                 }
+            HeroScoreCell(label: String(localized: "Charge"), score: chargeDisplay.pct,
+                          tint: chargeDisplay.pct.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.chargeColor,
+                          animated: dataLoaded, onGuide: { guideSection = .charge },
+                          detailRoute: .metric(HeroRingMetric.charge))
+            // #45: the hero Effort must honour the user's Effort scale like every other Effort read-out.
+            // Show the value on the chosen scale (0–100 or WHOOP 0–21) with the matching vessel max, and
+            // one decimal on the compressed 0–21 axis to match the app-wide `effortDisplay` convention
+            // (12.6, not a rounded "13"); the 0–100 hero stays a whole number as before.
+            HeroScoreCell(label: String(localized: "Effort"),
+                          score: effortStrain(displayDay).map { UnitFormatter.effortValue($0, scale: effortScale) },
+                          tint: StrandPalette.effortColor, animated: dataLoaded,
+                          onGuide: { guideSection = .effort },
+                          maxValue: effortScale == .whoop ? 21 : 100,
+                          decimals: effortScale == .whoop ? 1 : 0,
+                          detailRoute: .metric(HeroRingMetric.effort),
+                          showsPercent: false)
         }
+        // WHOOP-style: the three rings sit straight on the background, no panel behind them.
         .padding(.vertical, NoopMetrics.space4)
-        .padding(.horizontal, NoopMetrics.space3)
-        .background(NoopPanelSurface(cornerRadius: 26, elevated: true, surfaceOpacity: cardOpacity))
+        .padding(.horizontal, NoopMetrics.space2)
     }
 
     // MARK: - Heart rate
@@ -2246,6 +2261,8 @@ private struct HeroScoreCell: View {
     /// the same score land on the identical dossier rather than diverging. The LABEL keeps its own job:
     /// it opens the scoring guide, which is this screen's only route to that explainer.
     var detailRoute: TabRoute? = nil
+    /// WHOOP-style: "%" after Recovery and Sleep, a bare number for Strain.
+    var showsPercent: Bool = true
 
     /// The gauge, linked when there is somewhere to go.
     ///
@@ -2253,14 +2270,14 @@ private struct HeroScoreCell: View {
     /// as three stacked elements rather than a branch.
     @ViewBuilder
     private var gaugeView: some View {
-        let gauge = LiquidScoreGauge(
+        let gauge = WhoopRingGauge(
             score: score,
-            tint: tint,
-            diameter: Self.vesselDiameter,
-            animated: animated,
             maxValue: maxValue,
             decimals: decimals,
-            tapPassesThrough: detailRoute != nil
+            showsPercent: showsPercent,
+            tint: tint,
+            diameter: Self.vesselDiameter,
+            animated: animated
         )
         if let detailRoute {
             NavigationLink(value: detailRoute) { gauge }
@@ -2290,13 +2307,12 @@ private struct HeroScoreCell: View {
                 HStack(spacing: 3) {
                     // #74: one line, shrink-to-fit rather than wrap under large Dynamic Type (mirrors the
                     // score number above) so CHARGE/EFFORT/REST never grow the hero card to two lines.
-                    Text(label.uppercased()).font(StrandFont.overline).tracking(1.6)
+                    Text(label.uppercased()).font(WhoopHomeStyle.label)
                         .lineLimit(1).minimumScaleFactor(0.7)
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).opacity(0.6)
+                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).opacity(0.7)
                 }
-                // Theme-aware hero label (#1160): normal text token — readable on Dark and Light
-                // panel surfaces alike (was onDark* when the hero fill was pinned dark).
-                .foregroundStyle(StrandPalette.textSecondary)
+                // WHOOP-style: bold, wide, primary-colour labels under the rings.
+                .foregroundStyle(StrandPalette.textPrimary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("\(label), \(spokenScore). See how it is scored."))

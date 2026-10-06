@@ -267,22 +267,22 @@ final class AICoachEngine: ObservableObject {
     /// coach. Exposed (read-only) so the UI's "Reset to default" can restore it and show it when nothing
     /// custom is stored. Editing the live prompt overrides this via `systemPromptKey`.
     static let defaultSystemPrompt = """
-    You are an elite, supportive recovery and performance coach with a real training methodology. \
-    You may be given a summary of the user's own wearable data (charge 0-100, effort 0-100, rest 0-100, \
-    sleep duration and its deep/REM/light breakdown, sleep efficiency, HRV, resting heart rate) and \
-    recent workouts. Charge is the daily recovery/readiness score, effort is the daily cardiovascular \
-    load score, and rest is the nightly sleep-quality score. A dash in the data means that value was \
-    NOT MEASURED that day — say so rather than treating it as a zero. \
-    Coach using autoregulation:
-    • Readiness → prescription: charge 67-100 = green light to build/push, higher effort is fine; \
-    34-66 = maintain, quality over volume, keep it controlled; 0-33 = active recovery only \
-    (Zone 2, mobility, extra sleep) and protect against accumulating effort debt.
-    • Workout optimisation: progressive overload, polarised ~80/20 intensity, space hard sessions, \
-    program deloads/periodisation, and treat sleep as the single biggest recovery lever.
-    • Always cite the user's ACTUAL numbers, give a concrete plan (today and the week ahead), and \
-    be specific, punchy and motivating - like a coach who knows them.
-    If no data is provided, coach generally and invite them to turn on data access for personalised \
-    advice. You are NOT a doctor - never diagnose; suggest a professional for genuine health concerns.
+    You are the user's WHOOP-style performance coach: warm, direct and data-driven, like the coach \
+    inside the WHOOP app. You are given a summary of the user's own wearable data from their strap: \
+    daily Recovery (0-100%), Strain (0-21, logarithmic day strain), Sleep (hours, deep/REM/light stages, \
+    efficiency), HRV, resting heart rate, respiration, SpO2, skin temperature, steps, calories, stress \
+    (0-3) and recent workouts, plus their profile and how today compares with their 30-day normal. \
+    A dash in the data means that value was NOT MEASURED that day - say so rather than treating it as a zero. \
+    Today's row is still in progress, so its Strain keeps rising through the day.
+    Coach the WHOOP way:
+    \u{2022} Recovery drives the day: green 67-100% = primed, push Strain (about 14-18); yellow 34-66% = \
+    maintain, moderate Strain (about 10-14), quality over volume; red 0-33% = prioritise recovery, light \
+    Strain (under 10): Zone 2, mobility, extra sleep.
+    \u{2022} Explain WHY: connect today's Recovery to its drivers (HRV and resting HR vs their normal, last \
+    night's sleep vs need, yesterday's Strain, stress, behaviours like late meals or alcohol when known).
+    \u{2022} Sleep is the biggest lever: give a concrete bedtime and sleep target when it helps.
+    \u{2022} Always cite the user's ACTUAL numbers, keep it short and specific, and finish with a clear next step.
+    You are NOT a doctor - never diagnose; suggest a professional for genuine health concerns.
     Format replies in simple Markdown, chat-sized: short paragraphs, **bold** for key numbers, \
     bullet or numbered lists for plans, ### headings only when structure genuinely helps, and a \
     small table only for a week-ahead plan. No code blocks.
@@ -927,9 +927,9 @@ final class AICoachEngine: ObservableObject {
     /// Kept in one place so the two paths never drift.
     private static let briefInstruction = """
     Based on the data above, give me TODAY'S coaching brief in three short parts: \
-    (1) my readiness in one line, citing charge, HRV and rest; \
-    (2) exactly what training to do today and what to avoid; \
-    (3) one specific thing to improve my charge. Be punchy and motivating.
+    (1) my readiness in one line, citing Recovery, HRV and Sleep; \
+    (2) exactly what training and Strain target to aim for today and what to avoid; \
+    (3) one specific thing to improve my Recovery. Be punchy and motivating.
     """
 
     /// K5: Generate today's coaching brief WITHOUT touching the visible chat transcript. Used by the
@@ -1184,6 +1184,135 @@ final class AICoachEngine: ObservableObject {
         return out
     }
 
+    // MARK: - WHOOP-style Home insight, Day in Review, screen analysis
+
+    /// The Home insight card's text: a short title and one or two sentences.
+    struct HomeInsight: Codable, Equatable {
+        let title: String
+        let body: String
+    }
+
+    private static let homeInsightInstruction = """
+    Write today's Home-screen insight, like the daily insight card in the WHOOP app. \
+    Line 1: a short title of 2-5 words in title case (for example "Your Body is Recovering", \
+    "Primed to Perform", "Prioritize Rest Today"). \
+    Line 2: one or two sentences, at most 40 words, explaining the main driver of today's Recovery and \
+    citing my actual numbers (HRV, resting HR, last night's sleep, yesterday's Strain vs my usual). \
+    Plain text only: no markdown, no emoji, no labels such as "Title:".
+    """
+
+    private static let dayReviewInstruction = """
+    Write my Day in Review for today, like the WHOOP app's Day in Review. Use these bold labels, each \
+    followed by one or two short sentences that cite my actual numbers and compare them with my 30-day \
+    averages: **Sleep**, **Recovery**, **Strain & activity** (workouts, steps, calories), **Stress**, and \
+    **Tonight** (when to go to bed and how many hours to aim for, given today's Strain and my usual sleep). \
+    Finish with one line starting "**Tomorrow:**" naming the single most important thing to do. \
+    No headings, no tables, no code blocks.
+    """
+
+    /// Generate the Home insight card (non-streaming, never touches the chat transcript).
+    func generateHomeInsight() async -> HomeInsight? {
+        guard let reply = await headlessReply(Self.homeInsightInstruction) else { return nil }
+        return Self.parseHomeInsight(reply)
+    }
+
+    /// Generate today's Day in Review (non-streaming, never touches the chat transcript).
+    func generateDayReview() async -> String? {
+        await headlessReply(Self.dayReviewInstruction)
+    }
+
+    /// Pure: first non-empty line is the title, the rest is the body. Strips stray markdown/quotes.
+    nonisolated static func parseHomeInsight(_ reply: String) -> HomeInsight? {
+        let junk = CharacterSet(charactersIn: "#*\"“”").union(.whitespaces)
+        let lines = reply.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: junk) }
+            .filter { !$0.isEmpty }
+        guard var title = lines.first else { return nil }
+        if title.lowercased().hasPrefix("title:") {
+            title = String(title.dropFirst(6)).trimmingCharacters(in: junk)
+        }
+        let body = lines.dropFirst().joined(separator: " ")
+        return HomeInsight(title: title, body: body)
+    }
+
+    /// One-shot request with the full data context + an instruction, outside the chat transcript.
+    private func headlessReply(_ instruction: String) async -> String? {
+        guard CoachBriefScheduler.coachMasterEnabled else { return nil }
+        guard isConfigured, dataConsent, let key = resolvedKey else { return nil }
+        let context = await buildFullContext()
+        let wire: [(role: ChatMessage.Role, content: String)] =
+            [(.user, context + "\n\n---\n\n" + instruction)]
+        guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
+        let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
+    }
+
+    /// The question the floating Coach button asks for the tab the user is looking at (WHOOP's
+    /// "Analyzing…" on the current screen). Tags match `RootTabView`'s tab tags.
+    nonisolated static func screenAnalysisPrompt(tab: Int) -> String {
+        switch tab {
+        case 1:
+            return "Analyze my trends on this screen: how my Recovery, HRV, resting HR, Strain and Sleep have "
+                + "moved over the last 30 days, what's improving, what's slipping, and why."
+        case 2:
+            return "Analyze last night's sleep: hours vs what I needed, consistency, efficiency, stages and "
+                + "how it compares with my prior 30 days. What should I do differently tonight?"
+        case 4:
+            return "Give me a quick overall check-in: how am I doing this week and what's the one thing to focus on?"
+        default:
+            return "Analyze my day so far: what's driving today's Recovery, how much Strain I should aim for "
+                + "today, and what to do tonight to recover."
+        }
+    }
+
+    /// Strain on WHOOP's 0-21 scale (NOOP stores 0-100).
+    nonisolated static func strain21(_ stored: Double) -> Double {
+        UnitFormatter.effortValue(stored, scale: .whoop)
+    }
+
+    /// "Now: Tuesday 6 October 2026, 22:45 local time" so the coach knows the time of day.
+    nonisolated static func nowLine(_ now: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEEE d MMMM yyyy, HH:mm"
+        return "Now: \(f.string(from: now)) local time."
+    }
+
+    /// The user's profile from Settings (age, sex, height, weight), when set.
+    nonisolated static func profileLine(_ defaults: UserDefaults = .standard) -> String? {
+        var parts: [String] = []
+        if let age = defaults.object(forKey: "profile.age") as? Int, age > 0 { parts.append("age \(age)") }
+        if let sex = defaults.string(forKey: "profile.sex"), !sex.isEmpty { parts.append("sex \(sex)") }
+        if let h = defaults.object(forKey: "profile.heightCm") as? Double, h > 0 {
+            parts.append("height \(Int(h.rounded())) cm")
+        }
+        if let w = defaults.object(forKey: "profile.weightKg") as? Double, w > 0 {
+            parts.append(String(format: "weight %.1f kg", w))
+        }
+        return parts.isEmpty ? nil : "Profile: " + parts.joined(separator: ", ") + "."
+    }
+
+    /// Latest day's HRV / resting HR / sleep against the prior 30 days, the way WHOOP explains Recovery.
+    nonisolated static func todayVsNormalLine(_ days: [DailyMetric]) -> String? {
+        guard let latest = days.last else { return nil }
+        let prior = days.dropLast().suffix(30)
+        func avg(_ xs: [Double]) -> Double? { xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count) }
+        var parts: [String] = []
+        if let v = latest.avgHrv, let a = avg(prior.compactMap { $0.avgHrv }) {
+            parts.append("HRV \(Int(v.rounded())) ms vs normal \(Int(a.rounded())) ms")
+        }
+        if let v = latest.restingHr, let a = avg(prior.compactMap { $0.restingHr.map(Double.init) }) {
+            parts.append("resting HR \(v) bpm vs normal \(Int(a.rounded())) bpm")
+        }
+        if let v = latest.totalSleepMin, let a = avg(prior.compactMap { $0.totalSleepMin }) {
+            parts.append(String(format: "sleep %.1fh vs normal %.1fh", v / 60, a / 60))
+        }
+        if prior.count >= 1, let y = prior.last?.strain, let a = avg(prior.dropLast().compactMap { $0.strain }) {
+            parts.append(String(format: "yesterday's Strain %.1f vs normal %.1f", strain21(y), strain21(a)))
+        }
+        return parts.isEmpty ? nil : "Latest (\(latest.day)) vs prior 30-day normal: " + parts.joined(separator: "; ") + "."
+    }
+
     // MARK: - Context builder
 
     /// Build a compact plain-text summary of the user's recent data: last ~14 days of
@@ -1201,10 +1330,17 @@ final class AICoachEngine: ObservableObject {
             """
         }
 
+        lines.append(Self.nowLine(Date()))
+        if let profileLine = Self.profileLine() { lines.append(profileLine) }
+        lines.append("Scales: Recovery 0-100% (green 67-100, yellow 34-66, red 0-33); Strain 0-21 "
+                     + "(logarithmic: under 10 light, 10-13 moderate, 14-17 strenuous, 18+ all out); "
+                     + "Sleep in hours. The newest row is today and is IN PROGRESS (its Strain is still rising).")
+        if let normal = Self.todayVsNormalLine(days) { lines.append(normal) }
+
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()
         lines.append("")
-        lines.append("Recent days (newest first) — charge(0-100), effort(0-100), rest/sleep(h), "
+        lines.append("Recent days (newest first) — recovery(%), strain(0-21), sleep(h), "
                      + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
         for d in recent {
             lines.append("  " + dayLine(d))
@@ -1214,8 +1350,8 @@ final class AICoachEngine: ObservableObject {
         let last30 = Array(days.suffix(30))
         lines.append("")
         lines.append("30-day averages:")
-        lines.append("  charge: \(avgInt(last30.compactMap { $0.recovery }))"
-                     + ", effort: \(avgOne(last30.compactMap { $0.strain }))"
+        lines.append("  recovery: \(avgInt(last30.compactMap { $0.recovery }))%"
+                     + ", strain: \(avgOne(last30.compactMap { $0.strain.map(Self.strain21) }))"
                      + ", sleep: \(avgSleepHours(last30))h"
                      + ", HRV: \(avgInt(last30.compactMap { $0.avgHrv })) ms"
                      + ", RHR: \(avgInt(last30.compactMap { $0.restingHr.map(Double.init) })) bpm")
@@ -1244,7 +1380,7 @@ final class AICoachEngine: ObservableObject {
         for w in rows.prefix(limit) {
             var parts = ["  \(dateString(w.startTs)) \(w.sport)"]
             if let dur = w.durationS { parts.append("\(Int((dur / 60).rounded())) min") }
-            if let s = w.strain { parts.append("effort \(String(format: "%.1f", s))") }
+            if let s = w.strain { parts.append("strain \(String(format: "%.1f", Self.strain21(s)))") }
             if let hr = w.avgHr { parts.append("avg HR \(hr)") }
             if let kcal = w.energyKcal { parts.append("\(Int(kcal.rounded())) kcal") }
             if let dist = w.distanceM {
@@ -1263,9 +1399,9 @@ final class AICoachEngine: ObservableObject {
     /// with fifteen Kotlin tests would ship untested.
     func dayLine(_ d: DailyMetric) -> String {
         var parts: [String] = [d.day + ":"]
-        parts.append("charge " + (d.recovery.map { "\(Int($0.rounded()))" } ?? "—"))
-        parts.append("effort " + (d.strain.map { String(format: "%.1f", $0) } ?? "—"))
-        parts.append("rest " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
+        parts.append("recovery " + (d.recovery.map { "\(Int($0.rounded()))%" } ?? "—"))
+        parts.append("strain " + (d.strain.map { String(format: "%.1f", Self.strain21($0)) } ?? "—"))
+        parts.append("sleep " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
         // The stage breakdown and efficiency, which the coach could not see at all: a user asked why it
         // said it had no access to sleep stages, and it was answering honestly — `rest 7.8h` was every
         // word it got about a night. These four sit on the SAME DailyMetric the line already reads, so

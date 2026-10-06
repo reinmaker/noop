@@ -8,15 +8,15 @@ import SwiftUI
 
 public enum NoopVisualStyle {
     // Neutral, low-chroma surfaces sampled from the supplied dark-mode reference.
-    public static let canvas = Color(light: "#F3F4F6", dark: "#0B0D10")
-    public static let surface = Color(light: "#FFFFFF", dark: "#171A1F")
-    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#1C2026")
-    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#15181C")
-    public static let inset = Color(light: "#E8E9ED", dark: "#111418")
+    public static let canvas = Color(light: "#F3F4F6", dark: "#161A1E")
+    public static let surface = Color(light: "#FFFFFF", dark: "#22272D")
+    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#272D33")
+    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#1F2429")
+    public static let inset = Color(light: "#E8E9ED", dark: "#1B1F23")
 
-    public static let border = Color(light: "#D8DAE0", dark: "#262A31")
-    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#343941")
-    public static let divider = Color(light: "#E4E5E9", dark: "#23272D")
+    public static let border = Color(light: "#D8DAE0", dark: "#2E343B")
+    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#3A4148")
+    public static let divider = Color(light: "#E4E5E9", dark: "#2A3036")
 
     public static let primaryText = Color(light: "#17181C", dark: "#F7F7FA")
     public static let secondaryText = Color(light: "#555861", dark: "#C3C4CA")

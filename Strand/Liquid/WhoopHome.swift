@@ -1,0 +1,425 @@
+import SwiftUI
+import StrandAnalytics
+import StrandDesign
+import WhoopStore
+
+// WHOOP-style fork: the Home screen pieces modelled on the WHOOP app — thin score rings, the daily
+// insight card, the Health / Stress Monitor overview cards and the "My Day" Day in Review row. All data
+// is NOOP's own on-device data; the insight and the review are written by the user's own AI Coach
+// (bring-your-own-key) and fall back to NOOP's local text when the Coach is not set up.
+
+// MARK: - Palette
+
+enum WhoopHomeStyle {
+    static let cardFill = Color(light: "#FFFFFF", dark: "#22272D")
+    static let cardStroke = Color(light: "#0000001A", dark: "#FFFFFF12")
+    static let ringTrack = Color(light: "#0000001F", dark: "#FFFFFF1F")
+    static let rangeGreen = Color(light: "#0E9F6E", dark: "#16D9A0")
+    static let rangeAmber = Color(light: "#C77C00", dark: "#F5A623")
+    static let reviewGradient = LinearGradient(
+        colors: [Color(light: "#5B4AA8", dark: "#3A2F66"), Color(light: "#2C6F7E", dark: "#1F4752")],
+        startPoint: .leading, endPoint: .trailing)
+
+    static let label = Font.system(size: 13, weight: .bold).width(.expanded)
+    static let smallLabel = Font.system(size: 11, weight: .bold).width(.expanded)
+}
+
+private struct WhoopCardBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(WhoopHomeStyle.cardFill))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(WhoopHomeStyle.cardStroke, lineWidth: 1))
+    }
+}
+
+extension View {
+    func whoopCard() -> some View { modifier(WhoopCardBackground()) }
+}
+
+// MARK: - Score ring
+
+/// A WHOOP-style score ring: a dim full track, a round-capped progress arc from 12 o'clock, and the
+/// number in the middle (with a small "%" for Recovery and Sleep). Animates the arc when data lands.
+struct WhoopRingGauge: View {
+    let score: Double?
+    var maxValue: Double = 100
+    var decimals: Int = 0
+    var showsPercent: Bool = true
+    let tint: Color
+    var diameter: CGFloat = 96
+    var lineWidth: CGFloat = 7
+    var animated: Bool = true
+
+    @State private var shown: Double = 0
+
+    private var fraction: Double {
+        guard let score, maxValue > 0 else { return 0 }
+        return min(1, max(0, score / maxValue))
+    }
+
+    private var valueText: String {
+        guard let score else { return "—" }
+        return decimals > 0 ? String(format: "%.\(decimals)f", score) : String(Int(score.rounded()))
+    }
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(WhoopHomeStyle.ringTrack, lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: shown)
+                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text(valueText)
+                    .font(.system(size: diameter * 0.28, weight: .bold).width(.condensed))
+                    .monospacedDigit()
+                if showsPercent && score != nil {
+                    Text("%").font(.system(size: diameter * 0.16, weight: .bold).width(.condensed))
+                }
+            }
+            .foregroundStyle(StrandPalette.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .padding(.horizontal, lineWidth + 6)
+        }
+        .frame(width: diameter, height: diameter)
+        .onAppear { update() }
+        .onChangeCompat(of: fraction) { _ in update() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(valueText))
+    }
+
+    private func update() {
+        if animated {
+            withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.9)) { shown = fraction }
+        } else {
+            shown = fraction
+        }
+    }
+}
+
+// MARK: - Daily insight card
+
+/// The card under the rings ("Your Body is Recovering…"). The Coach writes it once per new morning
+/// reading (keyed on today's Recovery + sleep, so a sync that changes them refreshes it); otherwise it
+/// shows NOOP's own local readiness line. Tapping it continues the conversation in Coach.
+struct WhoopInsightCard: View {
+    @EnvironmentObject private var coach: AICoachEngine
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var router: NavRouter
+
+    let fallbackTitle: String
+    let fallbackBody: String
+
+    @State private var insight: AICoachEngine.HomeInsight?
+    @State private var loading = false
+
+    private static let cacheKey = "whoopStyle.homeInsight"
+
+    private var fingerprint: String {
+        guard let d = repo.days.last else { return "none" }
+        let rec = d.recovery.map { String(Int($0.rounded())) } ?? "-"
+        let sleep = d.totalSleepMin.map { String(Int($0.rounded())) } ?? "-"
+        return "\(d.day)|\(rec)|\(sleep)|\(coach.isConfigured)|\(coach.dataConsent)"
+    }
+
+    var body: some View {
+        Button(action: openCoach) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(insight?.title ?? fallbackTitle)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    if loading && insight == nil {
+                        Text("Analyzing…")
+                            .font(.system(size: 15))
+                            .foregroundStyle(StrandPalette.textTertiary)
+                    } else {
+                        Text(insight?.body ?? fallbackBody)
+                            .font(.system(size: 15))
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(StrandPalette.accent)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(WhoopHomeStyle.ringTrack))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .whoopCard()
+        }
+        .buttonStyle(.plain)
+        .task(id: fingerprint) { await load() }
+    }
+
+    private func openCoach() {
+        guard coach.isConfigured else { router.openCoach(); return }
+        let title = insight?.title ?? fallbackTitle
+        coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\": what's behind it and what should I do today?"
+        router.openCoach()
+    }
+
+    private func load() async {
+        let key = fingerprint
+        if let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+           let cached = try? JSONDecoder().decode(CachedInsight.self, from: data),
+           cached.fingerprint == key {
+            insight = cached.insight
+            return
+        }
+        insight = nil
+        guard coach.isConfigured, coach.dataConsent, !repo.days.isEmpty else { return }
+        loading = true
+        defer { loading = false }
+        guard let fresh = await coach.generateHomeInsight() else { return }
+        insight = fresh
+        if let data = try? JSONEncoder().encode(CachedInsight(fingerprint: key, insight: fresh)) {
+            UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        }
+    }
+
+    private struct CachedInsight: Codable {
+        let fingerprint: String
+        let insight: AICoachEngine.HomeInsight
+    }
+}
+
+// MARK: - Overview cards
+
+/// "HEALTH MONITOR — WITHIN RANGE n/n Metrics": the same personal-baseline banding the Health screen's
+/// vital-signs tiles use (HRV, resting HR, respiration, SpO2, skin temperature).
+struct HealthMonitorCard: View {
+    @EnvironmentObject private var repo: Repository
+
+    var body: some View {
+        let readings = BodyVitalSigns.readings(days: repo.days, today: nil, temperatureUnit: .celsius)
+        let measured = readings.filter { $0.banding.band != .noData }
+        let inRange = measured.filter { $0.banding.band == .inRange }.count
+        let allGood = !measured.isEmpty && inRange == measured.count
+
+        NavigationLink(value: TabRoute.health) {
+            WhoopOverviewCard(title: String(localized: "HEALTH MONITOR")) {
+                HStack(spacing: 10) {
+                    Image(systemName: measured.isEmpty ? "hourglass" : (allGood ? "checkmark" : "exclamationmark"))
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(allGood ? WhoopHomeStyle.rangeGreen : WhoopHomeStyle.rangeAmber)
+                        .frame(width: 32, height: 32)
+                        .background(RoundedRectangle(cornerRadius: 7)
+                            .fill((allGood ? WhoopHomeStyle.rangeGreen : WhoopHomeStyle.rangeAmber).opacity(0.18)))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(measured.isEmpty ? String(localized: "CALIBRATING")
+                             : (allGood ? String(localized: "WITHIN RANGE") : String(localized: "OUT OF RANGE")))
+                            .font(WhoopHomeStyle.smallLabel)
+                            .foregroundStyle(allGood ? WhoopHomeStyle.rangeGreen : WhoopHomeStyle.rangeAmber)
+                        Text(measured.isEmpty ? String(localized: "Wear it tonight")
+                             : "\(inRange)/\(measured.count) " + String(localized: "Metrics"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// "STRESS MONITOR — 2.8 HIGH": NOOP's 0–3 stress score, banded the way WHOOP bands its own 0–3 scale.
+struct StressMonitorCard: View {
+    let stress: Double?
+
+    private var level: (word: String, color: Color) {
+        guard let s = stress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
+        switch s {
+        case ..<1: return (String(localized: "LOW"), WhoopHomeStyle.rangeGreen)
+        case ..<2: return (String(localized: "MEDIUM"), Color(light: "#B59A00", dark: "#F2D24B"))
+        default: return (String(localized: "HIGH"), WhoopHomeStyle.rangeAmber)
+        }
+    }
+
+    var body: some View {
+        NavigationLink(value: TabRoute.stress) {
+            WhoopOverviewCard(title: String(localized: "STRESS MONITOR")) {
+                HStack(spacing: 10) {
+                    Text(stress.map { String(format: "%.1f", $0) } ?? "—")
+                        .font(.system(size: 14, weight: .bold).width(.condensed))
+                        .monospacedDigit()
+                        .foregroundStyle(level.color)
+                        .frame(width: 32, height: 32)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(level.color.opacity(0.18)))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(level.word)
+                            .font(WhoopHomeStyle.smallLabel)
+                            .foregroundStyle(level.color)
+                        Text(Date(), format: .dateTime.hour().minute())
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct WhoopOverviewCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(title)
+                    .font(WhoopHomeStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .whoopCard()
+    }
+}
+
+// MARK: - My Day
+
+/// "My Day" header + the gradient "Day In Review" row, which opens the Coach-written review.
+struct WhoopMyDaySection: View {
+    @State private var showReview = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("My Day")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(StrandPalette.textPrimary)
+                .padding(.top, 8)
+            Button { showReview = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "moon")
+                        .font(.system(size: 20, weight: .regular))
+                    Text("Your Day In Review")
+                        .font(.system(size: 17, weight: .semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color(light: "#3A7BD5", dark: "#7FB2FF"))
+                }
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(WhoopHomeStyle.reviewGradient))
+            }
+            .buttonStyle(.plain)
+        }
+        .sheet(isPresented: $showReview) { DayInReviewSheet() }
+    }
+}
+
+/// The Day in Review: the Coach's recap of today (Sleep, Recovery, Strain & activity, Stress, Tonight),
+/// written from the same on-device context the Coach chat gets. Cached per day; Refresh rewrites it.
+struct DayInReviewSheet: View {
+    @EnvironmentObject private var coach: AICoachEngine
+    @EnvironmentObject private var router: NavRouter
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var text: String?
+    @State private var loading = false
+    @State private var failed = false
+
+    private static let cacheKey = "whoopStyle.dayReview"
+    private var today: String { Repository.logicalDayKey(Date()) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let text {
+                        Text(Self.markdown(text))
+                            .font(.system(size: 16))
+                            .foregroundStyle(StrandPalette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    } else if loading {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Analyzing your day…").foregroundStyle(StrandPalette.textSecondary)
+                        }
+                        .padding(.top, 40)
+                        .frame(maxWidth: .infinity)
+                    } else if !coach.isConfigured || !coach.dataConsent {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Your Day in Review is written by the Coach.")
+                                .font(.system(size: 17, weight: .semibold))
+                            Text("Open Coach, add your Anthropic API key and allow it to read your data. Then come back here for a recap of your sleep, recovery, strain and stress.")
+                                .foregroundStyle(StrandPalette.textSecondary)
+                            Button("Open Coach") { dismiss(); router.openCoach() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    } else if failed {
+                        Text("Couldn't write your review right now. Check your connection and try Refresh.")
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(StrandPalette.surfaceBase.ignoresSafeArea())
+            .navigationTitle(Text("Day In Review"))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { Task { await generate() } } label: { Image(systemName: "arrow.clockwise") }
+                        .disabled(loading || !coach.isConfigured || !coach.dataConsent)
+                        .accessibilityLabel(Text("Refresh"))
+                }
+            }
+        }
+        .task { await loadCachedOrGenerate() }
+    }
+
+    private func loadCachedOrGenerate() async {
+        if let stored = UserDefaults.standard.dictionary(forKey: Self.cacheKey) as? [String: String],
+           stored["day"] == today, let cached = stored["text"] {
+            text = cached
+            return
+        }
+        await generate()
+    }
+
+    private func generate() async {
+        guard coach.isConfigured, coach.dataConsent, !loading else { return }
+        loading = true
+        failed = false
+        defer { loading = false }
+        if let fresh = await coach.generateDayReview() {
+            text = fresh
+            UserDefaults.standard.set(["day": today, "text": fresh], forKey: Self.cacheKey)
+        } else if text == nil {
+            failed = true
+        }
+    }
+
+    static func markdown(_ s: String) -> AttributedString {
+        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(s)
+    }
+}
