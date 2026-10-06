@@ -15,6 +15,9 @@ CATALOGS = [
 ]
 SKIP_CHARGE = re.compile(r"\bCharge (before|it|your)\b")
 SKIP_REST = re.compile(r"\bRest (\(seconds\)|period\b|HR\b|up\b)")
+# Entries whose English text must keep NOOP's word: the low-readiness tip "Rest" (take it easy) has its
+# own key precisely so it is not renamed with the Rest (sleep) score.
+SKIP_KEYS = {"readiness.rest"}
 
 
 def rename(text: str) -> str:
@@ -66,6 +69,8 @@ def patch(raw: str):
     edits = []  # (start, end, replacement)
     count = 0
     for key, entry in data["strings"].items():
+        if key in SKIP_KEYS:
+            continue
         exp = expected["strings"][key]
         locs = exp.get("localizations", {})
         enc = json.dumps(key, ensure_ascii=False)
