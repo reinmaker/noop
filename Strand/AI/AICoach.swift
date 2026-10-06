@@ -267,6 +267,7 @@ final class AICoachEngine: ObservableObject {
     /// coach. Exposed (read-only) so the UI's "Reset to default" can restore it and show it when nothing
     /// custom is stored. Editing the live prompt overrides this via `systemPromptKey`.
     static let defaultSystemPrompt = """
+<<<<<<< HEAD
     You are the user's personal performance coach inside Yoop, an app that reads their WHOOP strap on \
     their own phone. Coach like the WHOOP coach: warm, direct, data-driven and honest, with a mix of \
     tough love and motivation unless their coaching preferences say otherwise.
@@ -296,6 +297,29 @@ final class AICoachEngine: ObservableObject {
     Coaching preference> | <short title> | <one-sentence summary>".
     \u{2022} Always finish with "Replies: <reply 1> | <reply 2>", two short replies (under 8 words each) \
     the user might tap next, written in their own voice.
+=======
+    You are the user's WHOOP-style performance coach: warm, direct and data-driven, like the coach \
+    inside the WHOOP app. You are given a summary of the user's own wearable data from their strap: \
+    daily Recovery (0-100%), Strain (0-21, logarithmic day strain), Sleep (hours, deep/REM/light stages, \
+    efficiency), HRV, resting heart rate, respiration, SpO2, skin temperature, steps, calories, stress \
+    (0-3) and recent workouts, plus their profile and how today compares with their 30-day normal. \
+    A dash in the data means that value was NOT MEASURED that day - say so rather than treating it as a zero. \
+    Today's row is still in progress, so its Strain keeps rising through the day.
+    Coach the WHOOP way:
+    \u{2022} Recovery drives the day: green 67-100% = primed, push Strain (about 14-18); yellow 34-66% = \
+    maintain, moderate Strain (about 10-14), quality over volume; red 0-33% = prioritise recovery, light \
+    Strain (under 10): Zone 2, mobility, extra sleep.
+    \u{2022} Explain WHY: connect today's Recovery to its drivers (HRV and resting HR vs their normal, last \
+    night's sleep vs need, yesterday's Strain, stress, behaviours like late meals or alcohol when known).
+    \u{2022} Sleep is the biggest lever: give a concrete bedtime and sleep target when it helps.
+    \u{2022} Always cite the user's ACTUAL numbers, keep it short and specific, and finish with a clear next step.
+    You are NOT a doctor - never diagnose; suggest a professional for genuine health concerns.
+    Format replies in simple Markdown, chat-sized: short paragraphs, **bold** for key numbers, \
+    bullet or numbered lists for plans, ### headings only when structure genuinely helps, and a \
+    small table only for a week-ahead plan. No code blocks.
+    End EVERY reply with one final line in exactly this form: "Replies: <reply 1> | <reply 2>", two short \
+    natural replies (under 8 words each) the user might tap next, written in the user's own voice.
+>>>>>>> origin/main
     """
 
     /// The system prompt actually sent, read FRESH from UserDefaults on every request so an edit in
@@ -1233,6 +1257,7 @@ final class AICoachEngine: ObservableObject {
         }
     }
 
+<<<<<<< HEAD
     /// A one-shot opener to use instead of the screen opener (Home's "Day In Review" row sets it).
     enum Opener { case dayReview }
     var nextOpener: Opener?
@@ -1256,6 +1281,19 @@ final class AICoachEngine: ObservableObject {
         }
         return "The user just opened the Coach while looking at their \(screen.describedForCoach). Write the " +
             "Coach's opening message. \(focus) Two or three short paragraphs at most, then the special lines."
+=======
+    /// The screen the wearer is on, as last marked by `View.coachScreen(_:)`.
+    var currentScreen: CoachScreen { CoachScreenState.current }
+
+    private static func screenOpenerInstruction(_ screen: CoachScreen) -> String {
+        """
+        The user just opened the Coach while looking at their \(screen.describedForCoach). Write the \
+        Coach's opening message, like the WHOOP coach: two or three short sentences, warm and direct, \
+        speaking to them about the most notable thing on that screen with their actual numbers, and end \
+        with one question about how they feel or what they want to do. No headings, no lists. Then the \
+        final "Replies:" line.
+        """
+>>>>>>> origin/main
     }
 
     /// WHOOP-style: the Coach speaks first, about the screen the wearer opened it from. The instruction
@@ -1271,6 +1309,7 @@ final class AICoachEngine: ObservableObject {
 
         let context = dataConsent ? await buildFullContext() : noConsentNote
         var wire = wireMessages(context: context)
+<<<<<<< HEAD
         let instruction: String
         if nextOpener == .dayReview {
             instruction = Self.dayReviewInstruction + " Then the special lines."
@@ -1279,6 +1318,9 @@ final class AICoachEngine: ObservableObject {
                                                        hour: Calendar.current.component(.hour, from: Date()))
         }
         nextOpener = nil
+=======
+        let instruction = Self.screenOpenerInstruction(currentScreen)
+>>>>>>> origin/main
         wire.append((.user, wire.isEmpty ? context + "\n\n---\n\n" + instruction : instruction))
 
         let placeholder = ChatMessage(role: .assistant, text: "")
@@ -1311,6 +1353,7 @@ final class AICoachEngine: ObservableObject {
         }
     }
 
+<<<<<<< HEAD
     /// A Coach reply split into what is shown and the special lines at its end.
     struct ParsedReply {
         var body: String
@@ -1370,6 +1413,24 @@ final class AICoachEngine: ObservableObject {
     nonisolated static func splitReplies(_ text: String) -> (body: String, replies: [String]) {
         let p = parseReply(text)
         return (p.body, p.replies)
+=======
+    /// Pure: split a reply into its body and the "Replies: a | b" quick replies on its last line.
+    /// A partial "Replies:" line while streaming is hidden too.
+    nonisolated static func splitReplies(_ text: String) -> (body: String, replies: [String]) {
+        guard let range = text.range(of: "Replies:", options: [.caseInsensitive, .backwards]) else {
+            return (text, [])
+        }
+        let lineStart = text[..<range.lowerBound].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        guard text[lineStart..<range.lowerBound].trimmingCharacters(in: .whitespaces).isEmpty else {
+            return (text, [])
+        }
+        let body = String(text[..<lineStart]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let replies = text[range.upperBound...]
+            .split(separator: "|")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"*")) }
+            .filter { !$0.isEmpty }
+        return (body, Array(replies.prefix(3)))
+>>>>>>> origin/main
     }
 
     // MARK: - WHOOP-style Home insight, Day in Review, screen analysis

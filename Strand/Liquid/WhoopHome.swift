@@ -311,7 +311,10 @@ private struct WhoopOverviewCard<Content: View>: View {
 /// "My Day" header + the gradient "Day In Review" row, which opens the Coach-written review.
 struct WhoopMyDaySection: View {
     @EnvironmentObject private var router: NavRouter
+<<<<<<< HEAD
     @EnvironmentObject private var coach: AICoachEngine
+=======
+>>>>>>> origin/main
     @State private var showReview = false
 
     var body: some View {
@@ -334,6 +337,7 @@ struct WhoopMyDaySection: View {
                 .accessibilityLabel(Text("Add"))
             }
             .padding(.top, NoopMetrics.space2)
+<<<<<<< HEAD
             // WHOOP-style: the Day In Review is a Coach conversation. With the Coach set up, open it and
             // let the Coach write the review as its first message; otherwise show the setup page.
             Button {
@@ -344,6 +348,9 @@ struct WhoopMyDaySection: View {
                     showReview = true
                 }
             } label: {
+=======
+            Button { showReview = true } label: {
+>>>>>>> origin/main
                 HStack(spacing: NoopMetrics.space3) {
                     Image(systemName: "moon")
                         .font(WhoopStyle.iconLarge)

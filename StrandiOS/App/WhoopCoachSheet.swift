@@ -16,7 +16,10 @@ struct WhoopCoachSheet: View {
     @State private var draft = ""
     @FocusState private var composerFocused: Bool
     @State private var showFullCoach = false
+<<<<<<< HEAD
     @State private var showMemory = false
+=======
+>>>>>>> origin/main
 
     private static let starterPrompts = [
         "Why is my Recovery what it is today?",
@@ -40,9 +43,12 @@ struct WhoopCoachSheet: View {
                 }
             }
         }
+<<<<<<< HEAD
         .sheet(isPresented: $showMemory) {
             WhoopCoachMemoryView()
         }
+=======
+>>>>>>> origin/main
         .sheet(isPresented: $showFullCoach) {
             NavigationStack {
                 CoachView()
@@ -115,6 +121,7 @@ struct WhoopCoachSheet: View {
                 .padding(.vertical, NoopMetrics.space1)
                 .background(Capsule().fill(WhoopStyle.ringTrack))
             Spacer()
+<<<<<<< HEAD
             Button { showMemory = true } label: {
                 HStack(spacing: NoopMetrics.space1) {
                     Text("Memory").font(WhoopStyle.detail)
@@ -123,6 +130,8 @@ struct WhoopCoachSheet: View {
                 .foregroundStyle(StrandPalette.textPrimary)
             }
             .buttonStyle(.plain)
+=======
+>>>>>>> origin/main
             Menu {
                 Button {
                     coach.clearConversation()
@@ -161,7 +170,11 @@ struct WhoopCoachSheet: View {
 
     @ViewBuilder
     private func messageView(_ message: ChatMessage) -> some View {
+<<<<<<< HEAD
         let parts = AICoachEngine.parseReply(message.text)
+=======
+        let parts = AICoachEngine.splitReplies(message.text)
+>>>>>>> origin/main
         switch message.role {
         case .assistant:
             if parts.body.isEmpty {
@@ -172,9 +185,12 @@ struct WhoopCoachSheet: View {
                         .markdownTheme(.strand)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+<<<<<<< HEAD
                     if !parts.options.isEmpty && message.id == coach.messages.last?.id {
                         optionCards(parts.options)
                     }
+=======
+>>>>>>> origin/main
                     HStack(spacing: NoopMetrics.space4) {
                         Button {
                             UIPasteboard.general.string = parts.body
@@ -206,6 +222,7 @@ struct WhoopCoachSheet: View {
         }
     }
 
+<<<<<<< HEAD
     /// WHOOP's activity cards: each suggested activity with a Commit button that tells the Coach.
     private func optionCards(_ options: [(name: String, why: String)]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -253,6 +270,8 @@ struct WhoopCoachSheet: View {
         }
     }
 
+=======
+>>>>>>> origin/main
     private var analyzing: some View {
         HStack(spacing: NoopMetrics.space2) {
             ProgressView().controlSize(.small)

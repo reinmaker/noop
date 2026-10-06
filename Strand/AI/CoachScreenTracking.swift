@@ -36,8 +36,11 @@ extension TabRoute {
             default: return .health
             }
         case .sleep: return .sleep
+<<<<<<< HEAD
         case .recovery: return .recovery
         case .strain: return .strain
+=======
+>>>>>>> origin/main
         case .workouts: return .strain
         case .health, .stress, .hydration: return .health
         case .fullDayChart, .coupled: return .home
