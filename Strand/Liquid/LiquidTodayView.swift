@@ -413,6 +413,7 @@ struct LiquidTodayView: View {
             .frame(maxWidth: .infinity)
             #endif
         }
+        .modifier(RingsCollapseTracker(collapsed: $ringsCollapsed, threshold: Self.ringsCollapseOffset))
         .coordinateSpace(name: Self.pullSpace)
         .overlay(alignment: .top) {
             if ringsCollapsed {
@@ -745,7 +746,7 @@ struct LiquidTodayView: View {
                              fallbackBody: chargeDisplay.calibrationDetail ?? synthLine)
             HStack(alignment: .top, spacing: 10) {
                 HealthMonitorCard()
-                StressMonitorCard(stress: stress)
+                StressMonitorCard(dailyScore: stress)
             }
             WhoopMyDaySection()
             WhoopTonightsSleepCard()
@@ -795,7 +796,11 @@ struct LiquidTodayView: View {
                           maxValue: effortScale == .whoop ? 21 : 100,
                           decimals: effortScale == .whoop ? 1 : 0,
                           detailRoute: .strain,
-                          showsPercent: false)
+                          showsPercent: false,
+                          band: effortScale == .whoop
+                              ? CoupledView.optimalStrainRange(recovery: chargeDisplay.pct)
+                                  .map { Double($0.lowerBound)...Double($0.upperBound) }
+                              : nil)
         }
         // WHOOP-style: the three rings sit straight on the background, no panel behind them.
         .padding(.vertical, NoopMetrics.space4)
@@ -2314,6 +2319,8 @@ private struct HeroScoreCell: View {
     var detailRoute: TabRoute? = nil
     /// WHOOP-style: "%" after Recovery and Sleep, a bare number for Strain.
     var showsPercent: Bool = true
+    /// Optional band on the ring's track (Strain's optimal range).
+    var band: ClosedRange<Double>? = nil
 
     /// The gauge, linked when there is somewhere to go.
     ///
@@ -2328,7 +2335,8 @@ private struct HeroScoreCell: View {
             showsPercent: showsPercent,
             tint: tint,
             diameter: Self.vesselDiameter,
-            animated: animated
+            animated: animated,
+            band: band
         )
         if let detailRoute {
             NavigationLink(value: detailRoute) { gauge }
@@ -3281,5 +3289,24 @@ private extension View {
             LiveSessionView(onClose: { isPresented.wrappedValue = false })
         }
         #endif
+    }
+}
+
+/// Flips `collapsed` once the Home scroll passes `threshold`, from the scroll view's own geometry
+/// (iOS 18+). The top-anchored preference probe alone did not report once the probe scrolled away.
+private struct RingsCollapseTracker: ViewModifier {
+    @Binding var collapsed: Bool
+    let threshold: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            content.onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top > threshold
+            } action: { _, isPast in
+                if isPast != collapsed { collapsed = isPast }
+            }
+        } else {
+            content
+        }
     }
 }

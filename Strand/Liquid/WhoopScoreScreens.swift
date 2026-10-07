@@ -18,6 +18,7 @@ struct WhoopCoachPill: View {
     @EnvironmentObject private var router: NavRouter
     @State private var text: String?
     @State private var loading = false
+    @State private var failed = false
 
     private var cacheKey: String {
         let d = repo.days.last
@@ -41,7 +42,9 @@ struct WhoopCoachPill: View {
                     .background(Circle().fill(WhoopStyle.coachButtonFill))
                     .overlay(Circle().strokeBorder(
                         AngularGradient(colors: WhoopStyle.coachButtonRing, center: .center), lineWidth: 2))
-                Text(text ?? (loading ? String(localized: "Analyzing…") : String(localized: "Ask your Coach about this")))
+                Text(text ?? (loading ? String(localized: "Analyzing…")
+                              : failed ? String(localized: "Couldn't reach your Coach. Tap to open it.")
+                              : String(localized: "Ask your Coach about this")))
                     .font(WhoopStyle.body)
                     .foregroundStyle(WhoopStyle.onGradient)
                     .lineLimit(2)
@@ -72,10 +75,13 @@ struct WhoopCoachPill: View {
         text = nil
         guard coach.isConfigured, coach.dataConsent, !repo.days.isEmpty else { return }
         loading = true
+        failed = false
         defer { loading = false }
         if let summary = await coach.screenSummary(screen) {
             text = summary
             UserDefaults.standard.set(summary, forKey: key)
+        } else {
+            failed = true
         }
     }
 }

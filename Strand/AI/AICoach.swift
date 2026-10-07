@@ -1238,7 +1238,7 @@ final class AICoachEngine: ObservableObject {
     var nextOpener: Opener?
     /// The last screen opener written and when, so reopening the same screen soon after does not
     /// stack another opener into the chat.
-    private var lastScreenOpener: (screen: CoachScreen, at: Date)?
+    private var lastScreenOpener: (screen: CoachScreen, at: Date, withData: Bool)?
 
     /// The screen the wearer is on, as last marked by `View.coachScreen(_:)`.
     var currentScreen: CoachScreen { CoachScreenState.current }
@@ -1268,11 +1268,12 @@ final class AICoachEngine: ObservableObject {
               let key = resolvedKey else { return }
         retireStaleConversationIfNeeded()
         // Reopening the same screen within 15 minutes continues the conversation instead.
+        // A new opener is written anyway once data access changes, so the Coach can see the numbers.
         if nextOpener == nil, let last = lastScreenOpener, last.screen == currentScreen,
-           Date().timeIntervalSince(last.at) < 15 * 60, !messages.isEmpty {
+           last.withData == dataConsent, Date().timeIntervalSince(last.at) < 15 * 60, !messages.isEmpty {
             return
         }
-        if nextOpener == nil { lastScreenOpener = (currentScreen, Date()) }
+        if nextOpener == nil { lastScreenOpener = (currentScreen, Date(), dataConsent) }
 
         conversationDay = Self.localEpochDay()
         errorText = nil
@@ -1440,9 +1441,18 @@ final class AICoachEngine: ObservableObject {
         let context = await buildFullContext()
         let wire: [(role: ChatMessage.Role, content: String)] =
             [(.user, context + "\n\n---\n\n" + instruction)]
-        guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
-        let clean = Self.splitReplies(reply).body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return clean.isEmpty ? nil : clean
+        do {
+            let reply = try await callProvider(key: key, messages: wire)
+            let clean = Self.splitReplies(reply).body.trimmingCharacters(in: .whitespacesAndNewlines)
+            return clean.isEmpty ? nil : clean
+        } catch let e as AICoachError {
+            // Shown in the Coach sheet, so a card that could not load says why.
+            errorText = e.errorDescription
+            return nil
+        } catch {
+            errorText = AICoachError.network(error.localizedDescription).errorDescription
+            return nil
+        }
     }
 
     /// The question the round Coach button asks for the tab the user is looking at (WHOOP's

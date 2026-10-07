@@ -31,10 +31,14 @@ struct AnthropicClient: AIProviderClient {
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let json = try await performRequest(req, session: session)
-        guard let content = json["content"] as? [[String: Any]],
-              let first = content.first,
-              let text = (first["text"] as? String)?
-                  .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+        // Join every text block: a reply can start with a non-text block (for example "thinking"), which
+        // the streaming path already skips, so reading only the first block returned nothing.
+        let blocks = json["content"] as? [[String: Any]] ?? []
+        let text = blocks.compactMap { block -> String? in
+            guard (block["type"] as? String ?? "text") == "text" else { return nil }
+            return block["text"] as? String
+        }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
             throw emptyReplyError(json)   // #1074: surface the provider's real error if the 200 body has one
         }
         return text
