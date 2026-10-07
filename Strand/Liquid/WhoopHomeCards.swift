@@ -74,9 +74,6 @@ private enum WhoopTime {
 /// arm check and `AppModel.nextSmartAlarmDate` with the per-day overrides), so it can never show an
 /// alarm that will not fire. Without an armed alarm, bedtime counts back from the usual wake time.
 struct WhoopTonightsSleepCard: View {
-    /// The shared need (`SleepModel.whoopSleepNeed`); the plain personal need until that loads.
-    var needMinutes: Double? = nil
-
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var behavior: BehaviorStore
     @EnvironmentObject private var model: AppModel
@@ -106,7 +103,7 @@ struct WhoopTonightsSleepCard: View {
         let now = Date()
         let alarm = nextAlarm(from: now)
         let wake = alarm ?? usualWake(from: now)
-        let needMin = needMinutes ?? SleepModel.sleepNeedMin(days: repo.days)
+        let needMin = SleepModel.sleepNeedMin(days: repo.days)
         let bedtime = wake.addingTimeInterval(-needMin * 60)
         let bedtimeText = bedtime <= now ? String(localized: "Now") : WhoopTime.clock(bedtime)
 

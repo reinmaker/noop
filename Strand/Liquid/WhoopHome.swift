@@ -503,7 +503,7 @@ struct WhoopSleepContributors: View {
     private var rows: [Row] {
         [
             Row(id: "hours", label: String(localized: "HOURS VS. NEEDED"), icon: "moon.zzz",
-                value: model.whoopSleepNeed?.pct ?? model.hoursVsNeeded.latest, sufficientFrom: 70, optimalFrom: 85),
+                value: model.hoursVsNeeded.latest, sufficientFrom: 70, optimalFrom: 85),
             Row(id: "consistency", label: String(localized: "SLEEP CONSISTENCY"), icon: "calendar",
                 value: model.consistency.latest, sufficientFrom: 70, optimalFrom: 80),
             Row(id: "efficiency", label: String(localized: "SLEEP EFFICIENCY"), icon: "bed.double",
