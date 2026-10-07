@@ -486,6 +486,9 @@ struct DayInReviewSheet: View {
 /// present, exactly as the Sleep tiles do).
 struct WhoopSleepContributors: View {
     let model: SleepModel
+    /// The shown night's efficiency (actual sleep over time in bed), so this row matches the Sleep
+    /// Efficiency card below. Falls back to the model's figure.
+    var efficiency: Double? = nil
 
     enum Band: Int { case poor = 0, sufficient = 1, optimal = 2 }
 
@@ -512,7 +515,7 @@ struct WhoopSleepContributors: View {
             Row(id: "consistency", label: String(localized: "SLEEP CONSISTENCY"), icon: "calendar",
                 value: model.consistency.latest, sufficientFrom: 70, optimalFrom: 80),
             Row(id: "efficiency", label: String(localized: "SLEEP EFFICIENCY"), icon: "bed.double",
-                value: model.efficiency.latest, sufficientFrom: 85, optimalFrom: 90),
+                value: efficiency ?? model.efficiency.latest, sufficientFrom: 85, optimalFrom: 90),
             Row(id: "restorative", label: String(localized: "RESTORATIVE SLEEP"), icon: "sparkles",
                 value: model.restorative.latest, sufficientFrom: 30, optimalFrom: 40),
         ]
