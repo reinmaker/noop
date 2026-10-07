@@ -977,7 +977,10 @@ final class AICoachEngine: ObservableObject {
         }
         if let stress = await StressDayCurve.today(
             repo: repo, personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled)?.result {
-            ctx += "\n\nToday's stress so far: \(stress.highStressMinutes) minutes in high stress (0-3 scale, high is 2 and up)."
+            let mins = stress.highStressMinutes
+            ctx += "\n\nToday's stress so far: \(mins / 60) hr \(mins % 60) min in the high stress zone, shown on the "
+                + "Stress Monitor as \(String(format: "%d:%02d", mins / 60, mins % 60)) (0-3 scale, high is 2 and up). "
+                + "Say it in hours and minutes, never as a count of minutes."
         }
         ctx += "\n\n" + (await recentWorkoutsBlock())
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
