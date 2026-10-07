@@ -44,15 +44,45 @@ public struct BrandMark: View {
     private var rimWidth: CGFloat { max(1, size * 0.008) }  // ~1px hairline rim
 
     public var body: some View {
+        // Yoop: the app icon's mark (a three-part score ring around a white Y) on the dark disc. The NOOP
+        // ring + core below stay in the file for reference but are no longer drawn.
         ZStack {
-            navyTile
-            goldRing
-            coreDot
+            yoopTile
+            yoopRing
+            YoopYShape()
+                .stroke(Color(hex: "#FFFFFF"),
+                        style: StrokeStyle(lineWidth: size * 74 / 1024, lineCap: .round, lineJoin: .round))
+                .frame(width: size, height: size)
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("NOOP"))
+        .accessibilityLabel(Text("Yoop"))
         .accessibilityAddTraits(.isImage)
+    }
+
+    // MARK: Yoop mark (matches Tools/yoop-icon/yoop.svg)
+
+    private var yoopTile: some View {
+        Circle()
+            .fill(LinearGradient(colors: [Color(hex: "#232B33"), Color(hex: "#0B0E11")],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(Circle().strokeBorder(StrandPalette.hairline, lineWidth: rimWidth))
+    }
+
+    /// Sleep (blue-grey), Recovery (green) and Strain (blue) arcs, 104 degrees each, as in the icon.
+    private var yoopRing: some View {
+        let arcs: [(start: Double, color: Color)] = [
+            (8, Color(hex: "#16D9A0")), (128, Color(hex: "#0093E7")), (248, Color(hex: "#7BA1BB")),
+        ]
+        return ZStack {
+            ForEach(arcs.indices, id: \.self) { i in
+                Circle()
+                    .trim(from: arcs[i].start / 360, to: (arcs[i].start + 104) / 360)
+                    .stroke(arcs[i].color, style: StrokeStyle(lineWidth: size * 66 / 1024, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+        }
+        .frame(width: size * 636 / 1024, height: size * 636 / 1024)
     }
 
     // MARK: Deep-navy tile
@@ -133,3 +163,19 @@ public struct BrandMark: View {
     .preferredColorScheme(.dark)
 }
 #endif
+
+
+/// The Y of the Yoop mark, in the icon's 1024-unit coordinates scaled to the frame.
+struct YoopYShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let k = min(rect.width, rect.height) / 1024
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * k, y: rect.minY + y * k) }
+        var path = Path()
+        path.move(to: p(418, 382))
+        path.addLine(to: p(512, 500))
+        path.addLine(to: p(606, 382))
+        path.move(to: p(512, 500))
+        path.addLine(to: p(512, 648))
+        return path
+    }
+}
