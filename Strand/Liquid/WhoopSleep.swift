@@ -276,7 +276,7 @@ struct WhoopLastNightCards: View {
 
     private var consistencyBars: [NightBar] {
         // One bar per night, the same nights the consistency score is computed over.
-        let recent = Array(SleepModel.nightWindows(sleeps).suffix(5))
+        let recent = SleepModel.nightWindows(sleeps, last: 5)
         return recent.enumerated().map { i, s in
             let bed = Self.minutesAfterSix(s.start)
             let duration = Double(s.end - s.start) / 60

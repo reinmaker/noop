@@ -470,18 +470,42 @@ extension SleepModel {
         return (scores.last, nil, mean(scores), scores)
     }
 
-    /// One window per night, oldest first: records less than two hours apart (a night broken by a
-    /// wake-up) are joined, and windows under three hours (naps) are left out.
-    static func nightWindows(_ sleeps: [CachedSleepSession]) -> [(start: Int, end: Int)] {
-        var nights: [(start: Int, end: Int)] = []
+    /// One sleep window per night, oldest first, timed the way WHOOP times it: from falling asleep to
+    /// waking. Records less than two hours apart are one night; its main sleep is the record with the
+    /// longest stretch asleep, from its first to its last minute asleep, so time lying awake before
+    /// falling asleep or after waking does not count (WHOOP put 7 Oct at 3:33 to 9:44 where the records
+    /// ran 23:52 to 10:27). Windows under three hours (naps) are left out. `last` limits the work to the
+    /// most recent nights.
+    static func nightWindows(_ sleeps: [CachedSleepSession], last: Int? = nil) -> [(start: Int, end: Int)] {
+        var groups: [[CachedSleepSession]] = []
+        var groupEnd = Int.min
         for s in sleeps.sorted(by: { $0.effectiveStartTs < $1.effectiveStartTs }) {
-            if let last = nights.last, s.effectiveStartTs - last.end < 2 * 3600 {
-                nights[nights.count - 1].end = Swift.max(last.end, s.endTs)
+            if !groups.isEmpty, s.effectiveStartTs - groupEnd < 2 * 3600 {
+                groups[groups.count - 1].append(s)
+                groupEnd = Swift.max(groupEnd, s.endTs)
             } else {
-                nights.append((s.effectiveStartTs, s.endTs))
+                groups.append([s])
+                groupEnd = s.endTs
             }
         }
-        return nights.filter { $0.end - $0.start >= 3 * 3600 }
+        // Over-fetch a little: a recent group can turn out to be a nap and drop out.
+        let recent = last.map { Array(groups.suffix($0 + 3)) } ?? groups
+        let nights = recent.compactMap { group -> (start: Int, end: Int)? in
+            let main = group.map(asleepWindow).max { ($0.end - $0.start) < ($1.end - $1.start) }
+            guard let main, main.end - main.start >= 3 * 3600 else { return nil }
+            return main
+        }
+        return last.map { Array(nights.suffix($0)) } ?? nights
+    }
+
+    /// A record's first to last minute asleep, from its stage data; its own bounds when it has none.
+    static func asleepWindow(_ s: CachedSleepSession) -> (start: Int, end: Int) {
+        let asleep = SleepView.decodeSegments(s.stagesJSON, sessionStart: s.effectiveStartTs)?
+            .intervals.filter { $0.stage != .awake } ?? []
+        guard let first = asleep.map(\.start).min(), let lastEnd = asleep.map(\.end).max() else {
+            return (s.effectiveStartTs, s.endTs)
+        }
+        return (s.effectiveStartTs + Int(first), s.effectiveStartTs + Int(lastEnd))
     }
 
     /// Hours vs needed % = asleep / need. The imported sleep_need_min wins per day; else the

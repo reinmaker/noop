@@ -780,18 +780,12 @@ struct LiquidTodayView: View {
     }
 
     /// Last night's main sleep block, when it ended within the last 18 hours.
-    /// Last night from first bedtime to final wake. A night broken by a wake-up arrives as two sleep
-    /// records, so an earlier record ending less than two hours before the next one starts is the same night.
+    /// Last night from falling asleep to waking, timed as WHOOP times it (`SleepModel.nightWindows`), when
+    /// it ended within the last 18 hours.
     private var lastNightWindow: (start: Date, end: Date)? {
-        let sleeps = repo.sleeps
-        guard let last = sleeps.last,
-              Date().timeIntervalSince1970 - TimeInterval(last.endTs) < 18 * 3600 else { return nil }
-        var start = last.effectiveStartTs
-        for s in sleeps.dropLast().reversed() {
-            guard start - s.endTs < 2 * 3600 else { break }
-            start = min(start, s.effectiveStartTs)
-        }
-        return (Date(timeIntervalSince1970: TimeInterval(start)), Date(timeIntervalSince1970: TimeInterval(last.endTs)))
+        guard let night = SleepModel.nightWindows(repo.sleeps, last: 1).last,
+              Date().timeIntervalSince1970 - TimeInterval(night.end) < 18 * 3600 else { return nil }
+        return (Date(timeIntervalSince1970: TimeInterval(night.start)), Date(timeIntervalSince1970: TimeInterval(night.end)))
     }
 
     private var heroCard: some View {
