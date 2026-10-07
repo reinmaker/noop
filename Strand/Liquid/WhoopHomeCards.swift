@@ -317,6 +317,8 @@ struct WhoopDashboardSection: View {
     let steps: Double?
     let calories: Double?
     let vo2max: Double?
+    /// Apple Health steps per day; when present, the steps average uses the phone's history.
+    var appleStepsByDay: [String: Double] = [:]
     let onCustomize: () -> Void
 
     private struct Row: Identifiable {
@@ -330,9 +332,18 @@ struct WhoopDashboardSection: View {
         let route: TabRoute?
     }
 
-    private func average(_ pick: (DailyMetric) -> Double?) -> Double? {
-        let prior = days.filter { $0.day != today?.day }.suffix(30).compactMap(pick)
-        return prior.isEmpty ? nil : prior.reduce(0, +) / Double(prior.count)
+    /// The prior 30 days' mean, skipping days below `floor` (a day the strap barely recorded would
+    /// otherwise drag the "normal" down to nothing). Nil with fewer than 3 usable days.
+    private func average(floor: Double = 0, _ pick: (DailyMetric) -> Double?) -> Double? {
+        let prior = days.filter { $0.day != today?.day }.suffix(30).compactMap(pick).filter { $0 > floor }
+        return prior.count < 3 ? nil : prior.reduce(0, +) / Double(prior.count)
+    }
+
+    private var stepsAverage: Double? {
+        let phone = days.filter { $0.day != today?.day }.suffix(30)
+            .compactMap { appleStepsByDay[$0.day] }.filter { $0 > 1000 }
+        if phone.count >= 3 { return phone.reduce(0, +) / Double(phone.count) }
+        return average(floor: 1000) { $0.steps.map(Double.init) }
     }
 
     private var rows: [Row] {
@@ -350,10 +361,10 @@ struct WhoopDashboardSection: View {
                 value: today?.spo2Pct, average: average { $0.spo2Pct }, decimals: 0, higherIsBetter: true,
                 route: nil),
             Row(id: "steps", label: String(localized: "STEPS"), icon: "shoeprints.fill",
-                value: steps, average: average { $0.steps.map(Double.init) }, decimals: 0,
+                value: steps, average: stepsAverage, decimals: 0,
                 higherIsBetter: true, route: nil),
             Row(id: "kcal", label: String(localized: "CALORIES"), icon: "flame",
-                value: calories, average: average { $0.activeKcalEst }, decimals: 0, higherIsBetter: true,
+                value: calories, average: average(floor: 100) { $0.activeKcalEst }, decimals: 0, higherIsBetter: true,
                 route: nil),
             Row(id: "vo2", label: String(localized: "VO₂ MAX"), icon: "bicycle",
                 value: vo2max, average: nil, decimals: 0, higherIsBetter: true, route: nil),

@@ -443,25 +443,37 @@ extension SleepModel {
             let series = days.compactMap { imported[$0.day]?.consistencyPct }
             return (series.last, nil, mean(series), series)
         }
+        // WHOOP-style consistency: how much the last four nights' sleep windows (bedtime AND wake time)
+        // overlap on the clock. Each pair of nights scores intersection / union of their windows on a
+        // noon-to-noon clock; the day's score is the mean over every pair among the last four nights.
         let cal = Calendar.current
-        func bedMinutes(_ s: CachedSleepSession) -> Double {
+        func window(_ s: CachedSleepSession) -> (start: Double, end: Double) {
             let d = Date(timeIntervalSince1970: TimeInterval(s.effectiveStartTs))
             let comps = cal.dateComponents([.hour, .minute], from: d)
             var m = Double((comps.hour ?? 0) * 60 + (comps.minute ?? 0))
-            if m < 12 * 60 { m += 24 * 60 }   // wrap evening onsets into one continuous scale
-            return m
+            if m < 12 * 60 { m += 24 * 60 }   // minutes on a noon-to-noon clock
+            return (m, m + Swift.max(0, Double(s.endTs - s.effectiveStartTs) / 60))
         }
-        let mins = sleeps.map(bedMinutes)
-        guard mins.count >= 3 else { return (nil, nil, nil, []) }
+        func overlap(_ a: (start: Double, end: Double), _ b: (start: Double, end: Double)) -> Double {
+            let inter = Swift.max(0, Swift.min(a.end, b.end) - Swift.max(a.start, b.start))
+            let union = Swift.max(a.end, b.end) - Swift.min(a.start, b.start)
+            return union > 0 ? inter / union : 0
+        }
+        let windows = sleeps.map(window)
+        guard windows.count >= 2 else { return (nil, nil, nil, []) }
         var scores: [Double] = []
-        for i in mins.indices {
-            let lo = Swift.max(0, i - 13)
-            let window = Array(mins[lo...i])
-            guard window.count >= 3 else { continue }
-            let m = window.reduce(0, +) / Double(window.count)
-            let variance = window.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Double(window.count)
-            let sd = variance.squareRoot()
-            scores.append(Swift.max(0, Swift.min(100, 100 * (1 - sd / 120))))
+        for i in windows.indices {
+            let recent = Array(windows[Swift.max(0, i - 3)...i])
+            guard recent.count >= 2 else { continue }
+            var total = 0.0
+            var pairs = 0
+            for a in 0..<recent.count {
+                for b in (a + 1)..<recent.count {
+                    total += overlap(recent[a], recent[b])
+                    pairs += 1
+                }
+            }
+            scores.append(Swift.max(0, Swift.min(100, total / Double(pairs) * 100)))
         }
         return (scores.last, nil, mean(scores), scores)
     }
