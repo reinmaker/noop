@@ -44,13 +44,14 @@ public struct BrandMark: View {
     private var rimWidth: CGFloat { max(1, size * 0.008) }  // ~1px hairline rim
 
     public var body: some View {
-        // Yoop: the app icon's mark (a three-part score ring around a white Y) on the dark disc. The NOOP
+        // Yoop: the app icon's mark (the Ultraviolet ring around a white Y) on the dark disc. The NOOP
         // ring + core below stay in the file for reference but are no longer drawn.
         ZStack {
             yoopTile
             yoopRing
             YoopYShape()
-                .stroke(Color(hex: "#FFFFFF"),
+                .stroke(LinearGradient(colors: [Color(hex: "#FFFFFF"), Color(hex: "#CFC4F2")],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
                         style: StrokeStyle(lineWidth: size * 74 / 1024, lineCap: .round, lineJoin: .round))
                 .frame(width: size, height: size)
         }
@@ -64,25 +65,18 @@ public struct BrandMark: View {
 
     private var yoopTile: some View {
         Circle()
-            .fill(LinearGradient(colors: [Color(hex: "#232B33"), Color(hex: "#0B0E11")],
+            .fill(LinearGradient(colors: [Color(hex: "#0D0818"), Color(hex: "#020104")],
                                  startPoint: .top, endPoint: .bottom))
             .overlay(Circle().strokeBorder(StrandPalette.hairline, lineWidth: rimWidth))
     }
 
-    /// Sleep (blue-grey), Recovery (green) and Strain (blue) arcs, 104 degrees each, as in the icon.
+    /// A full ring sweeping from deep indigo to electric purple and back, as in the icon.
     private var yoopRing: some View {
-        let arcs: [(start: Double, color: Color)] = [
-            (8, Color(hex: "#16D9A0")), (128, Color(hex: "#0093E7")), (248, Color(hex: "#7BA1BB")),
-        ]
-        return ZStack {
-            ForEach(arcs.indices, id: \.self) { i in
-                Circle()
-                    .trim(from: arcs[i].start / 360, to: (arcs[i].start + 104) / 360)
-                    .stroke(arcs[i].color, style: StrokeStyle(lineWidth: size * 66 / 1024, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-            }
-        }
-        .frame(width: size * 636 / 1024, height: size * 636 / 1024)
+        Circle()
+            .stroke(AngularGradient(colors: [Color(hex: "#3A1A8F"), Color(hex: "#8A4DFF"), Color(hex: "#3A1A8F")],
+                                    center: .center, startAngle: .degrees(-90), endAngle: .degrees(270)),
+                    lineWidth: size * 66 / 1024)
+            .frame(width: size * 636 / 1024, height: size * 636 / 1024)
     }
 
     // MARK: Deep-navy tile

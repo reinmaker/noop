@@ -4,9 +4,9 @@
   "sourceURL": "https://raw.githubusercontent.com/reinmaker/noop/main/altstore-source.json",
   "subtitle": "A WHOOP-style app for your own strap, fully offline.",
   "description": "An AltStore / SideStore source for Yoop, a WHOOP-style app for a WHOOP strap you own. Add this source to get one-tap updates.\n\nYoop is a personal fork of the open-source NOOP project and is not affiliated with WHOOP. It reads your strap directly over Bluetooth, on your own device, with an optional Claude coach that uses your own API key.",
-  "iconURL": "https://github.com/reinmaker/noop/raw/main/StrandiOS/Resources/Assets.xcassets/YoopIcon.appiconset/icon_1024.png",
+  "iconURL": "https://github.com/reinmaker/noop/raw/main/StrandiOS/Resources/Assets.xcassets/YoopIconV2.appiconset/icon_1024.png",
   "website": "https://github.com/reinmaker/noop",
-  "tintColor": "16D9A0",
+  "tintColor": "8A4DFF",
   "apps": [
     {
       "name": "Yoop",
@@ -14,8 +14,8 @@
       "developerName": "NoopApp",
       "subtitle": "Read your own WHOOP strap, fully offline.",
       "localizedDescription": "Yoop talks to a WHOOP 4.0 / 5.0 / MG strap you own directly over Bluetooth — no WHOOP app, no subscription, no cloud. Live heart rate, history sync, and Yoop's own Charge / Effort / Rest scores, all computed on-device and stored only on your iPhone.\n\nIndependent and experimental; not affiliated with WHOOP. WHOOP-style fork with Recovery / Strain / Sleep wording and a Claude AI coach. Source: https://github.com/reinmaker/noop",
-      "iconURL": "https://github.com/reinmaker/noop/raw/main/StrandiOS/Resources/Assets.xcassets/YoopIcon.appiconset/icon_1024.png",
-      "tintColor": "16D9A0",
+      "iconURL": "https://github.com/reinmaker/noop/raw/main/StrandiOS/Resources/Assets.xcassets/YoopIconV2.appiconset/icon_1024.png",
+      "tintColor": "8A4DFF",
       "category": "healthcare-fitness",
       "screenshotURLs": [],
       "versions": [
