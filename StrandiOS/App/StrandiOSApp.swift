@@ -690,10 +690,18 @@ enum WhoopStylePreset {
     }
 
     static func applyCalculationsOnce(_ defaults: UserDefaults = .standard) {
-        guard !defaults.bool(forKey: calculationsKey) else { return }
-        defaults.set(true, forKey: PuffinExperiment.banisterEffortKey)
-        defaults.set(true, forKey: calculationsKey)
+        if !defaults.bool(forKey: calculationsKey) {
+            defaults.set(true, forKey: PuffinExperiment.banisterEffortKey)
+            defaults.set(true, forKey: calculationsKey)
+        }
+        // Strain on the WHOOP-calibrated curve: Banister scored a desk day around 9 where WHOOP gives 4 to 6.
+        if !defaults.bool(forKey: strainCurveKey) {
+            defaults.set(true, forKey: PuffinExperiment.whoopStrainCurveKey)
+            defaults.set(true, forKey: strainCurveKey)
+        }
     }
+
+    private static let strainCurveKey = "whoopStyle.strainCurve.v1"
 
     private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
     /// NOOP Home sections that WHOOP-style cards replace (Synthesis by the insight card, Key Metrics by
