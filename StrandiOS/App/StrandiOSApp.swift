@@ -59,6 +59,7 @@ struct StrandiOSApp: App {
         WhoopStylePreset.applyOnce()
         WhoopStylePreset.applyHomeLayoutOnce()
         WhoopStylePreset.applyCalculationsOnce()
+        WhoopStylePreset.applyNotificationsOnce()
         #if DEBUG
         // DEBUG-only promo-screenshot harness: when launched with `--demo-hour <Int>`, pin Today to that
         // hour's day-cycle scene + a per-hour stat frame. No-op (active stays nil) when the arg is absent.
@@ -90,6 +91,19 @@ struct StrandiOSApp: App {
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
+        // Yoop's WHOOP-style notifications: Day In Review opens the Coach writing the review; check-ins
+        // and travel tips open the Coach; the stress summary opens the app on Home.
+        NotificationPresenter.shared.onYoopRoute = { [weak router, weak coach = model.coach] route in
+            switch route {
+            case "dayReview":
+                coach?.nextOpener = .dayReview
+                router?.openCoach()
+            case "coach":
+                router?.openCoach()
+            default:
+                break
+            }
+        }
         CoachBriefScheduler.register(generateBrief: { [weak coach = model.coach] in
             await coach?.generateBrief()
         }, log: { [weak model] line in
@@ -665,6 +679,16 @@ enum WhoopStylePreset {
     /// One-time: score Strain with NOOP's Banister method, which counts light activity (walking, a calm
     /// commute) the way WHOOP's Strain does; NOOP's default Edwards zones count nothing below 50% of
     /// heart-rate reserve, so a calm morning read 0.0. Still switchable in Settings.
+    private static let notificationsKey = "whoopStyle.notifications.v1"
+
+    /// One-time: the morning Daily Outlook on, as WHOOP sends it (the other WHOOP-style notifications are
+    /// on unless switched off; see `WhoopNotifications`).
+    static func applyNotificationsOnce(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: notificationsKey) else { return }
+        defaults.set(true, forKey: "coachBrief.enabled")
+        defaults.set(true, forKey: notificationsKey)
+    }
+
     static func applyCalculationsOnce(_ defaults: UserDefaults = .standard) {
         guard !defaults.bool(forKey: calculationsKey) else { return }
         defaults.set(true, forKey: PuffinExperiment.banisterEffortKey)

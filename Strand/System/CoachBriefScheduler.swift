@@ -289,7 +289,7 @@ enum CoachBriefScheduler {
         #if os(iOS)
         publishToWidget(text)  // K10: mirror into the App Group for the widget
         #endif
-        postNotification(title: String(localized: "Today's coaching brief"),
+        postNotification(title: String(localized: "Your Daily Outlook"),
                           body: oneLineSummary(from: text))
         return true
     }

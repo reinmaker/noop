@@ -22,6 +22,8 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     /// is a safe no-op (the tap is simply not routed) rather than a crash if this ever fires before the
     /// root has wired it.
     var onCoachBriefTapped: (() -> Void)?
+    /// Yoop's WHOOP-style notifications carry a route in `userInfo[WhoopNotifications.routeKey]`.
+    var onYoopRoute: ((String) -> Void)?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -39,7 +41,9 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if response.notification.request.content.categoryIdentifier == CoachBriefScheduler.notificationCategoryId {
+        if let route = response.notification.request.content.userInfo[WhoopNotifications.routeKey] as? String {
+            onYoopRoute?(route)
+        } else if response.notification.request.content.categoryIdentifier == CoachBriefScheduler.notificationCategoryId {
             onCoachBriefTapped?()
         }
         completionHandler()

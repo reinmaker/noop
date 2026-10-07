@@ -244,6 +244,8 @@ struct RootTabView: View {
         .task {
             await repo.refresh()
             maybePromptMorningJournal()
+            WhoopNotifications.scheduleDayReview()
+            WhoopNotifications.checkTimeZone()
             // Backup & Sync: on-launch catch-up (see RootView). Detached + utility priority so a
             // 100MB+ whole-DB ZIP never blocks startup; gated on the auto toggle (default OFF). (Must-fix #4.)
             let backupRepo = repo
@@ -329,7 +331,10 @@ struct RootTabView: View {
         }
         // A screen's top-bar "+" routes here: open the quick-action sheet, then clear the flag.
         .onChangeCompat(of: scenePhase) { phase in
-            if phase == .active { maybePromptMorningJournal() }
+            if phase == .active {
+                maybePromptMorningJournal()
+                WhoopNotifications.checkTimeZone()
+            }
         }
         .onChange(of: router.quickActionsRequested) { _, req in
             if req {
@@ -597,6 +602,8 @@ struct RootTabView: View {
                     // and project.yml excludes Screens/NotificationSettingsView.swift from the iOS target),
                     // so it can't compile or apply on iPhone. iPhone's wrist-alert controls live on the
                     // Automations screen instead. Its absence from the iPhone More list is correct.
+                    // Yoop: this row is a different screen, the iOS WHOOP-style notification switches.
+                    MoreRow("Notifications", "bell", .notifications)
                     MoreRow("Alarms", "alarm.fill", .alarms)
                     MoreRow("Automations", "wand.and.stars", .automations)
                     // The Test Centre (the diagnostics + bug-report hub) gets a first-class home here, not
@@ -690,7 +697,7 @@ private enum MoreDestination: Hashable {
     case insightsHub, intelligence, coach, insights, explore, compare
     case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
-    case alarms, automations, testCentre, siriShortcuts, powerSaving, settings
+    case alarms, automations, testCentre, siriShortcuts, powerSaving, settings, notifications
 
     @ViewBuilder var destination: some View {
         switch self {
@@ -722,6 +729,7 @@ private enum MoreDestination: Hashable {
         case .siriShortcuts:   SiriShortcutsSettingsView()
         case .powerSaving:     PowerSavingView()
         case .settings:        SettingsView()
+        case .notifications:   WhoopNotificationsView()
         }
     }
 }
