@@ -1263,6 +1263,26 @@ final class AICoachEngine: ObservableObject {
 
     /// WHOOP-style: the Coach speaks first, about the screen the wearer opened it from. The instruction
     /// is never shown; only the Coach's message is added to the conversation.
+    /// WHOOP-style: the round Coach button reopens the conversation as it was. The Coach writes a new
+    /// message only when the conversation is empty, a new part of the day (morning, afternoon, evening)
+    /// has started since its last one, or data access was just switched on. Screen pills still ask
+    /// about their screen through `openWithScreenContext()` directly.
+    func openFromCoachButton() async {
+        guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending else { return }
+        let key = "coach.lastOpenerMarker"
+        let marker = "\(Self.localEpochDay())|\(Self.dayPart(Date()))|\(dataConsent)"
+        guard messages.isEmpty || UserDefaults.standard.string(forKey: key) != marker else { return }
+        UserDefaults.standard.set(marker, forKey: key)
+        lastScreenOpener = nil
+        await openWithScreenContext()
+    }
+
+    /// "morning" before noon, "afternoon" before 6pm, otherwise "evening".
+    nonisolated static func dayPart(_ date: Date) -> String {
+        let hour = Calendar.current.component(.hour, from: date)
+        return hour < 12 ? "morning" : (hour < 18 ? "afternoon" : "evening")
+    }
+
     func openWithScreenContext() async {
         guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending,
               let key = resolvedKey else { return }

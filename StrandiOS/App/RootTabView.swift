@@ -134,13 +134,13 @@ struct RootTabView: View {
     /// separate round button, so it is not part of the swipe sequence.
     private static let swipeOrder = [0, 2, 1, 4]
 
-    /// Open the Coach over the current screen. WHOOP-style, the Coach speaks first: it writes an
-    /// opening message about the screen the wearer is on (marked by `View.coachScreen(_:)`).
+    /// Open the Coach over the current screen. WHOOP-style it reopens the conversation, and the Coach
+    /// speaks first only when a new message is due (see `AICoachEngine.openFromCoachButton()`).
     private func openCoachSheet() {
         guard coachEnabled else { return }
         showCoachSheet = true
         if coach.isConfigured {
-            Task { await coach.openWithScreenContext() }
+            Task { await coach.openFromCoachButton() }
         }
     }
 
