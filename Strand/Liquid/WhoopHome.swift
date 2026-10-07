@@ -132,7 +132,7 @@ struct WhoopInsightCard: View {
         guard let d = repo.days.last else { return "none" }
         let rec = d.recovery.map { String(Int($0.rounded())) } ?? "-"
         let sleep = d.totalSleepMin.map { String(Int($0.rounded())) } ?? "-"
-        return "\(d.day)|\(rec)|\(sleep)|\(coach.isConfigured)|\(coach.dataConsent)"
+        return "v2|\(d.day)|\(rec)|\(sleep)|\(coach.isConfigured)|\(coach.dataConsent)"
     }
 
     var body: some View {

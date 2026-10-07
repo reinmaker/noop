@@ -1592,9 +1592,11 @@ final class AICoachEngine: ObservableObject {
         }
 
         // 30-day averages.
-        let last30 = Array(days.suffix(30))
+        // The 30 days before today: the same normal the app's "Today vs. last 30 days" rows show, so the
+        // Coach's "usual" matches the screen (today is still in progress and would pull it around).
+        let last30 = Array(days.dropLast().suffix(30))
         lines.append("")
-        lines.append("30-day averages:")
+        lines.append("30-day averages (the 30 days before today; quote these as my usual):")
         lines.append("  recovery: \(avgInt(last30.compactMap { $0.recovery }))%"
                      + ", strain: \(avgOne(last30.compactMap { $0.strain.map(Self.strain21) }))"
                      + ", sleep: \(avgSleepHours(last30))h"
