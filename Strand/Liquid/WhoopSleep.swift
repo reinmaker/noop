@@ -192,12 +192,14 @@ struct WhoopLastNightCards: View {
     // MARK: Hours vs. Needed
 
     private var hoursVsNeededCard: some View {
+        // The shared whole-night figure (`SleepModel.whoopSleepNeed`), the same one the contributor row
+        // above shows. A browsed older night is measured against today's need.
         let asleep = night.stages.asleep
-        // The same percentage the contributor row above shows, so the two never disagree.
-        let pct = model.hoursVsNeeded.latest
-        let needed = pct.map { $0 > 0 ? asleep / ($0 / 100) : asleep } ?? model.sleepDebtLedger.needMin
-        let healthyMin = min(model.sleepDebtLedger.needMin, needed)
-        let debt = max(0, needed - healthyMin)
+        let shared = model.whoopSleepNeed
+        let healthyMin = shared?.healthyMin ?? model.sleepDebtLedger.needMin
+        let debt = shared?.debt ?? 0
+        let needed = healthyMin + debt
+        let pct: Double? = needed > 0 ? Swift.min(200, asleep / needed * 100) : nil
         let scale = max(asleep, needed, 1)
 
         return VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -270,5 +272,22 @@ struct WhoopLastNightCards: View {
                 .font(WhoopStyle.chevron)
                 .foregroundStyle(up == higherIsBetter ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
         }
+    }
+}
+
+// MARK: - One sleep figure everywhere
+
+extension SleepModel {
+    /// Last night's whole-night sleep (every block of the night merged, as the Sleep screen shows it)
+    /// against the need: the personal healthy minimum plus the current sleep debt. Every WHOOP-style
+    /// surface (Home's Activities and Tonight's Sleep, the Hours vs. Needed row and card) reads THIS,
+    /// so the same night never shows two different numbers.
+    var whoopSleepNeed: (asleep: Double, need: Double, healthyMin: Double, debt: Double, pct: Double)? {
+        let asleep = night.stages.asleep
+        let healthyMin = sleepDebtLedger.needMin
+        guard asleep > 0, healthyMin > 0 else { return nil }
+        let debt = Swift.max(0, -sleepDebtLedger.balanceMin)
+        let need = healthyMin + debt
+        return (asleep, need, healthyMin, debt, Swift.min(200, asleep / need * 100))
     }
 }

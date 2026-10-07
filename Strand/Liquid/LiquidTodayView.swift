@@ -750,10 +750,13 @@ struct LiquidTodayView: View {
                 StressMonitorCard(dailyScore: stress)
             }
             WhoopMyDaySection()
-            WhoopTonightsSleepCard()
-            WhoopActivitiesCard(sleepMinutes: displayDay?.totalSleepMin,
-                                sleepStart: lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.effectiveStartTs)) },
-                                sleepEnd: lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.endTs)) },
+            WhoopTonightsSleepCard(needMinutes: hostedSleepModel?.whoopSleepNeed?.need)
+            // Last night as the Sleep screen shows it (every block merged), else the day's summary.
+            WhoopActivitiesCard(sleepMinutes: hostedSleepModel?.whoopSleepNeed?.asleep ?? displayDay?.totalSleepMin,
+                                sleepStart: hostedSleepModel.map { $0.night.onsetDate }
+                                    ?? lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.effectiveStartTs)) },
+                                sleepEnd: hostedSleepModel.map { Date(timeIntervalSince1970: TimeInterval($0.night.session.endTs)) }
+                                    ?? lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.endTs)) },
                                 workouts: workouts)
             WhoopJournalCard()
             WhoopPlanCard()
@@ -1953,26 +1956,21 @@ struct LiquidTodayView: View {
         }
         heroProviderByMetric = providers
 
-        // #today-hosted-cards: build the shared SleepModel that backs the hosted sleep cards, but ONLY when
-        // at least one sleep-origin card is actually hosted — otherwise Today pays no extra Repository cost.
-        // The inputs (allSleepSessions / habitualMidsleepSec / sessionMotions) are loaded exactly as the
-        // Sleep tab loads them, then handed to the SAME pure `SleepModel.build`, so a hosted card renders
-        // numbers byte-identical to the Sleep tab. Reused by every SleepModel-backed hosted card (built once).
-        let sleepOrigin = String(localized: "Sleep")
-        if HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(where: { $0.origin == sleepOrigin }) {
-            let hostedSessions = await repo.allSleepSessions()
-            let hostedHabitual = await repo.habitualMidsleepSec()
-            let hostedMotion = await repo.sessionMotions(sessions: hostedSessions)
-            hostedSleepModel = SleepModel.build(SleepModelInputs(
-                days: repo.days,
-                sleeps: repo.sleeps,
-                allSessions: hostedSessions,
-                importedSleep: repo.importedSleep,
-                habitualMidsleepSec: hostedHabitual,
-                motionByStart: hostedMotion))
-        } else {
-            hostedSleepModel = nil
-        }
+        // #today-hosted-cards: build the shared SleepModel that backs the hosted sleep cards. The inputs
+        // (allSleepSessions / habitualMidsleepSec / sessionMotions) are loaded exactly as the Sleep screen
+        // loads them, then handed to the SAME pure `SleepModel.build`, so Home renders numbers identical to
+        // the Sleep screen. Yoop builds it always (not only for hosted cards): the WHOOP-style Activities and
+        // Tonight's Sleep cards read last night from it, so Home and the Sleep screen show the same night.
+        let hostedSessions = await repo.allSleepSessions()
+        let hostedHabitual = await repo.habitualMidsleepSec()
+        let hostedMotion = await repo.sessionMotions(sessions: hostedSessions)
+        hostedSleepModel = SleepModel.build(SleepModelInputs(
+            days: repo.days,
+            sleeps: repo.sleeps,
+            allSessions: hostedSessions,
+            importedSleep: repo.importedSleep,
+            habitualMidsleepSec: hostedHabitual,
+            motionByStart: hostedMotion))
 
         // #2040: and today's stress, on the same "only when hosted" rule.
         if HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday) {
