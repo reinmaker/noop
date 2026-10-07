@@ -55,6 +55,9 @@ struct StressView: View {
     @State private var daytimeUsesPersonalBaseline = false
     /// Drives the Breathe sheet presented from the sustained-stress suggestion.
     @State private var showBreathe = false
+    /// Yoop: today's sleep windows and workouts (unix seconds), for the WHOOP breakdown cards.
+    @State private var sleepSpans: [ClosedRange<Int>] = []
+    @State private var activitySpans: [ClosedRange<Int>] = []
 
     /// ADDITIVE, on-demand advanced readouts, computed live from the SAME day's R-R the
     /// daytime timeline already reads. These do NOT feed the 0..3 score or the timeline; they
@@ -73,7 +76,9 @@ struct StressView: View {
     @State private var modelSignature: StressInputs?
 
     var body: some View {
-        ScreenScaffold(title: "Stress Monitor", subtitle: "Your stress across the day, on a 0-3 scale",
+        ScreenScaffold(title: "Stress Monitor",
+                       subtitle: PuffinExperiment.whoopStressEnabled
+                           ? nil : LocalizedStringKey("Your stress across the day, on a 0-3 scale"),
                        // PERF (scroll): lazy column — byte-identical layout (LazyVStack == eager VStack
                        // alignment/spacing/header). The content is one inner eager VStack, so the staggered
                        // section reveal is unchanged; this only defers building that stack until it scrolls in.
@@ -113,6 +118,24 @@ struct StressView: View {
         let tz = TimeZone.current.secondsFromGMT(for: Date())
 
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
+        // Yoop: WHOOP-style stress, the whole day against the resting heart rate. The Advanced HRV
+        // readouts are not part of this layout, so they are not computed.
+        if let restHR = StressDayCurve.whoopRestingHR(repo) {
+            sleepSpans = repo.sleeps.compactMap { s in
+                let lo = max(s.effectiveStartTs, from), hi = min(s.endTs, to)
+                return lo < hi ? lo...hi : nil
+            }
+            activitySpans = await repo.workoutRows(days: 2).compactMap { w in
+                let lo = max(w.startTs, from), hi = min(w.endTs, to)
+                return lo < hi ? lo...hi : nil
+            }
+            daytime = await runUnescalated(priority: .userInitiated) {
+                WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz)
+            }
+            stressIndex = nil
+            freqHRV = nil
+            return
+        }
         // Too few HR samples: empty the timeline AND clear the advanced readouts in lockstep. Without this
         // reset a later refresh that hits this path would leave the Advanced HRV card showing stale values
         // next to an empty timeline (the readouts are only recomputed past this guard).
@@ -202,8 +225,12 @@ struct StressView: View {
 
             // 1. HERO — WHOOP-style: the current level, today's line over Low / Medium / High bands, time in
             //    each band, and Breathe. (Replaces NOOP's liquid vessel card.)
-            WhoopStressHero(daytime: daytime, dailyScore: model.score, onBreathe: { showBreathe = true })
+            WhoopStressHero(daytime: daytime, dailyScore: model.score, sleepSpans: sleepSpans,
+                            activitySpans: activitySpans, onBreathe: { showBreathe = true })
                 .staggeredAppear(index: 0)
+
+            // Yoop shows WHOOP's layout only: the hero and its breakdown cards.
+            if !PuffinExperiment.whoopStressEnabled {
 
             // 1b. ADVANCED HRV readouts (additive, on-demand). A separate, clearly-labelled card
             //     that appears only when at least one engine returned a value. It sits BELOW the
@@ -237,6 +264,7 @@ struct StressView: View {
             // 5. Transparency — how the number is built.
             methodologyCard(model)
                 .staggeredAppear(index: 4)
+            }
         }
         // The sustained-stress suggestion opens the existing Breathe trainer in a sheet —
         // in-app and passive (no alert / notification), inheriting the app environment.

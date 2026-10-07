@@ -443,39 +443,45 @@ extension SleepModel {
             let series = days.compactMap { imported[$0.day]?.consistencyPct }
             return (series.last, nil, mean(series), series)
         }
-        // WHOOP-style consistency: how much the last four nights' sleep windows (bedtime AND wake time)
-        // overlap on the clock. Each pair of nights scores intersection / union of their windows on a
-        // noon-to-noon clock; the day's score is the mean over every pair among the last four nights.
+        // WHOOP-style consistency, fitted to WHOOP's own nightly figures (RMSE about 6 points): each
+        // night's bedtime and wake time against each of the three nights before it. A pair scores
+        // 1 - ((|bedtime shift| + |wake shift|) / 700 min)^0.75, floored at 0; the night's score is the
+        // mean. Nights, not records: a night broken by a wake-up is one window (`nightWindows`).
         let cal = Calendar.current
-        func window(_ s: CachedSleepSession) -> (start: Double, end: Double) {
-            let d = Date(timeIntervalSince1970: TimeInterval(s.effectiveStartTs))
-            let comps = cal.dateComponents([.hour, .minute], from: d)
-            var m = Double((comps.hour ?? 0) * 60 + (comps.minute ?? 0))
-            if m < 12 * 60 { m += 24 * 60 }   // minutes on a noon-to-noon clock
-            return (m, m + Swift.max(0, Double(s.endTs - s.effectiveStartTs) / 60))
+        func clock(_ ts: Int) -> Double {
+            let comps = cal.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(ts)))
+            let m = Double((comps.hour ?? 0) * 60 + (comps.minute ?? 0))
+            return m < 12 * 60 ? m + 24 * 60 : m   // minutes on a noon-to-noon clock
         }
-        func overlap(_ a: (start: Double, end: Double), _ b: (start: Double, end: Double)) -> Double {
-            let inter = Swift.max(0, Swift.min(a.end, b.end) - Swift.max(a.start, b.start))
-            let union = Swift.max(a.end, b.end) - Swift.min(a.start, b.start)
-            return union > 0 ? inter / union : 0
+        let windows = nightWindows(sleeps).map { w -> (bed: Double, wake: Double) in
+            let bed = clock(w.start)
+            return (bed, bed + Double(w.end - w.start) / 60)
         }
-        let windows = sleeps.map(window)
         guard windows.count >= 2 else { return (nil, nil, nil, []) }
         var scores: [Double] = []
-        for i in windows.indices {
-            let recent = Array(windows[Swift.max(0, i - 3)...i])
-            guard recent.count >= 2 else { continue }
-            var total = 0.0
-            var pairs = 0
-            for a in 0..<recent.count {
-                for b in (a + 1)..<recent.count {
-                    total += overlap(recent[a], recent[b])
-                    pairs += 1
-                }
+        for i in 1..<windows.count {
+            let previous = windows[Swift.max(0, i - 3)..<i]
+            let pairScores = previous.map { p -> Double in
+                let shift = abs(windows[i].bed - p.bed) + abs(windows[i].wake - p.wake)
+                return Swift.max(0, 1 - pow(shift / 700, 0.75))
             }
-            scores.append(Swift.max(0, Swift.min(100, total / Double(pairs) * 100)))
+            scores.append(pairScores.reduce(0, +) / Double(pairScores.count) * 100)
         }
         return (scores.last, nil, mean(scores), scores)
+    }
+
+    /// One window per night, oldest first: records less than two hours apart (a night broken by a
+    /// wake-up) are joined, and windows under three hours (naps) are left out.
+    static func nightWindows(_ sleeps: [CachedSleepSession]) -> [(start: Int, end: Int)] {
+        var nights: [(start: Int, end: Int)] = []
+        for s in sleeps.sorted(by: { $0.effectiveStartTs < $1.effectiveStartTs }) {
+            if let last = nights.last, s.effectiveStartTs - last.end < 2 * 3600 {
+                nights[nights.count - 1].end = Swift.max(last.end, s.endTs)
+            } else {
+                nights.append((s.effectiveStartTs, s.endTs))
+            }
+        }
+        return nights.filter { $0.end - $0.start >= 3 * 3600 }
     }
 
     /// Hours vs needed % = asleep / need. The imported sleep_need_min wins per day; else the

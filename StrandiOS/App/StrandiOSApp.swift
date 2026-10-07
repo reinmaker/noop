@@ -704,10 +704,17 @@ enum WhoopStylePreset {
             defaults.set(true, forKey: PuffinExperiment.autoDetectWorkoutsKey)
             defaults.set(true, forKey: autoDetectKey)
         }
+        // Stress the WHOOP way: rest reads low and an ordinary day medium (NOOP's day-relative read
+        // put a quiet day at 8 hours high where WHOOP gave under 3).
+        if !defaults.bool(forKey: whoopStressKey) {
+            defaults.set(true, forKey: PuffinExperiment.whoopStressKey)
+            defaults.set(true, forKey: whoopStressKey)
+        }
     }
 
     private static let strainCurveKey = "whoopStyle.strainCurve.v1"
     private static let autoDetectKey = "whoopStyle.autoDetectWorkouts.v1"
+    private static let whoopStressKey = "whoopStyle.stress.v1"
 
     private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
     /// NOOP Home sections that WHOOP-style cards replace (Synthesis by the insight card, Key Metrics by

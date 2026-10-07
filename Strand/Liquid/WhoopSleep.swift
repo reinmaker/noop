@@ -16,6 +16,9 @@ struct WhoopLastNightCards: View {
     /// One session per night (`Repository.sleeps`), for the Sleep Consistency chart.
     var sleeps: [CachedSleepSession] = []
 
+    /// The time under the reader's finger on the heart-rate graph, as in WHOOP.
+    @State private var hrSelection: Date?
+
     private var prior: [DailyMetric] { Array(days.dropLast().suffix(30)) }
 
     /// The day summary for this night (keyed by its wake day): the actual sleep and its stages, the
@@ -158,12 +161,41 @@ struct WhoopLastNightCards: View {
         if points.count >= 2 {
             let lo = (points.map(\.bpm).min() ?? 40) - 5
             let hi = (points.map(\.bpm).max() ?? 100) + 5
-            Chart(points) { p in
-                LineMark(x: .value("Time", p.time), y: .value("BPM", p.bpm))
-                    .interpolationMethod(.monotone)
-                    .foregroundStyle(StrandPalette.restColor)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            let picked = hrSelection.flatMap { sel in
+                points.min { abs($0.time.timeIntervalSince(sel)) < abs($1.time.timeIntervalSince(sel)) }
             }
+            HStack(spacing: NoopMetrics.space2) {
+                if let picked {
+                    Text("\(Int(picked.bpm.rounded())) bpm")
+                        .font(WhoopStyle.smallLabel)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    Text(picked.time, format: .dateTime.hour().minute())
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                } else {
+                    Text("Touch the graph to see your heart rate")
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+                Spacer()
+            }
+            let chart = Chart {
+                ForEach(points) { p in
+                    LineMark(x: .value("Time", p.time), y: .value("BPM", p.bpm))
+                        .interpolationMethod(.monotone)
+                        .foregroundStyle(StrandPalette.restColor)
+                        .lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+                if let picked {
+                    RuleMark(x: .value("Time", picked.time))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                    PointMark(x: .value("Time", picked.time), y: .value("BPM", picked.bpm))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .symbolSize(36)
+                }
+            }
+            hrSelectable(chart)
             .chartYScale(domain: lo...hi)
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
@@ -178,6 +210,15 @@ struct WhoopLastNightCards: View {
                 }
             }
             .frame(height: 120)
+        }
+    }
+
+    /// Drag across the graph to read the heart rate at a moment (iOS 17 and macOS 14 and later).
+    @ViewBuilder private func hrSelectable<C: View>(_ chart: C) -> some View {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            chart.chartXSelection(value: $hrSelection)
+        } else {
+            chart
         }
     }
 
@@ -234,17 +275,8 @@ struct WhoopLastNightCards: View {
     }
 
     private var consistencyBars: [NightBar] {
-        // One bar per night. A night broken by a wake-up arrives as two sleep records, so records less
-        // than two hours apart are joined into one window; short windows (naps) are left out.
-        var nights: [(start: Int, end: Int)] = []
-        for s in sleeps.sorted(by: { $0.effectiveStartTs < $1.effectiveStartTs }) {
-            if let last = nights.last, s.effectiveStartTs - last.end < 2 * 3600 {
-                nights[nights.count - 1].end = max(last.end, s.endTs)
-            } else {
-                nights.append((s.effectiveStartTs, s.endTs))
-            }
-        }
-        let recent = Array(nights.filter { $0.end - $0.start >= 3 * 3600 }.suffix(5))
+        // One bar per night, the same nights the consistency score is computed over.
+        let recent = Array(SleepModel.nightWindows(sleeps).suffix(5))
         return recent.enumerated().map { i, s in
             let bed = Self.minutesAfterSix(s.start)
             let duration = Double(s.end - s.start) / 60
