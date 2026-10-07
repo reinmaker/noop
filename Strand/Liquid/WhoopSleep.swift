@@ -16,6 +16,18 @@ struct WhoopLastNightCards: View {
 
     private var prior: [DailyMetric] { Array(days.dropLast().suffix(30)) }
 
+    /// The day summary for this night (keyed by its wake day): the actual sleep and its stages, the
+    /// figure Home shows. The merged night (`night.stages`) also counts time lying in bed before falling
+    /// asleep, so it stands for time in bed here, not sleep.
+    private var summary: DailyMetric? {
+        let wake = Date(timeIntervalSince1970: TimeInterval(night.session.endTs))
+        let key = Repository.logicalDayKey(wake)
+        return days.last(where: { $0.day == key })
+    }
+
+    /// Actual sleep: the summary's total, else the night's own asleep minutes.
+    private var asleepMinutes: Double { summary?.totalSleepMin ?? night.stages.asleep }
+
     private static func percentile(_ values: [Double], _ p: Double) -> Double? {
         let sorted = values.sorted()
         guard !sorted.isEmpty else { return nil }
@@ -57,8 +69,14 @@ struct WhoopLastNightCards: View {
 
     private var hoursOfSleepCard: some View {
         let s = night.stages
-        let asleep = s.asleep
-        let inBed = max(s.total, 1)
+        let asleep = asleepMinutes
+        // Time in bed is the whole night; never shorter than the sleep inside it.
+        let inBed = max(s.total, asleep, 1)
+        // Stages from the same summary as the hours, so Awake + Light + Deep + REM add up to time in bed.
+        let light = summary?.lightMin ?? s.light
+        let deep = summary?.deepMin ?? s.deep
+        let rem = summary?.remMin ?? s.rem
+        let awake = max(0, inBed - (light + deep + rem))
         let typicalAsleep = typicalMedian { $0.totalSleepMin }
         let awakeRange = typicalRange { d in
             guard let a = d.totalSleepMin, var e = d.efficiency, e > 0 else { return nil }
@@ -83,18 +101,18 @@ struct WhoopLastNightCards: View {
                 Text("TYPICAL RANGE").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textSecondary)
                 Spacer()
                 Text("DURATION").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textSecondary)
-                Text(Self.hm(s.total)).font(WhoopStyle.number(18)).foregroundStyle(StrandPalette.textPrimary)
+                Text(Self.hm(inBed)).font(WhoopStyle.number(18)).foregroundStyle(StrandPalette.textPrimary)
             }
-            stageRow(String(localized: "AWAKE"), minutes: s.awake, total: inBed, typical: awakeRange,
+            stageRow(String(localized: "AWAKE"), minutes: awake, total: inBed, typical: awakeRange,
                      color: WhoopStyle.stageAwake, scale: maxStage)
-            stageRow(String(localized: "LIGHT"), minutes: s.light, total: inBed, typical: typicalRange { $0.lightMin },
+            stageRow(String(localized: "LIGHT"), minutes: light, total: inBed, typical: typicalRange { $0.lightMin },
                      color: WhoopStyle.stageLight, scale: maxStage)
-            stageRow(String(localized: "SWS (DEEP)"), minutes: s.deep, total: inBed, typical: typicalRange { $0.deepMin },
+            stageRow(String(localized: "SWS (DEEP)"), minutes: deep, total: inBed, typical: typicalRange { $0.deepMin },
                      color: WhoopStyle.stageDeep, scale: maxStage)
-            stageRow(String(localized: "REM"), minutes: s.rem, total: inBed, typical: typicalRange { $0.remMin },
+            stageRow(String(localized: "REM"), minutes: rem, total: inBed, typical: typicalRange { $0.remMin },
                      color: WhoopStyle.stageREM, scale: maxStage)
             Rectangle().fill(WhoopStyle.cardStroke).frame(height: 1)
-            let restorative = s.deep + s.rem
+            let restorative = deep + rem
             let typicalRestorative = typicalMedian { d in
                 guard let deep = d.deepMin, let rem = d.remMin else { return nil }
                 return deep + rem
@@ -192,8 +210,8 @@ struct WhoopLastNightCards: View {
     // MARK: Hours vs. Needed
 
     private var hoursVsNeededCard: some View {
-        let asleep = night.stages.asleep
-        // The same percentage the contributor row above shows, so the two never disagree.
+        let asleep = asleepMinutes
+        // The same percentage the contributor row above shows (both from the day summary's sleep).
         let pct = model.hoursVsNeeded.latest
         let needed = pct.map { $0 > 0 ? asleep / ($0 / 100) : asleep } ?? model.sleepDebtLedger.needMin
         let healthyMin = min(model.sleepDebtLedger.needMin, needed)

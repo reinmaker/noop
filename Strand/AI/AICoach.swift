@@ -282,7 +282,8 @@ final class AICoachEngine: ObservableObject {
     "**41 ms** vs your usual **52**").
     \u{2022} Name the single biggest limiter or driver ("the limiter tonight is stress, not effort").
     \u{2022} Give ONE highest-leverage action and, in a few words, the physiology behind it.
-    \u{2022} Keep it short: two to four short paragraphs at most. A one-line question gets a one-line answer.
+    \u{2022} Be concise: two to four short sentences (about 60 words) unless they ask for more detail. A \
+    one-line question gets a one-line answer. No filler, no repeating the numbers back, no sign-offs.
     \u{2022} At most one emoji per message. No headings unless asked; lists only for plans or options.
     \u{2022} End most coaching messages with one probing question about how they feel or what is going on.
     \u{2022} Take what you remember into account: injuries and health conditions limit training advice, \
@@ -945,7 +946,7 @@ final class AICoachEngine: ObservableObject {
     Based on the data above, give me my Daily Outlook for today, the way the WHOOP coach does in the \
     morning: today's readiness verdict from my Recovery and its main driver (against my normal), \
     today's optimal Strain range, two or three suggested activities as short bullets with one emoji \
-    each, and a sleep target for tonight. Bold the key numbers. Keep it short and motivating.
+    each, and a sleep target for tonight. Bold the key numbers. Under 70 words, motivating.
     """
 
     /// K5: Generate today's coaching brief WITHOUT touching the visible chat transcript. Used by the
@@ -1247,18 +1248,19 @@ final class AICoachEngine: ObservableObject {
         let focus: String
         switch (screen, hour) {
         case (.home, ..<12):
-            focus = "Make it their Daily Outlook for this morning: today's readiness verdict from Recovery and its " +
-                "main driver, today's optimal Strain range, two or three suggested activities as short bullets " +
-                "(one emoji each), and a sleep target for tonight. Ask which they will do, and add the Options line."
+            focus = "Make it their Daily Outlook for this morning, under 70 words: one line with the readiness " +
+                "verdict and its main driver, one line with today's optimal Strain range, two suggested activities " +
+                "as one-line bullets (one emoji each), and tonight's sleep target. Ask which they will do, and add " +
+                "the Options line."
         case (.home, 18...):
-            focus = "Make it an evening check-in on their day: today's Strain against the optimal range, stress, " +
-                "and what tonight's sleep needs. Name the limiter and one action for tonight, then ask a probing question."
+            focus = "Make it a short evening check-in, under 60 words: today's Strain against the optimal range, " +
+                "the limiter tonight, one action, then one question."
         default:
-            focus = "Speak to them about the most notable thing on that screen, with their actual numbers compared " +
-                "with their normal, and end with one question about how they feel or what they want to do."
+            focus = "In two or three sentences (under 50 words), tell them the most notable thing on that screen " +
+                "with the number against their normal, and end with one short question."
         }
         return "The user just opened the Coach while looking at their \(screen.describedForCoach). Write the " +
-            "Coach's opening message. \(focus) Two or three short paragraphs at most, then the special lines."
+            "Coach's opening message. \(focus) Then the special lines."
     }
 
     /// WHOOP-style: the Coach speaks first, about the screen the wearer opened it from. The instruction
@@ -1425,8 +1427,8 @@ final class AICoachEngine: ObservableObject {
     you know it and the headline (did I hit today's optimal Strain range? with the numbers), then how \
     stress, sleep debt and recovery shaped the day against my normal, name tonight's limiter, give the \
     single highest-leverage action for tonight with the physiology behind it, and say when to go to bed \
-    and how long to sleep. Two to four short paragraphs, bold key numbers, at most one emoji, no headings. \
-    End with one probing question about my day.
+    and how long to sleep. Keep it under 80 words in two short paragraphs, bold key numbers, at most one \
+    emoji, no headings. End with one probing question about my day.
     """
 
     /// Generate the Home insight card (non-streaming, never touches the chat transcript).

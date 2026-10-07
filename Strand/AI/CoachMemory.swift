@@ -39,6 +39,11 @@ final class CoachMemoryStore: ObservableObject {
     private static let nameKey = "coach.firstName"
 
     @Published private(set) var items: [CoachMemory] = []
+
+    private static let oldSeedDetail =
+        "Data-driven coaching with a mix of tough love and motivation, with the detail behind each recommendation."
+    private static let seedDetail =
+        "Data-driven coaching with a mix of tough love and motivation, kept short and to the point."
     /// The first name the Coach uses for the wearer ("Daniel, you hit your strain target...").
     @Published var firstName: String {
         didSet { UserDefaults.standard.set(firstName, forKey: Self.nameKey) }
@@ -52,7 +57,12 @@ final class CoachMemoryStore: ObservableObject {
         } else {
             // A sensible starting style, editable or removable on the Memory screen.
             items = [CoachMemory(category: .preference, title: "Prefers data and tough love",
-                                 detail: "Data-driven coaching with a mix of tough love and motivation, with the detail behind each recommendation.")]
+                                 detail: Self.seedDetail)]
+            save()
+        }
+        // The first seed asked for detail; the wearer asked for short answers instead (2026-10-07).
+        if let i = items.firstIndex(where: { $0.detail == Self.oldSeedDetail }) {
+            items[i].detail = Self.seedDetail
             save()
         }
     }
