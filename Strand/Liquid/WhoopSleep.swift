@@ -234,11 +234,21 @@ struct WhoopLastNightCards: View {
     }
 
     private var consistencyBars: [NightBar] {
-        let recent = Array(sleeps.suffix(5))
+        // One bar per night. A night broken by a wake-up arrives as two sleep records, so records less
+        // than two hours apart are joined into one window; short windows (naps) are left out.
+        var nights: [(start: Int, end: Int)] = []
+        for s in sleeps.sorted(by: { $0.effectiveStartTs < $1.effectiveStartTs }) {
+            if let last = nights.last, s.effectiveStartTs - last.end < 2 * 3600 {
+                nights[nights.count - 1].end = max(last.end, s.endTs)
+            } else {
+                nights.append((s.effectiveStartTs, s.endTs))
+            }
+        }
+        let recent = Array(nights.filter { $0.end - $0.start >= 3 * 3600 }.suffix(5))
         return recent.enumerated().map { i, s in
-            let bed = Self.minutesAfterSix(s.effectiveStartTs)
-            let duration = Double(s.endTs - s.effectiveStartTs) / 60
-            let day = Date(timeIntervalSince1970: TimeInterval(s.endTs))
+            let bed = Self.minutesAfterSix(s.start)
+            let duration = Double(s.end - s.start) / 60
+            let day = Date(timeIntervalSince1970: TimeInterval(s.end))
             return NightBar(id: i, label: day.formatted(.dateTime.weekday(.abbreviated)), bed: bed,
                             wake: min(bed + max(0, duration), 20 * 60), latest: i == recent.count - 1)
         }
@@ -372,8 +382,10 @@ struct WhoopLastNightCards: View {
         // The same percentage the contributor row above shows (both from the day summary's sleep).
         let pct = model.hoursVsNeeded.latest
         let needed = pct.map { $0 > 0 ? asleep / ($0 / 100) : asleep } ?? model.sleepDebtLedger.needMin
-        let healthyMin = min(model.sleepDebtLedger.needMin, needed)
-        let debt = max(0, needed - healthyMin)
+        // WHOOP splits Sleep Needed into a healthy minimum plus sleep debt. The debt is the same figure
+        // the Night detail Sleep Debt tile shows, so the two never disagree.
+        let debt = min(needed, max(0, model.sleepDebt.latest ?? 0))
+        let healthyMin = needed - debt
         let scale = max(asleep, needed, 1)
 
         return VStack(alignment: .leading, spacing: NoopMetrics.space3) {
