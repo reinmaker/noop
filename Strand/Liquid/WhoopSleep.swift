@@ -13,6 +13,8 @@ struct WhoopLastNightCards: View {
     let model: SleepModel
     let nightHR: [HRBucket]
     let days: [DailyMetric]
+    /// One session per night (`Repository.sleeps`), for the Sleep Consistency chart.
+    var sleeps: [CachedSleepSession] = []
 
     private var prior: [DailyMetric] { Array(days.dropLast().suffix(30)) }
 
@@ -62,6 +64,8 @@ struct WhoopLastNightCards: View {
             }
             hoursOfSleepCard
             hoursVsNeededCard
+            consistencyCard
+            efficiencyCard
         }
     }
 
@@ -191,7 +195,7 @@ struct WhoopLastNightCards: View {
             GeometryReader { geo in
                 let w = geo.size.width
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3).fill(WhoopStyle.ringTrack)
+                    WhoopHatch().clipShape(RoundedRectangle(cornerRadius: 3))
                     if let typical {
                         Rectangle()
                             .fill(WhoopStyle.typicalBand)
@@ -205,6 +209,160 @@ struct WhoopLastNightCards: View {
             }
             .frame(height: 12)
         }
+    }
+
+    // MARK: Sleep Consistency (WHOOP: a bar per night from bedtime to wake, dashed usual times)
+
+    private struct NightBar: Identifiable {
+        let id: Int
+        let label: String
+        let bed: Double     // minutes after 18:00
+        let wake: Double
+        let latest: Bool
+    }
+
+    /// Minutes after 18:00 local, so an evening bedtime and a morning wake sit on one axis.
+    private static func minutesAfterSix(_ ts: Int) -> Double {
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(ts)))
+        let m = Double((comps.hour ?? 0) * 60 + (comps.minute ?? 0))
+        return (m - 18 * 60 + 24 * 60).truncatingRemainder(dividingBy: 24 * 60)
+    }
+
+    private static func clockLabel(_ minutesAfterSix: Double) -> String {
+        let m = Int((minutesAfterSix + 18 * 60).truncatingRemainder(dividingBy: 24 * 60))
+        return String(format: "%02d:%02d", m / 60, m % 60)
+    }
+
+    private var consistencyBars: [NightBar] {
+        let recent = Array(sleeps.suffix(5))
+        return recent.enumerated().map { i, s in
+            let bed = Self.minutesAfterSix(s.effectiveStartTs)
+            let duration = Double(s.endTs - s.effectiveStartTs) / 60
+            let day = Date(timeIntervalSince1970: TimeInterval(s.endTs))
+            return NightBar(id: i, label: day.formatted(.dateTime.weekday(.abbreviated)), bed: bed,
+                            wake: min(bed + max(0, duration), 20 * 60), latest: i == recent.count - 1)
+        }
+    }
+
+    @ViewBuilder private var consistencyCard: some View {
+        let bars = consistencyBars
+        if bars.count >= 2 {
+            let usualBed = bars.map(\.bed).reduce(0, +) / Double(bars.count)
+            let usualWake = bars.map(\.wake).reduce(0, +) / Double(bars.count)
+            let lo = max(0, (bars.map(\.bed).min() ?? 0) - 60)
+            let hi = min(20 * 60, (bars.map(\.wake).max() ?? 20 * 60) + 60)
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("SLEEP CONSISTENCY").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textPrimary)
+                HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
+                    Text(model.consistency.latest.map { "\(Int($0.rounded()))%" } ?? "—")
+                        .font(WhoopStyle.number(32)).foregroundStyle(StrandPalette.textPrimary)
+                    trendArrow(model.consistency.latest, model.consistency.typical, higherIsBetter: true)
+                    Spacer()
+                    Text("- - USUAL BED/WAKE TIME").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textTertiary)
+                }
+                if let typical = model.consistency.typical {
+                    Text("\(Int(typical.rounded()))%").font(WhoopStyle.caption).foregroundStyle(StrandPalette.textTertiary)
+                }
+                Chart {
+                    ForEach(bars) { b in
+                        BarMark(x: .value("Night", b.label), yStart: .value("Bed", -b.bed), yEnd: .value("Wake", -b.wake),
+                                width: .ratio(0.35))
+                            .foregroundStyle(b.latest ? StrandPalette.restColor : StrandPalette.textTertiary.opacity(0.6))
+                            .annotation(position: .top, spacing: 2) {
+                                if b.latest {
+                                    Text(Self.clockLabel(b.bed)).font(WhoopStyle.chevron).foregroundStyle(StrandPalette.textPrimary)
+                                }
+                            }
+                            .annotation(position: .bottom, spacing: 2) {
+                                if b.latest {
+                                    Text(Self.clockLabel(b.wake)).font(WhoopStyle.chevron).foregroundStyle(StrandPalette.textPrimary)
+                                }
+                            }
+                    }
+                    RuleMark(y: .value("Usual bed", -usualBed))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    RuleMark(y: .value("Usual wake", -usualWake))
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                }
+                .chartYScale(domain: (-hi)...(-lo))
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .stride(by: 180)) { value in
+                        AxisGridLine().foregroundStyle(WhoopStyle.ringTrack)
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text(Self.clockLabel(-v)).font(WhoopStyle.chevron).foregroundStyle(StrandPalette.textTertiary)
+                            }
+                        }
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks { _ in AxisValueLabel().foregroundStyle(StrandPalette.textSecondary) }
+                }
+                .frame(height: 180)
+            }
+            .padding(WhoopStyle.compactPadding)
+            .whoopCard()
+        }
+    }
+
+    // MARK: Sleep Efficiency (WHOOP: asleep and awake across the night, wake events)
+
+    @ViewBuilder private var efficiencyCard: some View {
+        let figures = WhoopNightFigures.make(night: night, days: days)
+        let segments = night.intervals
+        let span = max(1, segments.map(\.end).max() ?? 1)
+        let wakeEvents = segments.enumerated().filter { i, seg in
+            seg.stage == .awake && i > 0 && i < segments.count - 1
+        }.count
+        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+            Text("SLEEP EFFICIENCY").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textPrimary)
+            Text("\(Int(figures.efficiency.rounded()))%").font(WhoopStyle.number(32)).foregroundStyle(StrandPalette.textPrimary)
+            HStack {
+                Text("ASLEEP").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textSecondary)
+                Spacer()
+                Text(Self.hm(figures.asleep)).font(WhoopStyle.number(18)).foregroundStyle(StrandPalette.textPrimary)
+            }
+            timelineRow(segments, span: span, awake: false)
+            timelineRow(segments, span: span, awake: true)
+            HStack {
+                Text("AWAKE").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textSecondary)
+                Spacer()
+                Text(Self.hm(figures.awake)).font(WhoopStyle.number(18)).foregroundStyle(StrandPalette.textPrimary)
+            }
+            Rectangle().fill(WhoopStyle.cardStroke).frame(height: 1)
+            HStack {
+                RoundedRectangle(cornerRadius: 2).fill(StrandPalette.textPrimary).frame(width: 12, height: 12)
+                Text("WAKE EVENTS").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textPrimary)
+                Spacer()
+                Text("\(wakeEvents)").font(WhoopStyle.number(20)).foregroundStyle(StrandPalette.textPrimary)
+            }
+        }
+        .padding(WhoopStyle.compactPadding)
+        .whoopCard()
+    }
+
+    /// One row of the night: asleep segments in blue, or awake segments in white on a striped track.
+    private func timelineRow(_ segments: [SleepInterval], span: TimeInterval, awake: Bool) -> some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .leading) {
+                if awake {
+                    WhoopHatch()
+                } else {
+                    RoundedRectangle(cornerRadius: 3).fill(WhoopStyle.ringTrack)
+                }
+                ForEach(segments.filter { ($0.stage == .awake) == awake }) { seg in
+                    Rectangle()
+                        .fill(awake ? StrandPalette.textPrimary : StrandPalette.restColor)
+                        .frame(width: max(1, w * CGFloat((seg.end - seg.start) / span)))
+                        .offset(x: w * CGFloat(seg.start / span))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+        .frame(height: 14)
     }
 
     // MARK: Hours vs. Needed
@@ -287,6 +445,52 @@ struct WhoopLastNightCards: View {
             Image(systemName: up ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                 .font(WhoopStyle.chevron)
                 .foregroundStyle(up == higherIsBetter ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
+        }
+    }
+}
+
+// MARK: - Shared night figures
+
+/// One night's sleep as the WHOOP-style Sleep screen shows it: actual sleep and stages from the day
+/// summary (what Home shows), time in bed from the whole night, awake as the difference. The Last
+/// Night's Sleep card, the efficiency card and the contributor rows all read this, so they agree.
+struct WhoopNightFigures {
+    let asleep: Double
+    let inBed: Double
+    let light: Double
+    let deep: Double
+    let rem: Double
+    let awake: Double
+    var efficiency: Double { inBed > 0 ? Swift.min(100, asleep / inBed * 100) : 0 }
+
+    @MainActor
+    static func make(night: Night, days: [DailyMetric]) -> WhoopNightFigures {
+        let wake = Date(timeIntervalSince1970: TimeInterval(night.session.endTs))
+        let summary = days.last(where: { $0.day == Repository.logicalDayKey(wake) })
+        let s = night.stages
+        let asleep = summary?.totalSleepMin ?? s.asleep
+        let inBed = Swift.max(s.total, asleep, 1)
+        let light = summary?.lightMin ?? s.light
+        let deep = summary?.deepMin ?? s.deep
+        let rem = summary?.remMin ?? s.rem
+        return WhoopNightFigures(asleep: asleep, inBed: inBed, light: light, deep: deep, rem: rem,
+                                 awake: Swift.max(0, inBed - (light + deep + rem)))
+    }
+}
+
+/// WHOOP's diagonal-striped track (behind stage bars and the awake row).
+struct WhoopHatch: View {
+    var body: some View {
+        Canvas { ctx, size in
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(WhoopStyle.ringTrack.opacity(0.5)))
+            var x: CGFloat = -size.height
+            while x < size.width {
+                var p = Path()
+                p.move(to: CGPoint(x: x, y: size.height))
+                p.addLine(to: CGPoint(x: x + size.height, y: 0))
+                ctx.stroke(p, with: .color(WhoopStyle.ringTrack), lineWidth: 2)
+                x += 6
+            }
         }
     }
 }

@@ -604,7 +604,8 @@ struct SleepView: View {
             .padding(.top, 8)
 
             // WHOOP-style contributors under the ring: Hours vs. Needed, Consistency, Efficiency, Restorative.
-            WhoopSleepContributors(model: model)
+            WhoopSleepContributors(model: model,
+                                   efficiency: WhoopNightFigures.make(night: model.night, days: repo.days).efficiency)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
 
@@ -691,11 +692,13 @@ struct SleepView: View {
                 nightNavHeader(trailing: model.night.spanLabel)
                 // WHOOP-style Last Night's Sleep (hours vs typical with the night's HR, stage bars against
                 // their typical range, restorative sleep, Hours vs. Needed).
-                WhoopLastNightCards(night: model.night, model: model, nightHR: nightHR, days: repo.days)
+                WhoopLastNightCards(night: model.night, model: model, nightHR: nightHR, days: repo.days,
+                                    sleeps: repo.sleeps)
                 napSection(model.night)
             } else if let night = navNight {
                 nightNavHeader(trailing: night.spanLabel)
-                WhoopLastNightCards(night: night, model: model, nightHR: nightHR, days: repo.days)
+                WhoopLastNightCards(night: night, model: model, nightHR: nightHR, days: repo.days,
+                                    sleeps: repo.sleeps)
                 napSection(night)
             } else if let session = sessionRow(at: nightOffset) {
                 // Stage-less stub purely to reuse Night's date/time formatting.
