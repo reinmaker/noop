@@ -17,6 +17,9 @@ struct WhoopStressHero: View {
     var activitySpans: [ClosedRange<Int>] = []
     let onBreathe: () -> Void
 
+    /// The time under the reader's finger on the stress line.
+    @State private var selection: Date?
+
     private struct Sample: Identifiable {
         let ts: Int
         let level: Double
@@ -172,7 +175,36 @@ struct WhoopStressHero: View {
             let lo = max(span.lowerBound, first), hi = min(span.upperBound, last)
             return lo < hi ? lo...hi : nil
         }
-        return Chart {
+        let picked = selection.flatMap { sel in
+            points.min { abs($0.time.timeIntervalSince(sel)) < abs($1.time.timeIntervalSince(sel)) }
+        }
+        return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            readout(picked)
+            stressChart(points, shaded: shaded, picked: picked)
+        }
+    }
+
+    /// The held reading: level, band and time. Empty, at the same height, when nothing is held.
+    private func readout(_ picked: Sample?) -> some View {
+        HStack(spacing: NoopMetrics.space2) {
+            if let picked {
+                Text(String(format: "%.1f", picked.level))
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text(Self.word(picked.level))
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(WhoopStyle.stressBand(picked.level).color)
+                Text(picked.time, format: .dateTime.hour().minute())
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textSecondary)
+            }
+            Spacer()
+        }
+        .frame(height: 16)
+    }
+
+    private func stressChart(_ points: [Sample], shaded: [ClosedRange<Int>], picked: Sample?) -> some View {
+        Chart {
             ForEach(shaded.indices, id: \.self) { i in
                 RectangleMark(xStart: .value("Sleep start", Date(timeIntervalSince1970: TimeInterval(shaded[i].lowerBound))),
                               xEnd: .value("Sleep end", Date(timeIntervalSince1970: TimeInterval(shaded[i].upperBound))),
@@ -189,7 +221,16 @@ struct WhoopStressHero: View {
                                                     startPoint: .bottom, endPoint: .top))
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
             }
+            if let picked {
+                RuleMark(x: .value("Time", picked.time))
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                PointMark(x: .value("Time", picked.time), y: .value("Stress", picked.level))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .symbolSize(36)
+            }
         }
+        .whoopScrub($selection)
         .chartYScale(domain: 0...3)
         .chartYAxis {
             AxisMarks(position: .leading, values: [0, 1, 2, 3]) { _ in

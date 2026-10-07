@@ -197,6 +197,9 @@ struct WhoopWeeklyBars: View {
     let points: [(day: String, value: Double, label: String, color: Color)]
     let maxValue: Double
 
+    /// The day under the reader's finger: the other bars dim and the day's value is read out.
+    @State private var selected: String?
+
     private struct Bar: Identifiable {
         let id: Int
         let day: String
@@ -215,10 +218,13 @@ struct WhoopWeeklyBars: View {
                     .foregroundStyle(StrandPalette.textTertiary)
             } else {
                 Chart(bars) { bar in
+                    let dimmed = selected != nil && selected != bar.day
                     BarMark(x: .value("Day", bar.day), y: .value("Value", bar.value), width: .ratio(0.5))
-                        .foregroundStyle(bar.color)
+                        .foregroundStyle(bar.color.opacity(dimmed ? 0.3 : 1))
                         .annotation(position: .top, spacing: 2) {
-                            Text(bar.label).font(WhoopStyle.chevron).foregroundStyle(bar.color)
+                            Text(bar.label)
+                                .font(selected == bar.day ? WhoopStyle.smallLabel : WhoopStyle.chevron)
+                                .foregroundStyle(bar.color.opacity(dimmed ? 0.4 : 1))
                         }
                 }
                 .chartYScale(domain: 0...(maxValue * 1.1))
@@ -226,6 +232,7 @@ struct WhoopWeeklyBars: View {
                 .chartXAxis {
                     AxisMarks { _ in AxisValueLabel().foregroundStyle(StrandPalette.textSecondary) }
                 }
+                .whoopScrub($selected)
                 .frame(height: 170)
             }
         }
