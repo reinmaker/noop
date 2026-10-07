@@ -114,7 +114,8 @@ public enum StrainScorer {
     /// theoretical maximum day maps to exactly `maxStrain` under either method.
     public static func logMapDenominator(method: Method, sex: String) -> Double {
         switch method {
-        case .edwards:
+        case .edwards, .whoop:
+            // `.whoop` has its own curve (`whoopStrain`) and never uses a log-map denominator.
             return strainDenominator
         case .banister:
             let b = sex.lowercased().hasPrefix("f") ? banisterBWomen : banisterBMen
@@ -145,8 +146,44 @@ public enum StrainScorer {
         (90.0, 5), (80.0, 4), (70.0, 3), (60.0, 2), (50.0, 1),
     ]
 
-    /// TRIMP accumulation method.
-    public enum Method: Sendable, Hashable { case edwards, banister }
+    /// TRIMP accumulation method. `.whoop` is the WHOOP-calibrated curve (see `whoopCurveB`).
+    public enum Method: Sendable, Hashable { case edwards, banister, whoop }
+
+    // MARK: - WHOOP-calibrated curve
+
+    // Fitted to a WHOOP export: 65 cardio workouts with WHOOP's zone breakdown and Activity Strain, and
+    // 77 days with Day Strain (strength sessions left out, since WHOOP adds muscular load to those).
+    // Each minute adds x * e^(b * x) above a sitting floor, where x is %HRR against a fixed 190 bpm
+    // yardstick, and Strain on WHOOP's axis is A * ln(1 + load / c), capped at 21. RMSE 0.9 Strain per
+    // workout and 1.3 per day. The floor is why a desk day stays near zero: WHOOP's export puts this
+    // user's waking heart rate around 64 bpm, which Banister's per-minute rate kept counting all day.
+
+    /// The HRmax yardstick the curve was fitted against. Part of the model, so it is not the profile's.
+    public static let whoopCurveMaxHR: Double = 190
+    static let whoopCurveB: Double = 3.647
+    /// %HRR (0-1) below which a minute adds nothing: sitting and standing.
+    static let whoopCurveFloor: Double = 0.20
+    static let whoopCurveA: Double = 3.4514
+    static let whoopCurveC: Double = 6.202
+
+    /// Accumulated load over the series for the WHOOP-calibrated curve.
+    static func whoopLoad(_ hr: [HRSample], restingHR: Double, durations: [Double]) -> Double {
+        let reserve = whoopCurveMaxHR - restingHR
+        guard reserve > 0 else { return 0 }
+        let floorRate = whoopCurveFloor * exp(whoopCurveB * whoopCurveFloor)
+        var acc = 0.0
+        for i in hr.indices {
+            let x = pctHRR(Double(hr[i].bpm), restingHR: restingHR, hrReserve: reserve) / 100.0
+            acc += durations[i] * max(x * exp(whoopCurveB * x) - floorRate, 0.0)
+        }
+        return acc
+    }
+
+    /// Strain on WHOOP's 0-21 axis from a `whoopLoad`.
+    public static func whoopStrain(load: Double) -> Double {
+        guard load > 0 else { return 0 }
+        return min(whoopMaxStrain, whoopCurveA * log1p(load / whoopCurveC))
+    }
 
     // MARK: - HRmax helpers
 
@@ -604,7 +641,7 @@ public enum StrainScorer {
     private static func strainUncached(_ hr: [HRSample], maxHR: Double?, restingHR: Double,
                                        method: Method, sex: String, denominator: Double,
                                        diag: ((String) -> Void)? = nil, day: String = "") -> Double? {
-        let effMax = maxHR ?? Double(defaultMaxHR())
+        let effMax = method == .whoop ? whoopCurveMaxHR : (maxHR ?? Double(defaultMaxHR()))
         // Enough data to trust the score: a dense stream (≥ minReadings) OR a sparse-but-sustained
         // one spanning ≥ minSpanSeconds with a sample floor (#482 — the 5/MG's ~30 s HR cadence).
         let enoughData: Bool
@@ -640,8 +677,12 @@ public enum StrainScorer {
         case .edwards:
             trimp = edwardsTRIMP(hr, restingHR: restingHR, hrReserve: hrReserve,
                                  durations: durations)
+        case .whoop:
+            trimp = whoopLoad(hr, restingHR: restingHR, durations: durations)
         }
-        let scored = trimpToStrain(trimp, denominator: denominator)
+        let scored = method == .whoop
+            ? (effortValue(fromWhoopStrain: whoopStrain(load: trimp)) * 100).rounded() / 100
+            : trimpToStrain(trimp, denominator: denominator)
         // Walked only when a sink is attached. It is a second O(n) pass over the day's samples, and
         // `analyzeRecent`'s prep is already the expensive half of a scoring run, so a normal pass must
         // not pay for a diagnostic nobody is reading. `hrReserve` is safe here: the refusal path above

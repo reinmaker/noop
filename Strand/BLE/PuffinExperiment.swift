@@ -104,8 +104,15 @@ enum PuffinExperiment {
 
     static var banisterEffortEnabled: Bool { UserDefaults.standard.bool(forKey: banisterEffortKey) }
 
+    /// Yoop: score Effort on the WHOOP-calibrated curve (`StrainScorer.Method.whoop`), fitted to a WHOOP
+    /// export so a day reads the same Strain WHOOP gave it. Takes precedence over the Banister switch.
+    static let whoopStrainCurveKey = "yoopWhoopStrainCurve"
+
     /// The TRIMP recipe every Effort computation on this device should use.
-    static var effortMethod: StrainScorer.Method { banisterEffortEnabled ? .banister : .edwards }
+    static var effortMethod: StrainScorer.Method {
+        if UserDefaults.standard.bool(forKey: whoopStrainCurveKey) { return .whoop }
+        return banisterEffortEnabled ? .banister : .edwards
+    }
 
     /// Opt-in "Continuous HRV capture": hold the dense realtime HR stream armed even with no Live screen
     /// open, so the strap banks beat-to-beat R-R intervals 24/7 for far better overnight HRV/recovery/
