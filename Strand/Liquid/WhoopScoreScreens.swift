@@ -229,6 +229,27 @@ struct WhoopWeeklyBars: View {
     }
 }
 
+/// The day Home is showing (set by Home's rings), so the Recovery and Strain screens open on that day.
+@MainActor
+enum WhoopSelectedDay {
+    static var key: String?
+
+    /// The shown day, the days up to and including it, and the 30 days before it.
+    static func split(_ days: [DailyMetric]) -> (day: DailyMetric?, upTo: [DailyMetric], prior: [DailyMetric]) {
+        guard !days.isEmpty else { return (nil, [], []) }
+        let index = key.flatMap { k in days.lastIndex(where: { $0.day == k }) } ?? days.count - 1
+        let upTo = Array(days[...index])
+        return (days[index], upTo, Array(upTo.dropLast().suffix(30)))
+    }
+
+    /// "TODAY" for the latest day, otherwise the weekday and date.
+    static func title(_ day: DailyMetric?, days: [DailyMetric]) -> String {
+        guard let day, day.day != days.last?.day,
+              let date = WhoopDays.parser.date(from: day.day) else { return String(localized: "TODAY") }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()).uppercased()
+    }
+}
+
 private enum WhoopDays {
     static let parser: DateFormatter = {
         let f = DateFormatter()
@@ -254,9 +275,10 @@ struct WhoopRecoveryScreen: View {
     @EnvironmentObject private var repo: Repository
 
     var body: some View {
-        let days = repo.days
-        let today = days.last
-        let prior = WhoopDays.prior(days)
+        let shown = WhoopSelectedDay.split(repo.days)
+        let days = shown.upTo
+        let today = shown.day
+        let prior = shown.prior
         let sleepPerf = SleepModel.performanceSeries(days: days, importedSleep: repo.importedSleep)
         let rows = [
             WhoopContributorMath.make(id: "hrv", label: String(localized: "HEART RATE VARIABILITY"),
@@ -306,7 +328,7 @@ struct WhoopRecoveryScreen: View {
             .padding(.bottom, NoopMetrics.space10)
         }
         .background(StrandPalette.surfaceBase.ignoresSafeArea())
-        .navigationTitle(Text(String(localized: "TODAY")))
+        .navigationTitle(Text(WhoopSelectedDay.title(today, days: repo.days)))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -322,9 +344,10 @@ struct WhoopStrainScreen: View {
     @State private var workoutCount = 0
 
     var body: some View {
-        let days = repo.days
-        let today = days.last
-        let prior = WhoopDays.prior(days)
+        let shown = WhoopSelectedDay.split(repo.days)
+        let days = shown.upTo
+        let today = shown.day
+        let prior = shown.prior
         let strain = today?.strain.map(AICoachEngine.strain21)
         let band = CoupledView.optimalStrainRange(recovery: today?.recovery)
         let rows = [
@@ -375,14 +398,20 @@ struct WhoopStrainScreen: View {
             .padding(.bottom, NoopMetrics.space10)
         }
         .background(StrandPalette.surfaceBase.ignoresSafeArea())
-        .navigationTitle(Text(String(localized: "TODAY")))
+        .navigationTitle(Text(WhoopSelectedDay.title(today, days: repo.days)))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .safeAreaInset(edge: .bottom, spacing: 0) { WhoopCoachPill(screen: .strain) }
         .task {
-            let start = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
-            let rows = await repo.workoutRows(days: 2).filter { TimeInterval($0.startTs) >= start }
+            // Activities on the shown day.
+            let dayStart = (today.flatMap { WhoopDays.parser.date(from: $0.day) })
+                .map { Calendar.current.startOfDay(for: $0) } ?? Calendar.current.startOfDay(for: Date())
+            let start = dayStart.timeIntervalSince1970
+            let end = start + 24 * 3600
+            let rows = await repo.workoutRows(days: 40).filter {
+                TimeInterval($0.startTs) >= start && TimeInterval($0.startTs) < end
+            }
             workoutCount = rows.count
             activityMinutes = rows.reduce(0) { $0 + Double($1.endTs - $1.startTs) / 60 }
         }

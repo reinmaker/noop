@@ -371,7 +371,7 @@ struct LiquidTodayView: View {
                         case .hero:
                             heroCard
                             if chargeLegacyRRGap { ChargeLegacyRRGapNote() }
-                            if selectedDayOffset == 0 { whoopHomeExtras }
+                            if selectedDayOffset == 0 { whoopHomeExtras } else { whoopPastDayExtras }
                         case .liveSession: if liveSessionsBeta { liveSessionStartRow }
                         case .synthesis: synthesisSection
                         case .keyMetrics: keyMetricsSection
@@ -764,6 +764,20 @@ struct LiquidTodayView: View {
         }
     }
 
+    /// WHOOP-style Home for a past day: that day's activities, dashboard and the week ending on it.
+    private var whoopPastDayExtras: some View {
+        let shownDay = displayDay?.day
+        let daysToShown = repo.days.filter { d in shownDay.map { d.day <= $0 } ?? true }
+        return VStack(spacing: WhoopStyle.rowGap) {
+            WhoopActivitiesCard(sleepMinutes: displayDay?.totalSleepMin, sleepStart: nil, sleepEnd: nil,
+                                workouts: workouts)
+            WhoopDashboardSection(today: displayDay, days: daysToShown, steps: stepCount,
+                                  calories: caloriesCount, vo2max: vo2max,
+                                  onCustomize: { customizationDestination = .today })
+            WhoopStrainRecoveryCard(days: daysToShown)
+        }
+    }
+
     /// Last night's main sleep block, when it ended within the last 18 hours.
     private var lastNightSleep: CachedSleepSession? {
         guard let last = repo.sleeps.last,
@@ -805,6 +819,9 @@ struct LiquidTodayView: View {
         // WHOOP-style: the three rings sit straight on the background, no panel behind them.
         .padding(.vertical, NoopMetrics.space4)
         .padding(.horizontal, NoopMetrics.space2)
+        // The ring screens show the day the rings show.
+        .onAppear { WhoopSelectedDay.key = displayDay?.day }
+        .onChangeCompat(of: displayDay?.day ?? "") { day in WhoopSelectedDay.key = day.isEmpty ? nil : day }
     }
 
     // MARK: - Heart rate
