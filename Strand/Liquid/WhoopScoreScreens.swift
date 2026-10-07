@@ -176,11 +176,14 @@ struct WhoopContributorsCard: View {
 /// Builds a contributor from today's value and the prior 30 days.
 enum WhoopContributorMath {
     static func make(id: String, label: String, icon: String, today: Double?, history: [Double],
-                     decimals: Int = 0, suffix: String = "", higherIsBetter: Bool) -> WhoopContributor {
+                     decimals: Int = 0, suffix: String = "", floor: Double = -Double.infinity,
+                     higherIsBetter: Bool) -> WhoopContributor {
+        // Skip days below `floor` (barely recorded) so they cannot drag the 30-day normal to nothing.
+        let history = history.filter { $0 > floor }
         func fmt(_ v: Double) -> String {
             (decimals > 0 ? String(format: "%.\(decimals)f", v) : Int(v.rounded()).formatted()) + suffix
         }
-        let avg = history.isEmpty ? nil : history.reduce(0, +) / Double(history.count)
+        let avg = history.count < 3 ? nil : history.reduce(0, +) / Double(history.count)
         var direction = 0
         if let t = today, let a = avg, abs(t - a) > max(0.0001, abs(a) * 0.01) { direction = t > a ? 1 : -1 }
         return WhoopContributor(id: id, label: label, icon: icon, value: today.map(fmt) ?? "—",
@@ -342,6 +345,7 @@ struct WhoopStrainScreen: View {
     @EnvironmentObject private var repo: Repository
     @State private var activityMinutes: Double?
     @State private var workoutCount = 0
+    @State private var appleSteps: [String: Double] = [:]
 
     var body: some View {
         let shown = WhoopSelectedDay.split(repo.days)
@@ -356,12 +360,14 @@ struct WhoopStrainScreen: View {
                              average: workoutCount == 1 ? String(localized: "1 activity")
                                                         : String(localized: "\(workoutCount) activities"),
                              direction: 0, higherIsBetter: true),
+            // Steps: the iPhone's count first (the strap's reads low), as on Home.
             WhoopContributorMath.make(id: "steps", label: String(localized: "STEPS"), icon: "shoeprints.fill",
-                                      today: today?.steps.map(Double.init),
-                                      history: prior.compactMap { $0.steps.map(Double.init) }, higherIsBetter: true),
+                                      today: today.flatMap { appleSteps[$0.day] } ?? today?.steps.map(Double.init),
+                                      history: prior.compactMap { appleSteps[$0.day] ?? $0.steps.map(Double.init) },
+                                      floor: 1000, higherIsBetter: true),
             WhoopContributorMath.make(id: "kcal", label: String(localized: "CALORIES"), icon: "flame",
                                       today: today?.activeKcalEst, history: prior.compactMap(\.activeKcalEst),
-                                      higherIsBetter: true),
+                                      floor: 100, higherIsBetter: true),
             WhoopContributorMath.make(id: "strain", label: String(localized: "DAY STRAIN"), icon: "bolt",
                                       today: strain, history: prior.compactMap { $0.strain.map(AICoachEngine.strain21) },
                                       decimals: 1, higherIsBetter: true),
@@ -413,6 +419,8 @@ struct WhoopStrainScreen: View {
                 TimeInterval($0.startTs) >= start && TimeInterval($0.startTs) < end
             }
             workoutCount = rows.count
+            appleSteps = Dictionary((await repo.appleDailyRows(days: 40)).compactMap { r in r.steps.map { (r.day, Double($0)) } },
+                                    uniquingKeysWith: { a, b in max(a, b) })
             activityMinutes = rows.reduce(0) { $0 + Double($1.endTs - $1.startTs) / 60 }
         }
     }

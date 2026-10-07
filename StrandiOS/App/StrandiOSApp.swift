@@ -58,6 +58,7 @@ struct StrandiOSApp: App {
         // WHOOP-style fork: one-time preset applied before any @AppStorage below is read.
         WhoopStylePreset.applyOnce()
         WhoopStylePreset.applyHomeLayoutOnce()
+        WhoopStylePreset.applyCalculationsOnce()
         #if DEBUG
         // DEBUG-only promo-screenshot harness: when launched with `--demo-hour <Int>`, pin Today to that
         // hour's day-cycle scene + a per-hour stat frame. No-op (active stays nil) when the arg is absent.
@@ -657,6 +658,17 @@ enum WhoopStylePreset {
         defaults.set(AIProvider.anthropic.rawValue, forKey: "ai.provider")
         defaults.set(AIProvider.anthropic.defaultModel, forKey: "ai.model")
         defaults.set(true, forKey: appliedKey)
+    }
+
+    private static let calculationsKey = "whoopStyle.calculations.v1"
+
+    /// One-time: score Strain with NOOP's Banister method, which counts light activity (walking, a calm
+    /// commute) the way WHOOP's Strain does; NOOP's default Edwards zones count nothing below 50% of
+    /// heart-rate reserve, so a calm morning read 0.0. Still switchable in Settings.
+    static func applyCalculationsOnce(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: calculationsKey) else { return }
+        defaults.set(true, forKey: PuffinExperiment.banisterEffortKey)
+        defaults.set(true, forKey: calculationsKey)
     }
 
     private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
