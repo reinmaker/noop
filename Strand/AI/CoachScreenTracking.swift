@@ -35,7 +35,7 @@ extension TabRoute {
             case HeroRingMetric.rest: return .sleep
             default: return .health
             }
-        case .sleep: return .sleep
+        case .sleep, .sleepPlanner: return .sleep
         case .recovery: return .recovery
         case .strain: return .strain
         case .workouts: return .strain

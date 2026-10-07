@@ -75,10 +75,11 @@ enum StressDayCurve {
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
         var scored: DaytimeStress.Result = .empty
         if let restHR = whoopRestingHR(repo), !hr.isEmpty {
-            // Yoop: WHOOP-style stress against the resting heart rate, sleep included.
+            // Yoop: WHOOP-style stress against the user's own recent heart rates, sleep included.
             let tz = TimeZone.current.secondsFromGMT(for: now)
+            let reference = await whoopStressReference(repo, to: to)
             scored = await runUnescalated {
-                WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz)
+                WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz, reference: reference)
             }
         } else if hr.count >= DaytimeStress.minHourHRSamples {
             let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
@@ -129,6 +130,12 @@ enum StressDayCurve {
     static func whoopRestingHR(_ repo: Repository) -> Double? {
         guard PuffinExperiment.whoopStressEnabled else { return nil }
         return repo.days.last(where: { $0.restingHr != nil })?.restingHr.map(Double.init)
+    }
+
+    /// The last 14 days of 5-minute mean heart rates, the history WHOOP-style stress is read against.
+    @MainActor
+    static func whoopStressReference(_ repo: Repository, to: Int) async -> [Double] {
+        await repo.hrBuckets(from: to - 14 * 86_400, to: to, bucketSeconds: WhoopStressCurve.bucketSeconds).map(\.bpm)
     }
 
     /// Days since the epoch on the LOCAL calendar.

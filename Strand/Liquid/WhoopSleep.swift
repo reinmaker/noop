@@ -18,6 +18,8 @@ struct WhoopLastNightCards: View {
 
     /// The time under the reader's finger on the heart-rate graph, as in WHOOP.
     @State private var hrSelection: Date?
+    /// The night under the reader's finger on the consistency graph.
+    @State private var consistencySelection: String?
 
     private var prior: [DailyMetric] { Array(days.dropLast().suffix(30)) }
 
@@ -173,7 +175,7 @@ struct WhoopLastNightCards: View {
                         .font(WhoopStyle.caption)
                         .foregroundStyle(StrandPalette.textSecondary)
                 } else {
-                    Text("Touch the graph to see your heart rate")
+                    Text("Press and hold the graph to see your heart rate")
                         .font(WhoopStyle.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -195,7 +197,8 @@ struct WhoopLastNightCards: View {
                         .symbolSize(36)
                 }
             }
-            hrSelectable(chart)
+            chart
+            .whoopScrub($hrSelection)
             .chartYScale(domain: lo...hi)
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
@@ -210,15 +213,6 @@ struct WhoopLastNightCards: View {
                 }
             }
             .frame(height: 120)
-        }
-    }
-
-    /// Drag across the graph to read the heart rate at a moment (iOS 17 and macOS 14 and later).
-    @ViewBuilder private func hrSelectable<C: View>(_ chart: C) -> some View {
-        if #available(iOS 17.0, macOS 14.0, *) {
-            chart.chartXSelection(value: $hrSelection)
-        } else {
-            chart
         }
     }
 
@@ -305,18 +299,21 @@ struct WhoopLastNightCards: View {
                 if let typical = model.consistency.typical {
                     Text("\(Int(typical.rounded()))%").font(WhoopStyle.caption).foregroundStyle(StrandPalette.textTertiary)
                 }
+                // The held night (else the latest) is highlighted and carries its bed and wake times.
+                let shownLabel = consistencySelection ?? bars.last?.label
                 Chart {
                     ForEach(bars) { b in
+                        let shown = b.label == shownLabel
                         BarMark(x: .value("Night", b.label), yStart: .value("Bed", -b.bed), yEnd: .value("Wake", -b.wake),
                                 width: .ratio(0.35))
-                            .foregroundStyle(b.latest ? StrandPalette.restColor : StrandPalette.textTertiary.opacity(0.6))
+                            .foregroundStyle(shown ? StrandPalette.restColor : StrandPalette.textTertiary.opacity(0.6))
                             .annotation(position: .top, spacing: 2) {
-                                if b.latest {
+                                if shown {
                                     Text(Self.clockLabel(b.bed)).font(WhoopStyle.chevron).foregroundStyle(StrandPalette.textPrimary)
                                 }
                             }
                             .annotation(position: .bottom, spacing: 2) {
-                                if b.latest {
+                                if shown {
                                     Text(Self.clockLabel(b.wake)).font(WhoopStyle.chevron).foregroundStyle(StrandPalette.textPrimary)
                                 }
                             }
@@ -342,6 +339,7 @@ struct WhoopLastNightCards: View {
                 .chartXAxis {
                     AxisMarks { _ in AxisValueLabel().foregroundStyle(StrandPalette.textSecondary) }
                 }
+                .whoopScrub($consistencySelection)
                 .frame(height: 180)
             }
             .padding(WhoopStyle.compactPadding)

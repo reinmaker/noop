@@ -1584,6 +1584,8 @@ final class AICoachEngine: ObservableObject {
         } else {
             lines.append(String(format: "Sleep need: about %.1fh a night.", SleepModel.sleepNeedMin(days: days) / 60))
         }
+        // Tonight's plan exactly as the Tonight's Sleep card and Sleep Planner show it.
+        lines.append((WhoopSleepPlan.lastShown ?? WhoopSleepPlan.tonight(repo: repo, alarm: nil)).coachLine)
 
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()

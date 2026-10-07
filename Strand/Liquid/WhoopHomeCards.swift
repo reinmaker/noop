@@ -55,7 +55,7 @@ struct WhoopActionButtonLabel: View {
     }
 }
 
-private enum WhoopTime {
+enum WhoopTime {
     static func clock(_ date: Date) -> String {
         date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
     }
@@ -79,35 +79,26 @@ struct WhoopTonightsSleepCard: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var router: NavRouter
 
-    private var strapAlarmWillArm: Bool {
-        !(model.whoop5Detected && !PuffinExperiment.isEnabled)
-    }
-
-    private func nextAlarm(from now: Date) -> Date? {
-        guard behavior.smartAlarmEnabled, strapAlarmWillArm else { return nil }
+    /// The next armed strap alarm, or nil (no alarm, or the strap cannot arm one).
+    static func nextAlarm(behavior: BehaviorStore, model: AppModel, from now: Date = Date()) -> Date? {
+        guard behavior.smartAlarmEnabled, !(model.whoop5Detected && !PuffinExperiment.isEnabled) else { return nil }
         return AppModel.nextSmartAlarmDate(minutes: behavior.smartAlarmMinutes,
                                            weekdays: behavior.smartAlarmWeekdays,
                                            overrides: WindDownNudge.perDayWakeOverrides,
                                            from: now)
     }
 
-    /// The next occurrence of the usual wake time, used when no alarm is armed.
-    private func usualWake(from now: Date) -> Date {
-        let cal = Calendar.current
-        let minutes = WindDownNudge.wakeMinutes
-        let today = cal.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: now) ?? now
-        return today > now ? today : (cal.date(byAdding: .day, value: 1, to: today) ?? today)
-    }
-
     var body: some View {
         let now = Date()
-        let alarm = nextAlarm(from: now)
-        let wake = alarm ?? usualWake(from: now)
-        let needMin = SleepModel.sleepNeedMin(days: repo.days)
-        let bedtime = wake.addingTimeInterval(-needMin * 60)
+        let alarm = Self.nextAlarm(behavior: behavior, model: model, from: now)
+        // WHOOP's Sleep Planner: tonight's need (healthy minimum + Strain + debt) over the usual efficiency,
+        // back from the alarm or the usual wake time of recent nights.
+        let plan = WhoopSleepPlan.tonight(repo: repo, alarm: alarm, now: now)
+        let wake = plan.wake
+        let bedtime = plan.bedtime
         let bedtimeText = bedtime <= now ? String(localized: "Now") : WhoopTime.clock(bedtime)
 
-        Button { router.openAlarms() } label: {
+        NavigationLink(value: TabRoute.sleepPlanner) {
             WhoopTitledCard(title: String(localized: "TONIGHT'S SLEEP")) {
                 HStack(alignment: .top) {
                     VStack(spacing: NoopMetrics.space1) {
@@ -147,6 +138,7 @@ struct WhoopTonightsSleepCard: View {
             }
         }
         .buttonStyle(.plain)
+        .onAppear { WhoopSleepPlan.lastShown = plan }
     }
 }
 
@@ -456,6 +448,8 @@ struct WhoopStressChartCard: View {
 
     @EnvironmentObject private var repo: Repository
     @State private var points: [DaytimeStress.HourPoint] = []
+    /// The time under the reader's finger: the header reads that moment instead of the latest.
+    @State private var selection: Date?
 
     private struct StressSample: Identifiable {
         let time: Date
@@ -469,8 +463,20 @@ struct WhoopStressChartCard: View {
         points.last(where: { $0.level != nil })?.level ?? currentStress
     }
 
+    private var scored: [StressSample] {
+        points.compactMap { p in
+            p.level.map { StressSample(time: Date(timeIntervalSince1970: TimeInterval(p.startTs)), level: $0) }
+        }
+    }
+
+    private var picked: StressSample? {
+        selection.flatMap { sel in
+            scored.min { abs($0.time.timeIntervalSince(sel)) < abs($1.time.timeIntervalSince(sel)) }
+        }
+    }
+
     private var level: (word: String, color: Color) {
-        guard let s = shownStress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
+        guard let s = picked?.level ?? shownStress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
         switch s {
         case ..<1: return (String(localized: "LOW"), WhoopStyle.stressLow)
         case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.stressMedium)
@@ -482,26 +488,38 @@ struct WhoopStressChartCard: View {
         NavigationLink(value: TabRoute.stress) {
             WhoopTitledCard(title: String(localized: "STRESS MONITOR")) {
                 HStack {
-                    Text("Today")
-                        .font(WhoopStyle.caption)
-                        .foregroundStyle(StrandPalette.textSecondary)
+                    if let picked {
+                        Text(picked.time, format: .dateTime.hour().minute())
+                            .font(WhoopStyle.caption)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    } else {
+                        Text("Today")
+                            .font(WhoopStyle.caption)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
                     Spacer()
                     Text(level.word).font(WhoopStyle.smallLabel).foregroundStyle(level.color)
-                    Text(shownStress.map { String(format: "%.1f", $0) } ?? "—")
+                    Text((picked?.level ?? shownStress).map { String(format: "%.1f", $0) } ?? "—")
                         .font(WhoopStyle.number(18))
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                let scored = points.compactMap { p in
-                    p.level.map { StressSample(time: Date(timeIntervalSince1970: TimeInterval(p.startTs)), level: $0) }
-                }
-                if scored.count >= 2 {
-                    Chart(scored) { item in
-                        LineMark(x: .value("Time", item.time), y: .value("Stress", item.level))
-                            .interpolationMethod(.monotone)
-                            .foregroundStyle(LinearGradient(colors: [WhoopStyle.stressLow, WhoopStyle.stressMedium,
-                                                                     WhoopStyle.stressHigh],
-                                                            startPoint: .bottom, endPoint: .top))
+                let samples = scored
+                if samples.count >= 2 {
+                    Chart {
+                        ForEach(samples) { item in
+                            LineMark(x: .value("Time", item.time), y: .value("Stress", item.level))
+                                .interpolationMethod(.monotone)
+                                .foregroundStyle(LinearGradient(colors: [WhoopStyle.stressLow, WhoopStyle.stressMedium,
+                                                                         WhoopStyle.stressHigh],
+                                                                startPoint: .bottom, endPoint: .top))
+                        }
+                        if let picked {
+                            RuleMark(x: .value("Time", picked.time))
+                                .foregroundStyle(StrandPalette.textSecondary)
+                                .lineStyle(StrokeStyle(lineWidth: 1))
+                        }
                     }
+                    .whoopScrub($selection)
                     .chartYScale(domain: 0...3)
                     .chartYAxis {
                         AxisMarks(values: [0, 1, 2, 3]) { _ in
@@ -536,6 +554,9 @@ struct WhoopStressChartCard: View {
 /// "STRAIN & RECOVERY": the last seven days, Strain (0-21, blue) and Recovery (%, coloured) on one chart.
 struct WhoopStrainRecoveryCard: View {
     let days: [DailyMetric]
+
+    /// The day under the reader's finger, read out above the chart.
+    @State private var selectedDay: String?
 
     private struct Point: Identifiable {
         let id = UUID()
@@ -581,15 +602,25 @@ struct WhoopStrainRecoveryCard: View {
                     .font(WhoopStyle.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
             } else {
-                Chart(points) { p in
-                    LineMark(x: .value("Day", p.day), y: .value("Value", p.value))
-                        .foregroundStyle(by: .value("Series", p.series))
-                    PointMark(x: .value("Day", p.day), y: .value("Value", p.value))
-                        .foregroundStyle(p.color)
-                        .annotation(position: .top, spacing: 2) {
-                            Text(p.label).font(WhoopStyle.chevron).foregroundStyle(p.color)
-                        }
+                let all = points
+                selectedReadout(all)
+                Chart {
+                    ForEach(all) { p in
+                        LineMark(x: .value("Day", p.day), y: .value("Value", p.value))
+                            .foregroundStyle(by: .value("Series", p.series))
+                        PointMark(x: .value("Day", p.day), y: .value("Value", p.value))
+                            .foregroundStyle(p.color)
+                            .annotation(position: .top, spacing: 2) {
+                                Text(p.label).font(WhoopStyle.chevron).foregroundStyle(p.color)
+                            }
+                    }
+                    if let selectedDay {
+                        RuleMark(x: .value("Day", selectedDay))
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                    }
                 }
+                .whoopScrub($selectedDay)
                 .chartForegroundStyleScale(["Strain": StrandPalette.effortColor,
                                             "Recovery": StrandPalette.textTertiary])
                 .chartLegend(.hidden)
@@ -606,6 +637,28 @@ struct WhoopStrainRecoveryCard: View {
                 .frame(height: 190)
             }
         }
+    }
+}
+
+extension WhoopStrainRecoveryCard {
+    /// "Mon  12.8  73%" for the held day (Strain in its blue, Recovery in its band colour); empty at the
+    /// same height otherwise.
+    private func selectedReadout(_ all: [Point]) -> some View {
+        let held = all.filter { $0.day == selectedDay }
+        return HStack(spacing: NoopMetrics.space3) {
+            if let selectedDay, !held.isEmpty {
+                Text(selectedDay)
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                ForEach(held) { p in
+                    Text(verbatim: p.label)
+                        .font(WhoopStyle.smallLabel)
+                        .foregroundStyle(p.color)
+                }
+            }
+            Spacer()
+        }
+        .frame(height: 16)
     }
 }
 
