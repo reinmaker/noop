@@ -491,7 +491,11 @@ public enum AnalyticsEngine {
                                   // %HRR with no floor. Threaded rather than read from a global so this
                                   // stays a pure function, and defaulted so every existing caller and
                                   // test is byte-identical.
-                                  effortMethod: StrainScorer.Method = .edwards) -> DayResult {
+                                  effortMethod: StrainScorer.Method = .edwards,
+                                  // Yoop: the least time in bed for a day's main night. A shorter sleep
+                                  // (an evening doze) is a nap and does not score the day, as in WHOOP. 0 (the
+                                  // default) keeps every existing caller and test byte-identical.
+                                  minMainNightSeconds: Int = 0) -> DayResult {
 
         // Precompute the day's UTC bounds ONCE (#996). `dayString(ts, offsetSec:)` formats the UTC
         // calendar day of (ts + offset) with a FIXED offset, so "== day" is exactly membership in
@@ -575,7 +579,9 @@ public enum AnalyticsEngine {
         let mainGroupIdx = SleepStageTotals.mainNightGroupIndices(
             matched.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) },
             offsetSec: tzOffsetSeconds, habitualMidsleepSec: habitualMidsleepSec) ?? []
-        let mainGroup: [SleepSession] = mainGroupIdx.map { matched[$0] }
+        let pickedGroup: [SleepSession] = mainGroupIdx.map { matched[$0] }
+        let pickedSpan = pickedGroup.reduce(0) { $0 + max(0, $1.end - $1.start) }
+        let mainGroup: [SleepSession] = pickedSpan >= minMainNightSeconds ? pickedGroup : []
 
         // ── Daily sleep aggregates (AASM) SUMMED over the main-night GROUP (#525 / #561) ──
         var deepS = 0.0, remS = 0.0, lightS = 0.0, tstS = 0.0

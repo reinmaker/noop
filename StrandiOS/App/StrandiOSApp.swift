@@ -710,11 +710,17 @@ enum WhoopStylePreset {
             defaults.set(true, forKey: PuffinExperiment.whoopStressKey)
             defaults.set(true, forKey: whoopStressKey)
         }
+        // An evening doze is a nap, not a new day's night.
+        if !defaults.bool(forKey: napRuleKey) {
+            defaults.set(true, forKey: PuffinExperiment.whoopNapRuleKey)
+            defaults.set(true, forKey: napRuleKey)
+        }
     }
 
     private static let strainCurveKey = "whoopStyle.strainCurve.v1"
     private static let autoDetectKey = "whoopStyle.autoDetectWorkouts.v1"
     private static let whoopStressKey = "whoopStyle.stress.v1"
+    private static let napRuleKey = "whoopStyle.napRule.v1"
 
     private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
     /// NOOP Home sections that WHOOP-style cards replace (Synthesis by the insight card, Key Metrics by

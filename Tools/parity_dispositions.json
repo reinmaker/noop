@@ -300,6 +300,14 @@
       "platform": "kotlin",
       "rationale": "Swift Repository.refresh reads the same imported daily union (unionDailyMetrics) in the excluded app layer and hands it, still apart from the computed union, to ChargeBaselines.resolve (#2525); this disposition does not assert behavioral parity.",
       "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/AnalyticsEngine.swift::analyzeDay/35#1",
+      "identity_sha256": "aa32ea8154e6f45e97790e54b9e5e3ca2dc26a3dc1991e50604b34118d0c213a",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: analyzeDay gains minMainNightSeconds (default 0, byte-identical) so a sleep under three hours in bed is a nap rather than the day's night. The fork ships no Android build, so the Kotlin twin is unchanged."
     }
   ]
 }

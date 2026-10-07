@@ -114,6 +114,13 @@ enum PuffinExperiment {
 
     static var whoopStressEnabled: Bool { UserDefaults.standard.bool(forKey: whoopStressKey) }
 
+    /// Yoop: a sleep under three hours in bed is a nap, not the day's night (WHOOP's rule, and the same
+    /// three hours the day-cycle boundary already requires), so an evening doze cannot score a new day's
+    /// Recovery from 1.4 hours of sleep.
+    static let whoopNapRuleKey = "yoopWhoopNapRule"
+
+    static var mainNightMinSeconds: Int { UserDefaults.standard.bool(forKey: whoopNapRuleKey) ? 3 * 3600 : 0 }
+
     /// The TRIMP recipe every Effort computation on this device should use.
     static var effortMethod: StrainScorer.Method {
         if UserDefaults.standard.bool(forKey: whoopStrainCurveKey) { return .whoop }
