@@ -32,8 +32,10 @@ enum WhoopStressCurve {
         return 3.0 / (1.0 + exp(-(delta - midpointBPM) / slopeBPM))
     }
 
-    /// Minimum 5-minute history (one day) before stress is read against the user's own heart-rate history.
-    static let minReferenceBuckets: Int = 288
+    /// Minimum 5-minute history (12 hours) before stress is read against the user's own heart-rate history.
+    /// Twelve hours, not a full day, so the first day with the strap (which includes its night) already
+    /// qualifies; under that, the resting-rate curve put 7 of that day's hours high.
+    static let minReferenceBuckets: Int = 144
 
     /// WHOOP-scale stress (0-3) for a mean heart rate placed in the user's own recent 5-minute heart
     /// rates (`reference`, sorted ascending): the bottom 35% reads low, the next 52% medium and the top
