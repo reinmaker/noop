@@ -41,6 +41,15 @@ public enum WhoopStyle {
     public static let coachButtonShadow = Color(hex: "#00000073")
     public static let coachButtonSize: CGFloat = 58
 
+    // MARK: Sleep stages (WHOOP-style stage bars)
+
+    public static let stageAwake = Color(light: "#B7BCC6", dark: "#D7DAE0")
+    public static let stageLight = Color(light: "#7E80E0", dark: "#A7A9F7")
+    public static let stageDeep = Color(light: "#C66BD6", dark: "#E395F0")
+    public static let stageREM = Color(light: "#7A43C9", dark: "#9E66E8")
+    /// The "typical range" band behind a stage bar.
+    public static let typicalBand = Color(light: "#0000002E", dark: "#FFFFFF2E")
+
     // MARK: Coach sheet
 
     public static let sheetFill = Color(light: "#F4F5F7", dark: "#141922")

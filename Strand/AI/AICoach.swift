@@ -1238,7 +1238,7 @@ final class AICoachEngine: ObservableObject {
     var nextOpener: Opener?
     /// The last screen opener written and when, so reopening the same screen soon after does not
     /// stack another opener into the chat.
-    private var lastScreenOpener: (screen: CoachScreen, at: Date)?
+    private var lastScreenOpener: (screen: CoachScreen, at: Date, withData: Bool)?
 
     /// The screen the wearer is on, as last marked by `View.coachScreen(_:)`.
     var currentScreen: CoachScreen { CoachScreenState.current }
@@ -1263,16 +1263,37 @@ final class AICoachEngine: ObservableObject {
 
     /// WHOOP-style: the Coach speaks first, about the screen the wearer opened it from. The instruction
     /// is never shown; only the Coach's message is added to the conversation.
+    /// WHOOP-style: the round Coach button reopens the conversation as it was. The Coach writes a new
+    /// message only when the conversation is empty, a new part of the day (morning, afternoon, evening)
+    /// has started since its last one, or data access was just switched on. Screen pills still ask
+    /// about their screen through `openWithScreenContext()` directly.
+    func openFromCoachButton() async {
+        guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending else { return }
+        let key = "coach.lastOpenerMarker"
+        let marker = "\(Self.localEpochDay())|\(Self.dayPart(Date()))|\(dataConsent)"
+        guard messages.isEmpty || UserDefaults.standard.string(forKey: key) != marker else { return }
+        UserDefaults.standard.set(marker, forKey: key)
+        lastScreenOpener = nil
+        await openWithScreenContext()
+    }
+
+    /// "morning" before noon, "afternoon" before 6pm, otherwise "evening".
+    nonisolated static func dayPart(_ date: Date) -> String {
+        let hour = Calendar.current.component(.hour, from: date)
+        return hour < 12 ? "morning" : (hour < 18 ? "afternoon" : "evening")
+    }
+
     func openWithScreenContext() async {
         guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending,
               let key = resolvedKey else { return }
         retireStaleConversationIfNeeded()
         // Reopening the same screen within 15 minutes continues the conversation instead.
+        // A new opener is written anyway once data access changes, so the Coach can see the numbers.
         if nextOpener == nil, let last = lastScreenOpener, last.screen == currentScreen,
-           Date().timeIntervalSince(last.at) < 15 * 60, !messages.isEmpty {
+           last.withData == dataConsent, Date().timeIntervalSince(last.at) < 15 * 60, !messages.isEmpty {
             return
         }
-        if nextOpener == nil { lastScreenOpener = (currentScreen, Date()) }
+        if nextOpener == nil { lastScreenOpener = (currentScreen, Date(), dataConsent) }
 
         conversationDay = Self.localEpochDay()
         errorText = nil
@@ -1440,9 +1461,18 @@ final class AICoachEngine: ObservableObject {
         let context = await buildFullContext()
         let wire: [(role: ChatMessage.Role, content: String)] =
             [(.user, context + "\n\n---\n\n" + instruction)]
-        guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
-        let clean = Self.splitReplies(reply).body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return clean.isEmpty ? nil : clean
+        do {
+            let reply = try await callProvider(key: key, messages: wire)
+            let clean = Self.splitReplies(reply).body.trimmingCharacters(in: .whitespacesAndNewlines)
+            return clean.isEmpty ? nil : clean
+        } catch let e as AICoachError {
+            // Shown in the Coach sheet, so a card that could not load says why.
+            errorText = e.errorDescription
+            return nil
+        } catch {
+            errorText = AICoachError.network(error.localizedDescription).errorDescription
+            return nil
+        }
     }
 
     /// The question the round Coach button asks for the tab the user is looking at (WHOOP's

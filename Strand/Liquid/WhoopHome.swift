@@ -243,7 +243,13 @@ struct HealthMonitorCard: View {
 
 /// "STRESS MONITOR: 2.8 HIGH". NOOP's 0-3 stress score, banded the way WHOOP bands its own 0-3 scale.
 struct StressMonitorCard: View {
-    let stress: Double?
+    let dailyScore: Double?
+
+    @EnvironmentObject private var repo: Repository
+    @State private var latest: (level: Double, at: Date)?
+
+    /// The latest hourly reading (what the Stress chart ends on), else the daily score.
+    private var stress: Double? { latest?.level ?? dailyScore }
 
     private var level: (word: String, color: Color) {
         guard let s = stress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
@@ -268,7 +274,7 @@ struct StressMonitorCard: View {
                         Text(level.word)
                             .font(WhoopStyle.smallLabel)
                             .foregroundStyle(level.color)
-                        Text(Date(), format: .dateTime.hour().minute())
+                        Text(latest?.at ?? Date(), format: .dateTime.hour().minute())
                             .font(WhoopStyle.detail)
                             .foregroundStyle(StrandPalette.textSecondary)
                     }
@@ -278,6 +284,13 @@ struct StressMonitorCard: View {
             }
         }
         .buttonStyle(.plain)
+        .task(id: repo.refreshSeq) {
+            let result = await StressDayCurve.today(
+                repo: repo, personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled)?.result
+            if let p = result?.timeline.last(where: { $0.level != nil }), let lvl = p.level {
+                latest = (lvl, Date(timeIntervalSince1970: TimeInterval(p.startTs)))
+            }
+        }
     }
 }
 

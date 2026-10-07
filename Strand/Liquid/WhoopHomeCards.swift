@@ -452,8 +452,14 @@ struct WhoopStressChartCard: View {
         var id: Date { time }
     }
 
+    /// The value shown in the header: the chart's latest reading, so the number and the line agree;
+    /// the daily score only until the first hour is scored.
+    private var shownStress: Double? {
+        points.last(where: { $0.level != nil })?.level ?? currentStress
+    }
+
     private var level: (word: String, color: Color) {
-        guard let s = currentStress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
+        guard let s = shownStress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
         switch s {
         case ..<1: return (String(localized: "LOW"), WhoopStyle.rangeGreen)
         case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.rangeYellow)
@@ -470,7 +476,7 @@ struct WhoopStressChartCard: View {
                         .foregroundStyle(StrandPalette.textSecondary)
                     Spacer()
                     Text(level.word).font(WhoopStyle.smallLabel).foregroundStyle(level.color)
-                    Text(currentStress.map { String(format: "%.1f", $0) } ?? "—")
+                    Text(shownStress.map { String(format: "%.1f", $0) } ?? "—")
                         .font(WhoopStyle.number(18))
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
@@ -481,8 +487,9 @@ struct WhoopStressChartCard: View {
                     Chart(scored) { item in
                         LineMark(x: .value("Time", item.time), y: .value("Stress", item.level))
                             .interpolationMethod(.monotone)
-                            .foregroundStyle(Gradient(colors: [WhoopStyle.rangeGreen, WhoopStyle.rangeYellow,
-                                                               WhoopStyle.rangeAmber]))
+                            .foregroundStyle(LinearGradient(colors: [WhoopStyle.rangeGreen, WhoopStyle.rangeYellow,
+                                                                     WhoopStyle.rangeAmber],
+                                                            startPoint: .bottom, endPoint: .top))
                     }
                     .chartYScale(domain: 0...3)
                     .chartYAxis {
