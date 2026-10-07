@@ -254,9 +254,9 @@ struct StressMonitorCard: View {
     private var level: (word: String, color: Color) {
         guard let s = stress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
         switch s {
-        case ..<1: return (String(localized: "LOW"), WhoopStyle.rangeGreen)
-        case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.rangeYellow)
-        default: return (String(localized: "HIGH"), WhoopStyle.rangeAmber)
+        case ..<1: return (String(localized: "LOW"), WhoopStyle.stressLow)
+        case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.stressMedium)
+        default: return (String(localized: "HIGH"), WhoopStyle.stressHigh)
         }
     }
 

@@ -472,9 +472,9 @@ struct WhoopStressChartCard: View {
     private var level: (word: String, color: Color) {
         guard let s = shownStress else { return (String(localized: "CALIBRATING"), StrandPalette.textTertiary) }
         switch s {
-        case ..<1: return (String(localized: "LOW"), WhoopStyle.rangeGreen)
-        case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.rangeYellow)
-        default: return (String(localized: "HIGH"), WhoopStyle.rangeAmber)
+        case ..<1: return (String(localized: "LOW"), WhoopStyle.stressLow)
+        case ..<2: return (String(localized: "MEDIUM"), WhoopStyle.stressMedium)
+        default: return (String(localized: "HIGH"), WhoopStyle.stressHigh)
         }
     }
 
@@ -498,8 +498,8 @@ struct WhoopStressChartCard: View {
                     Chart(scored) { item in
                         LineMark(x: .value("Time", item.time), y: .value("Stress", item.level))
                             .interpolationMethod(.monotone)
-                            .foregroundStyle(LinearGradient(colors: [WhoopStyle.rangeGreen, WhoopStyle.rangeYellow,
-                                                                     WhoopStyle.rangeAmber],
+                            .foregroundStyle(LinearGradient(colors: [WhoopStyle.stressLow, WhoopStyle.stressMedium,
+                                                                     WhoopStyle.stressHigh],
                                                             startPoint: .bottom, endPoint: .top))
                     }
                     .chartYScale(domain: 0...3)
