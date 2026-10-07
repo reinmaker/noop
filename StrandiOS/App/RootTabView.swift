@@ -32,6 +32,7 @@ struct RootTabView: View {
     @EnvironmentObject private var repo: Repository
     /// WHOOP-style floating Coach button: asks the Coach about the screen you're on.
     @EnvironmentObject private var coach: AICoachEngine
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showCoachSheet = false
     /// Cross-screen navigation requests (e.g. Live → "Manage devices"). Devices isn't a tab — it lives
     /// behind the More list — so a request presents it as a sheet, matching the quick-action screens.
@@ -143,6 +144,26 @@ struct RootTabView: View {
         }
     }
 
+    /// WHOOP-style morning routine: the first time the app comes up between 4am and 2pm, if yesterday has
+    /// no journal answers, open the journal at yesterday. Once per day, and never before the first-run
+    /// gates are done.
+    private func maybePromptMorningJournal() {
+        guard homeScreenQuickActionsEnabled else { return }
+        let now = Date()
+        guard (4..<14).contains(Calendar.current.component(.hour, from: now)) else { return }
+        let today = Repository.logicalDayKey(now)
+        let key = "whoopStyle.journalPromptDay"
+        guard UserDefaults.standard.string(forKey: key) != today else { return }
+        UserDefaults.standard.set(today, forKey: key)
+        Task {
+            guard let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now) else { return }
+            let keys: Set<String> = [Repository.logicalDayKey(yesterday), Repository.localDayKey(yesterday)]
+            let entries = await repo.journalEntries(days: 3)
+            guard !entries.contains(where: { keys.contains($0.day) }) else { return }
+            router.openJournal(day: 1)
+        }
+    }
+
     /// WHOOP-style tab bar: Home, Health, Trends, More, and the Coach as a separate round button. On
     /// iOS 18+ the Coach is a `.search`-role tab, which iOS 26 draws as its own circle beside the bar;
     /// iOS 17 shows it as a regular fifth item. Sleep is reached from the Sleep ring on Home.
@@ -222,6 +243,7 @@ struct RootTabView: View {
                                  including: tabPaths[selectedTab].isEmpty ? .all : .subviews)
         .task {
             await repo.refresh()
+            maybePromptMorningJournal()
             // Backup & Sync: on-launch catch-up (see RootView). Detached + utility priority so a
             // 100MB+ whole-DB ZIP never blocks startup; gated on the auto toggle (default OFF). (Must-fix #4.)
             let backupRepo = repo
@@ -306,6 +328,9 @@ struct RootTabView: View {
             }
         }
         // A screen's top-bar "+" routes here: open the quick-action sheet, then clear the flag.
+        .onChangeCompat(of: scenePhase) { phase in
+            if phase == .active { maybePromptMorningJournal() }
+        }
         .onChange(of: router.quickActionsRequested) { _, req in
             if req {
                 withAnimation(Self.sheetEase) { quickAction = .menu }
