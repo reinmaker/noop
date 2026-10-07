@@ -86,12 +86,16 @@ struct WhoopSleepPlan {
     /// One line for the Coach's context, so its bedtime advice matches the card.
     var coachLine: String {
         func hm(_ m: Double) -> String { "\(Int(m) / 60)h \(Int(m) % 60)m" }
-        return "Tonight's sleep plan, as the app's Tonight's Sleep card shows it: get in bed by "
-            + "\(WhoopTime.clock(bedtime)) to wake at \(WhoopTime.clock(wake)) "
-            + "(\(wakeIsAlarm ? "alarm" : "usual wake time")); sleep need \(hm(needMin)) = healthy minimum "
-            + "\(hm(baselineMin)) + recent Strain \(hm(strainMin)) + sleep debt \(hm(debtMin)); time in bed "
-            + "\(hm(timeInBedMin)) at \(Int((efficiency * 100).rounded()))% sleep efficiency. Use exactly these "
-            + "times whenever you suggest a bedtime, lights out or a wake time."
+        let bed = WhoopTime.clock(bedtime)
+        let up = WhoopTime.clock(wake)
+        let source = wakeIsAlarm ? "alarm" : "usual wake time"
+        let percent = Int((efficiency * 100).rounded())
+        var parts: [String] = []
+        parts.append("Tonight's sleep plan, as the app's Tonight's Sleep card shows it: get in bed by \(bed) to wake at \(up) (\(source));")
+        parts.append("sleep need \(hm(needMin)) = healthy minimum \(hm(baselineMin)) + recent Strain \(hm(strainMin)) + sleep debt \(hm(debtMin));")
+        parts.append("time in bed \(hm(timeInBedMin)) at \(percent)% sleep efficiency.")
+        parts.append("Use exactly these times whenever you suggest a bedtime, lights out or a wake time.")
+        return parts.joined(separator: " ")
     }
 }
 
@@ -111,9 +115,7 @@ struct WhoopSleepPlannerScreen: View {
             VStack(spacing: NoopMetrics.space5) {
                 BrandMark(size: 44)
                     .padding(.top, NoopMetrics.space4)
-                Text(plan.wakeIsAlarm
-                     ? String(localized: "Your alarm will go off at \(WhoopTime.clock(plan.wake)). Get in bed by \(WhoopTime.clock(plan.bedtime)) to reach your sleep need.")
-                     : String(localized: "Get in bed by \(WhoopTime.clock(plan.bedtime)) to reach your sleep need and wake at \(WhoopTime.clock(plan.wake))."))
+                Text(sentence(plan))
                     .font(WhoopStyle.headline)
                     .foregroundStyle(StrandPalette.textPrimary)
                     .multilineTextAlignment(.center)
@@ -140,6 +142,15 @@ struct WhoopSleepPlannerScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .onAppear { WhoopSleepPlan.lastShown = plan }
+    }
+
+    private func sentence(_ plan: WhoopSleepPlan) -> String {
+        let bed = WhoopTime.clock(plan.bedtime)
+        let up = WhoopTime.clock(plan.wake)
+        if plan.wakeIsAlarm {
+            return String(localized: "Your alarm will go off at \(up). Get in bed by \(bed) to reach your sleep need.")
+        }
+        return String(localized: "Get in bed by \(bed) to reach your sleep need and wake at \(up).")
     }
 
     private func figure(_ value: String, _ label: String) -> some View {

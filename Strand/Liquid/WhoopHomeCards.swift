@@ -55,7 +55,7 @@ struct WhoopActionButtonLabel: View {
     }
 }
 
-private enum WhoopTime {
+enum WhoopTime {
     static func clock(_ date: Date) -> String {
         date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
     }
