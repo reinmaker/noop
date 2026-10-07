@@ -182,15 +182,16 @@ struct SleepView: View {
                             .padding(.horizontal, -16)
                             .padding(.top, -24)
                             .staggeredAppear(index: 0)
-                        alarmsEntry
                         // #sleep-layout: the analytical cards render in the user's saved order minus the
                         // hidden set, below the pinned Rest hero. Reordered via the Arrange sheet.
-                        ForEach(Array(sleepVisibleSections.enumerated()), id: \.element) { idx, section in
+                        // WHOOP-style: Last Night's Sleep comes first, Alarms at the end.
+                        ForEach(Array(whoopSleepOrder.enumerated()), id: \.element) { idx, section in
                             sleepSectionView(section, resolved).staggeredAppear(index: idx + 1)
                         }
                         // WHOOP-style "Weekly Trends" at the end of the Sleep screen.
                         WhoopWeeklyBars(title: String(localized: "HOURS OF SLEEP"),
                                         points: weeklySleepBars, maxValue: 10)
+                        alarmsEntry
                     }
                 } else {
                     emptyState
@@ -510,6 +511,16 @@ struct SleepView: View {
         return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60.0
     }
 
+    /// The visible sections with Last Night's Sleep (the `.stages` section) first and Sleep marks last,
+    /// matching WHOOP's Sleep screen; the rest keep the wearer's saved order.
+    private var whoopSleepOrder: [SleepSection] {
+        let visible = sleepVisibleSections
+        var order = visible.filter { $0 != .stages && $0 != .sleepMarks }
+        if visible.contains(.stages) { order.insert(.stages, at: 0) }
+        if visible.contains(.sleepMarks) { order.append(.sleepMarks) }
+        return order
+    }
+
     /// The last seven nights' hours asleep, for the WHOOP-style weekly bars.
     private var weeklySleepBars: [(day: String, value: Double, label: String, color: Color)] {
         let parser = DateFormatter()
@@ -678,13 +689,13 @@ struct SleepView: View {
             // a zeroed stage card. History stays browsable and the edit pencil stays reachable.
             if nightOffset == 0, !model.isStubNight {
                 nightNavHeader(trailing: model.night.spanLabel)
-                sleepWindowRow(model.night)
-                stageCard(model.night, intervals: model.intervals)
+                // WHOOP-style Last Night's Sleep (hours vs typical with the night's HR, stage bars against
+                // their typical range, restorative sleep, Hours vs. Needed).
+                WhoopLastNightCards(night: model.night, model: model, nightHR: nightHR, days: repo.days)
                 napSection(model.night)
             } else if let night = navNight {
                 nightNavHeader(trailing: night.spanLabel)
-                sleepWindowRow(night)
-                stageCard(night, intervals: night.intervals)
+                WhoopLastNightCards(night: night, model: model, nightHR: nightHR, days: repo.days)
                 napSection(night)
             } else if let session = sessionRow(at: nightOffset) {
                 // Stage-less stub purely to reuse Night's date/time formatting.
