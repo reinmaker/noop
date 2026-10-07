@@ -41,6 +41,21 @@ public enum WhoopStyle {
     public static let coachButtonShadow = Color(hex: "#00000073")
     public static let coachButtonSize: CGFloat = 58
 
+    // MARK: Stress bands (WHOOP: low blue, medium green, high orange)
+
+    public static let stressLow = Color(light: "#3D8BD9", dark: "#5DA9E9")
+    public static let stressMedium = Color(light: "#21A86B", dark: "#4FE0A0")
+    public static let stressHigh = Color(light: "#D9822B", dark: "#F5A623")
+
+    /// The word and colour for a 0-3 stress level.
+    public static func stressBand(_ level: Double) -> (word: String, color: Color) {
+        switch level {
+        case ..<1: return ("LOW", stressLow)
+        case ..<2: return ("MEDIUM", stressMedium)
+        default: return ("HIGH", stressHigh)
+        }
+    }
+
     // MARK: Sleep stages (WHOOP-style stage bars)
 
     public static let stageAwake = Color(light: "#B7BCC6", dark: "#D7DAE0")

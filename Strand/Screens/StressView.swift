@@ -73,7 +73,7 @@ struct StressView: View {
     @State private var modelSignature: StressInputs?
 
     var body: some View {
-        ScreenScaffold(title: "Stress", subtitle: "Autonomic load across your waking day",
+        ScreenScaffold(title: "Stress Monitor", subtitle: "Your stress across the day, on a 0-3 scale",
                        // PERF (scroll): lazy column — byte-identical layout (LazyVStack == eager VStack
                        // alignment/spacing/header). The content is one inner eager VStack, so the staggered
                        // section reveal is unchanged; this only defers building that stack until it scrolls in.
@@ -200,8 +200,9 @@ struct StressView: View {
     private func content(_ model: StressModel) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
 
-            // 1. HERO — the liquid stress-level vessel + band + one plain-English line, all in one card.
-            heroCard(model)
+            // 1. HERO — WHOOP-style: the current level, today's line over Low / Medium / High bands, time in
+            //    each band, and Breathe. (Replaces NOOP's liquid vessel card.)
+            WhoopStressHero(daytime: daytime, dailyScore: model.score, onBreathe: { showBreathe = true })
                 .staggeredAppear(index: 0)
 
             // 1b. ADVANCED HRV readouts (additive, on-demand). A separate, clearly-labelled card
@@ -226,9 +227,6 @@ struct StressView: View {
             // data. An empty `scored` after the read is a fact about the day and still stays silent.
             if daytime == nil {
                 daytimeLoading()
-                    .staggeredAppear(index: 2)
-            } else if let daytime, !daytime.scored.isEmpty {
-                daytimeSection(daytime)
                     .staggeredAppear(index: 2)
             }
 
