@@ -677,6 +677,17 @@ struct SleepView: View {
 
     // MARK: - 1. HERO — stage breakdown
 
+    /// WHOOP's Last Night's Sleep cards, with the night's 1-minute heart rate for their graph. The HR load
+    /// lives here because the stage card that used to load it is no longer shown.
+    private func lastNightCards(_ night: Night, _ model: SleepModel) -> some View {
+        WhoopLastNightCards(night: night, model: model, nightHR: nightHR, days: repo.days, sleeps: repo.sleeps)
+            .task(id: night.session.startTs) {
+                nightHR = await repo.hrBuckets(from: night.session.startTs,
+                                               to: night.session.endTs,
+                                               bucketSeconds: 60)
+            }
+    }
+
     @ViewBuilder
     private func hero(_ model: SleepModel) -> some View {
         // Offset 0 reads the memoized latest night; navigated offsets read the cached
@@ -692,13 +703,11 @@ struct SleepView: View {
                 nightNavHeader(trailing: model.night.spanLabel)
                 // WHOOP-style Last Night's Sleep (hours vs typical with the night's HR, stage bars against
                 // their typical range, restorative sleep, Hours vs. Needed).
-                WhoopLastNightCards(night: model.night, model: model, nightHR: nightHR, days: repo.days,
-                                    sleeps: repo.sleeps)
+                lastNightCards(model.night, model)
                 napSection(model.night)
             } else if let night = navNight {
                 nightNavHeader(trailing: night.spanLabel)
-                WhoopLastNightCards(night: night, model: model, nightHR: nightHR, days: repo.days,
-                                    sleeps: repo.sleeps)
+                lastNightCards(night, model)
                 napSection(night)
             } else if let session = sessionRow(at: nightOffset) {
                 // Stage-less stub purely to reuse Night's date/time formatting.

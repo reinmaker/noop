@@ -699,9 +699,15 @@ enum WhoopStylePreset {
             defaults.set(true, forKey: PuffinExperiment.whoopStrainCurveKey)
             defaults.set(true, forKey: strainCurveKey)
         }
+        // WHOOP spots activities by itself and asks you to confirm them; so does Yoop.
+        if !defaults.bool(forKey: autoDetectKey) {
+            defaults.set(true, forKey: PuffinExperiment.autoDetectWorkoutsKey)
+            defaults.set(true, forKey: autoDetectKey)
+        }
     }
 
     private static let strainCurveKey = "whoopStyle.strainCurve.v1"
+    private static let autoDetectKey = "whoopStyle.autoDetectWorkouts.v1"
 
     private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
     /// NOOP Home sections that WHOOP-style cards replace (Synthesis by the insight card, Key Metrics by
