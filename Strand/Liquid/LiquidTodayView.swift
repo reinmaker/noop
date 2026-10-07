@@ -66,7 +66,8 @@ struct LiquidTodayView: View {
     // the toggle is off, so no separate gate is needed at fetch time.
     @State private var spo2CandidateByDay: [String: Double] = [:]
     @State private var stepsEst: Double?           // steps_est, day-keyed to the selected day (fallback)
-    @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (middle tier)
+    @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (leads in Yoop)
+    @State private var appleStepsByDay: [String: Double] = [:]   // Apple Health steps per day, for averages
     @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
     @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
@@ -757,7 +758,7 @@ struct LiquidTodayView: View {
             WhoopJournalCard()
             WhoopPlanCard()
             WhoopDashboardSection(today: displayDay, days: repo.days, steps: stepCount,
-                                  calories: caloriesCount, vo2max: vo2max,
+                                  calories: caloriesCount, vo2max: vo2max, appleStepsByDay: appleStepsByDay,
                                   onCustomize: { customizationDestination = .today })
             WhoopStressChartCard(currentStress: stress)
             WhoopStrainRecoveryCard(days: repo.days)
@@ -772,7 +773,7 @@ struct LiquidTodayView: View {
             WhoopActivitiesCard(sleepMinutes: displayDay?.totalSleepMin, sleepStart: nil, sleepEnd: nil,
                                 workouts: workouts)
             WhoopDashboardSection(today: displayDay, days: daysToShown, steps: stepCount,
-                                  calories: caloriesCount, vo2max: vo2max,
+                                  calories: caloriesCount, vo2max: vo2max, appleStepsByDay: appleStepsByDay,
                                   onCustomize: { customizationDestination = .today })
             WhoopStrainRecoveryCard(days: daysToShown)
         }
@@ -1908,6 +1909,8 @@ struct LiquidTodayView: View {
         // measured strap count and the motion estimate. Health Connect is Android-only, so apple-health is
         // the sole import source on iOS. Mirrors Android `stepsForDay` (#377).
         importedStepsDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.steps }.max()
+        appleStepsByDay = Dictionary((await appleA).compactMap { r in r.steps.map { (r.day, Double($0)) } },
+                                     uniquingKeysWith: { a, b in max(a, b) })
         // #616: same-day imported active energy — the calorie fallback when the strap banked no on-device
         // HR estimate for the day, so the tile/card/detail agree (imported-first, mirrors steps).
         importedActiveKcalDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.activeKcal }.max()
@@ -2073,14 +2076,15 @@ struct LiquidTodayView: View {
             : String(localized: "Good evening")
     }
 
-    // Measured strap count ?: imported Apple Health count ?: motion estimate — the same precedence the
-    // detail routing follows below, so the tapped-through source always matches the number shown (#377).
+    // Yoop: the iPhone's Apple Health count ?: measured strap count ?: motion estimate. The phone's
+    // count leads because the strap's step counter reads low. The detail routing follows the same order,
+    // so the tapped-through source always matches the number shown (#377).
     private var stepCount: Double? {
-        displayDay?.steps.map(Double.init) ?? importedStepsDay.map(Double.init) ?? stepsEst
+        importedStepsDay.map(Double.init) ?? displayDay?.steps.map(Double.init) ?? stepsEst
     }
 
     private var stepsDetailMetric: MetricDescriptor? {
-        MetricCatalog.todayStepsMetric(hasMeasuredSteps: displayDay?.steps != nil,
+        MetricCatalog.todayStepsMetric(hasMeasuredSteps: importedStepsDay == nil && displayDay?.steps != nil,
                                        hasImportedSteps: importedStepsDay != nil)
     }
 
