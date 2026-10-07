@@ -1878,6 +1878,8 @@ final class AppModel: ObservableObject {
     }
 
     private func handleWristChange(_ worn: Bool) {
+        // Yoop: WHOOP-style "Device Off-Body" notice after 10 minutes off the wrist.
+        WhoopNotifications.wristChanged(worn: worn)
         if worn {
             if !behavior.wristOnShortcut.isEmpty { MacActions.runShortcut(behavior.wristOnShortcut) }
         } else {

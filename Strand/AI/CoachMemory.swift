@@ -75,6 +75,10 @@ final class CoachMemoryStore: ObservableObject {
             items[i].active = true
         } else {
             items.insert(memory, at: 0)
+            // WHOOP-style Conversational Check-In: follow up tomorrow evening on anything but a preference.
+            if memory.category != .preference {
+                WhoopNotifications.scheduleCheckIn(title: memory.title, category: memory.category.rawValue)
+            }
         }
         save()
     }

@@ -290,6 +290,11 @@ struct StressMonitorCard: View {
             if let p = result?.timeline.last(where: { $0.level != nil }), let lvl = p.level {
                 latest = (lvl, Date(timeIntervalSince1970: TimeInterval(p.startTs)))
             }
+            // Tonight's Daily Stress Summary carries the latest numbers.
+            if let result {
+                let scored = result.timeline.filter { $0.level != nil }.count * 60
+                WhoopNotifications.updateStressSummary(highMinutes: result.highStressMinutes, scoredMinutes: scored)
+            }
         }
     }
 }
