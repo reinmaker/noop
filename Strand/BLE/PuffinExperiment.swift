@@ -108,6 +108,12 @@ enum PuffinExperiment {
     /// export so a day reads the same Strain WHOOP gave it. Takes precedence over the Banister switch.
     static let whoopStrainCurveKey = "yoopWhoopStrainCurve"
 
+    /// Yoop: score stress the WHOOP way (`WhoopStressCurve`): the whole day, sleep included, each five
+    /// minutes' heart rate against the nightly resting rate, so rest reads low and a normal day medium.
+    static let whoopStressKey = "yoopWhoopStress"
+
+    static var whoopStressEnabled: Bool { UserDefaults.standard.bool(forKey: whoopStressKey) }
+
     /// The TRIMP recipe every Effort computation on this device should use.
     static var effortMethod: StrainScorer.Method {
         if UserDefaults.standard.bool(forKey: whoopStrainCurveKey) { return .whoop }

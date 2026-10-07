@@ -204,12 +204,13 @@ struct HealthMonitorCard: View {
     @EnvironmentObject private var repo: Repository
 
     var body: some View {
-        let readings = BodyVitalSigns.readings(days: repo.days, today: nil, temperatureUnit: .celsius)
+        let readings = BodyVitalSigns.readings(days: repo.days, today: nil, temperatureUnit: .celsius,
+                                               skinTempPreferred: .deviation)
         let measured = readings.filter { $0.banding.band != .noData }
         let inRange = measured.filter { $0.banding.band == .inRange }.count
         let allGood = !measured.isEmpty && inRange == measured.count
 
-        NavigationLink(value: TabRoute.health) {
+        NavigationLink(value: TabRoute.healthMonitor) {
             WhoopOverviewCard(title: String(localized: "HEALTH MONITOR")) {
                 HStack(spacing: 10) {
                     Image(systemName: measured.isEmpty ? "hourglass" : (allGood ? "checkmark" : "exclamationmark"))
@@ -288,7 +289,9 @@ struct StressMonitorCard: View {
             }
             // Tonight's Daily Stress Summary carries the latest numbers.
             if let result {
-                let scored = result.timeline.filter { $0.level != nil }.count * 60
+                // Each scored point is 5 minutes under WHOOP-style stress, an hour under the hourly read.
+                let perPoint = PuffinExperiment.whoopStressEnabled ? WhoopStressCurve.bucketSeconds / 60 : 60
+                let scored = result.hours.filter { $0.level != nil }.count * perPoint
                 WhoopNotifications.updateStressSummary(highMinutes: result.highStressMinutes, scoredMinutes: scored)
             }
         }

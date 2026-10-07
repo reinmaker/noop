@@ -38,6 +38,8 @@ enum TabRoute: Hashable {
     /// WHOOP-style Recovery and Strain score screens (the Home rings' tap-through).
     case recovery
     case strain
+    /// WHOOP's Health Monitor: live heart rate and the five overnight vitals against their range.
+    case healthMonitor
 }
 
 extension View {
@@ -79,6 +81,7 @@ extension View {
             case .coupled: CoupledView()
             case .recovery: WhoopRecoveryScreen()
             case .strain: WhoopStrainScreen()
+            case .healthMonitor: WhoopHealthMonitorScreen()
             }
             }
             // WHOOP-style: the Coach opens about the screen being viewed.

@@ -121,12 +121,14 @@ enum BodyVitalSigns {
     /// Preview/test convenience: wrap plain rows (optionally a separate "today") as local-cache rows.
     static func readings(days: [DailyMetric],
                          today: DailyMetric?,
-                         temperatureUnit: TemperatureUnit) -> [BodyVitalReading] {
+                         temperatureUnit: TemperatureUnit,
+                         skinTempPreferred: SkinTempDisplay.Kind = .absolute) -> [BodyVitalReading] {
         var sourceRows = days.map { SourcedDailyMetric(metric: $0, source: .localCache) }
         if let today, !days.contains(where: { $0.day == today.day }) {
             sourceRows.append(SourcedDailyMetric(metric: today, source: .localCache))
         }
-        return readings(sourceRows: sourceRows, temperatureUnit: temperatureUnit)
+        return readings(sourceRows: sourceRows, temperatureUnit: temperatureUnit,
+                        skinTempPreferred: skinTempPreferred)
     }
 
     static func readings(sourceRows: [SourcedDailyMetric],

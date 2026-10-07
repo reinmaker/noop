@@ -74,7 +74,13 @@ enum StressDayCurve {
 
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
         var scored: DaytimeStress.Result = .empty
-        if hr.count >= DaytimeStress.minHourHRSamples {
+        if let restHR = whoopRestingHR(repo), !hr.isEmpty {
+            // Yoop: WHOOP-style stress against the resting heart rate, sleep included.
+            let tz = TimeZone.current.secondsFromGMT(for: now)
+            scored = await runUnescalated {
+                WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz)
+            }
+        } else if hr.count >= DaytimeStress.minHourHRSamples {
             let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
             // Wrist accelerometer for the motion gate, so an ambulatory hour reads as exertion rather
             // than as stress. Empty on hardware or imports without gravity, which degrades to no masking
@@ -115,6 +121,14 @@ enum StressDayCurve {
         memos[personalBaseline] = Memo(count: fingerprint.count, maxTs: fingerprint.maxTs, day: day,
                                        personalBaseline: personalBaseline, result: scored)
         return (scored, day)
+    }
+
+    /// The resting heart rate WHOOP-style stress is read against (the latest night that has one), or nil
+    /// when that scoring is off.
+    @MainActor
+    static func whoopRestingHR(_ repo: Repository) -> Double? {
+        guard PuffinExperiment.whoopStressEnabled else { return nil }
+        return repo.days.last(where: { $0.restingHr != nil })?.restingHr.map(Double.init)
     }
 
     /// Days since the epoch on the LOCAL calendar.
