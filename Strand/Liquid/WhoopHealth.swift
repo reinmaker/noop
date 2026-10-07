@@ -160,6 +160,14 @@ struct WhoopHealthMonitorScreen: View {
         Tile(key: "skin", title: String(localized: "SKIN TEMP (FROM BASELINE)"), icon: "thermometer.medium"),
     ]
 
+    /// Skin temperature reads "from baseline" only when the value shown IS the deviation; a night that
+    /// has only its absolute temperature says plain "SKIN TEMP".
+    private static func titled(_ tile: Tile, reading: BodyVitalReading?) -> Tile {
+        guard tile.key == "skin", let reading,
+              reading.unit != SkinTempDisplay.unitSymbol(kind: .deviation, fahrenheit: false) else { return tile }
+        return Tile(key: tile.key, title: String(localized: "SKIN TEMP"), icon: tile.icon)
+    }
+
     var body: some View {
         let readings = BodyVitalSigns.readings(days: repo.days, today: nil, temperatureUnit: .celsius,
                                                skinTempPreferred: .deviation)
@@ -171,7 +179,7 @@ struct WhoopHealthMonitorScreen: View {
                                     GridItem(.flexible(), spacing: NoopMetrics.space3)],
                           spacing: NoopMetrics.space3) {
                     ForEach(Self.tiles) { tile in
-                        vitalTile(tile, reading: byKey[tile.key])
+                        vitalTile(Self.titled(tile, reading: byKey[tile.key]), reading: byKey[tile.key])
                     }
                 }
             }
