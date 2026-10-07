@@ -364,7 +364,12 @@ public enum StrandPalette {
     /// Sample the recovery gradient (bronze → champagne) at a recovery score 0...100.
     /// Returns the exact interpolated color used everywhere recovery is tinted.
     public static func recoveryColor(_ score: Double) -> Color {
-        sample(stops: recoveryStops, at: score / 100.0)
+        // Classic (the WHOOP-style preset): WHOOP's three flat bands (green 67+, yellow 34-66, red
+        // below), not a blend, so 39% reads yellow rather than orange.
+        if isClassic {
+            return score >= 67 ? cRecovery100 : score >= 34 ? cRecovery055 : cRecovery000
+        }
+        return sample(stops: recoveryStops, at: score / 100.0)
     }
 
     /// Sample the strain ("Effort") gradient at a value on NOOP's 0...100 Effort scale.

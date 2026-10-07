@@ -132,7 +132,7 @@ struct WhoopInsightCard: View {
         guard let d = repo.days.last else { return "none" }
         let rec = d.recovery.map { String(Int($0.rounded())) } ?? "-"
         let sleep = d.totalSleepMin.map { String(Int($0.rounded())) } ?? "-"
-        return "\(d.day)|\(rec)|\(sleep)|\(coach.isConfigured)|\(coach.dataConsent)"
+        return "v2|\(d.day)|\(rec)|\(sleep)|\(coach.isConfigured)|\(coach.dataConsent)"
     }
 
     var body: some View {
@@ -154,11 +154,7 @@ struct WhoopInsightCard: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "sparkles")
-                    .font(WhoopStyle.icon)
-                    .foregroundStyle(StrandPalette.accent)
-                    .padding(NoopMetrics.space2)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(WhoopStyle.ringTrack))
+                BrandMark(size: 34)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(WhoopStyle.cardPadding)

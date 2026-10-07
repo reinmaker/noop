@@ -752,8 +752,8 @@ struct LiquidTodayView: View {
             WhoopMyDaySection()
             WhoopTonightsSleepCard()
             WhoopActivitiesCard(sleepMinutes: displayDay?.totalSleepMin,
-                                sleepStart: lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.effectiveStartTs)) },
-                                sleepEnd: lastNightSleep.map { Date(timeIntervalSince1970: TimeInterval($0.endTs)) },
+                                sleepStart: lastNightWindow?.start,
+                                sleepEnd: lastNightWindow?.end,
                                 workouts: workouts)
             WhoopJournalCard()
             WhoopPlanCard()
@@ -780,10 +780,18 @@ struct LiquidTodayView: View {
     }
 
     /// Last night's main sleep block, when it ended within the last 18 hours.
-    private var lastNightSleep: CachedSleepSession? {
-        guard let last = repo.sleeps.last,
+    /// Last night from first bedtime to final wake. A night broken by a wake-up arrives as two sleep
+    /// records, so an earlier record ending less than two hours before the next one starts is the same night.
+    private var lastNightWindow: (start: Date, end: Date)? {
+        let sleeps = repo.sleeps
+        guard let last = sleeps.last,
               Date().timeIntervalSince1970 - TimeInterval(last.endTs) < 18 * 3600 else { return nil }
-        return last
+        var start = last.effectiveStartTs
+        for s in sleeps.dropLast().reversed() {
+            guard start - s.endTs < 2 * 3600 else { break }
+            start = min(start, s.effectiveStartTs)
+        }
+        return (Date(timeIntervalSince1970: TimeInterval(start)), Date(timeIntervalSince1970: TimeInterval(last.endTs)))
     }
 
     private var heroCard: some View {

@@ -977,7 +977,10 @@ final class AICoachEngine: ObservableObject {
         }
         if let stress = await StressDayCurve.today(
             repo: repo, personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled)?.result {
-            ctx += "\n\nToday's stress so far: \(stress.highStressMinutes) minutes in high stress (0-3 scale, high is 2 and up)."
+            let mins = stress.highStressMinutes
+            ctx += "\n\nToday's stress so far: \(mins / 60) hr \(mins % 60) min in the high stress zone, shown on the "
+                + "Stress Monitor as \(String(format: "%d:%02d", mins / 60, mins % 60)) (0-3 scale, high is 2 and up). "
+                + "Say it in hours and minutes, never as a count of minutes."
         }
         ctx += "\n\n" + (await recentWorkoutsBlock())
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
@@ -1570,7 +1573,17 @@ final class AICoachEngine: ObservableObject {
         if let band = CoupledView.optimalStrainRange(recovery: days.last?.recovery) {
             lines.append("Today's optimal Strain range, from today's Recovery: \(band.lowerBound)-\(band.upperBound) of 21.")
         }
-        lines.append(String(format: "Personal sleep need: about %.1fh a night.", SleepModel.debtNeedMin(days: days) / 60))
+        // The need and percentage the Sleep screen's Hours vs Needed shows, from the same series, so the
+        // Coach never quotes a different figure from the one on screen.
+        let hoursVsNeeded = SleepModel.hoursVsNeededSeries(days: days, importedSleep: repo.importedSleep)
+        if let pct = hoursVsNeeded.latest, pct > 0,
+           let asleep = days.last(where: { $0.day == hoursVsNeeded.latestDay ?? $0.day })?.totalSleepMin {
+            lines.append(String(format: "Sleep need: about %.1fh a night. Last night's Hours vs Needed: %.0f%% "
+                                + "(quote this percentage as is; it is the figure the Sleep screen shows).",
+                                asleep / (pct / 100) / 60, pct))
+        } else {
+            lines.append(String(format: "Sleep need: about %.1fh a night.", SleepModel.sleepNeedMin(days: days) / 60))
+        }
 
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()
@@ -1582,9 +1595,11 @@ final class AICoachEngine: ObservableObject {
         }
 
         // 30-day averages.
-        let last30 = Array(days.suffix(30))
+        // The 30 days before today: the same normal the app's "Today vs. last 30 days" rows show, so the
+        // Coach's "usual" matches the screen (today is still in progress and would pull it around).
+        let last30 = Array(days.dropLast().suffix(30))
         lines.append("")
-        lines.append("30-day averages:")
+        lines.append("30-day averages (the 30 days before today; quote these as my usual):")
         lines.append("  recovery: \(avgInt(last30.compactMap { $0.recovery }))%"
                      + ", strain: \(avgOne(last30.compactMap { $0.strain.map(Self.strain21) }))"
                      + ", sleep: \(avgSleepHours(last30))h"

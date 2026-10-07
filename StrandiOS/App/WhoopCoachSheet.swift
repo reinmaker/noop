@@ -101,13 +101,7 @@ struct WhoopCoachSheet: View {
 
     private var header: some View {
         HStack(spacing: NoopMetrics.space3) {
-            Image(systemName: "sparkles")
-                .font(WhoopStyle.icon)
-                .foregroundStyle(WhoopStyle.onGradient)
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(WhoopStyle.coachButtonFill))
-                .overlay(Circle().strokeBorder(
-                    AngularGradient(colors: WhoopStyle.coachButtonRing, center: .center), lineWidth: 2))
+            BrandMark(size: 34)
             Text(coach.provider == .anthropic ? "Claude" : coach.provider.displayName)
                 .font(WhoopStyle.smallLabel)
                 .foregroundStyle(StrandPalette.textSecondary)

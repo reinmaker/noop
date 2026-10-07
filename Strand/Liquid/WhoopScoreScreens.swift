@@ -29,22 +29,16 @@ struct WhoopCoachPill: View {
         parts.append(recovery.map { String(Int($0)) } ?? "")
         parts.append(sleep.map { String(Int($0)) } ?? "")
         parts.append(strain.map { String(Int($0)) } ?? "")
-        return "whoopStyle.pill." + screen.rawValue + "." + parts.joined(separator: "|")
+        return "whoopStyle.pill2." + screen.rawValue + "." + parts.joined(separator: "|")
     }
 
     var body: some View {
         Button { router.openCoach() } label: {
             HStack(spacing: NoopMetrics.space3) {
-                Image(systemName: "sparkles")
-                    .font(WhoopStyle.icon)
-                    .foregroundStyle(WhoopStyle.onGradient)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(WhoopStyle.coachButtonFill))
-                    .overlay(Circle().strokeBorder(
-                        AngularGradient(colors: WhoopStyle.coachButtonRing, center: .center), lineWidth: 2))
-                Text(text ?? (loading ? String(localized: "Analyzing…")
+                BrandMark(size: 34)
+                Text(Self.inlineMarkdown(text ?? (loading ? String(localized: "Analyzing…")
                               : failed ? String(localized: "Couldn't reach your Coach. Tap to open it.")
-                              : String(localized: "Ask your Coach about this")))
+                              : String(localized: "Ask your Coach about this"))))
                     .font(WhoopStyle.body)
                     .foregroundStyle(WhoopStyle.onGradient)
                     .lineLimit(2)
@@ -64,6 +58,12 @@ struct WhoopCoachPill: View {
         .padding(.horizontal, NoopMetrics.space4)
         .padding(.bottom, NoopMetrics.space2)
         .task(id: cacheKey) { await load() }
+    }
+
+    /// The reply's bold and italic marks rendered, not shown as asterisks.
+    static func inlineMarkdown(_ s: String) -> AttributedString {
+        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(s)
     }
 
     private func load() async {
