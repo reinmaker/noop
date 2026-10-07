@@ -183,7 +183,7 @@ struct RootTabView: View {
                     moreStack(path: $tabPaths[4], scrollSignal: scrollTop[4]).coachScreen(.other)
                 }
                 if coachEnabled {
-                    Tab("Coach", systemImage: "sparkles", value: 3, role: .search) {
+                    Tab("Coach", image: "YoopCoach", value: 3, role: .search) {
                         Color.clear
                     }
                 }
@@ -195,7 +195,7 @@ struct RootTabView: View {
                 tab(TrendsView().coachScreen(.trends), "Trends", "chart.line.uptrend.xyaxis", path: $tabPaths[1], scrollSignal: scrollTop[1]).tag(1)
                 moreTab(path: $tabPaths[4], scrollSignal: scrollTop[4]).tag(4)
                 if coachEnabled {
-                    Color.clear.tabItem { Label("Coach", systemImage: "sparkles") }.tag(3)
+                    Color.clear.tabItem { Label("Coach", image: "YoopCoach") }.tag(3)
                 }
             }
         }

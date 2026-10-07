@@ -154,11 +154,7 @@ struct WhoopInsightCard: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "sparkles")
-                    .font(WhoopStyle.icon)
-                    .foregroundStyle(StrandPalette.accent)
-                    .padding(NoopMetrics.space2)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(WhoopStyle.ringTrack))
+                BrandMark(size: 34)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(WhoopStyle.cardPadding)

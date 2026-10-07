@@ -1570,7 +1570,17 @@ final class AICoachEngine: ObservableObject {
         if let band = CoupledView.optimalStrainRange(recovery: days.last?.recovery) {
             lines.append("Today's optimal Strain range, from today's Recovery: \(band.lowerBound)-\(band.upperBound) of 21.")
         }
-        lines.append(String(format: "Personal sleep need: about %.1fh a night.", SleepModel.debtNeedMin(days: days) / 60))
+        // The need and percentage the Sleep screen's Hours vs Needed shows, from the same series, so the
+        // Coach never quotes a different figure from the one on screen.
+        let hoursVsNeeded = SleepModel.hoursVsNeededSeries(days: days, importedSleep: repo.importedSleep)
+        if let pct = hoursVsNeeded.latest, pct > 0,
+           let asleep = days.last(where: { $0.day == hoursVsNeeded.latestDay ?? $0.day })?.totalSleepMin {
+            lines.append(String(format: "Sleep need: about %.1fh a night. Last night's Hours vs Needed: %.0f%% "
+                                + "(quote this percentage as is; it is the figure the Sleep screen shows).",
+                                asleep / (pct / 100) / 60, pct))
+        } else {
+            lines.append(String(format: "Sleep need: about %.1fh a night.", SleepModel.sleepNeedMin(days: days) / 60))
+        }
 
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()
