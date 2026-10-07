@@ -143,6 +143,7 @@ struct WhoopHealthHeader: View {
 struct WhoopHealthMonitorScreen: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var live: LiveState
 
     private struct Tile: Identifiable {
         let key: String
@@ -182,6 +183,12 @@ struct WhoopHealthMonitorScreen: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        // Live heart rate needs the strap's realtime stream, which only the screens that show it arm
+        // (ref-counted, so leaving here never stops it under the Live screen or a workout).
+        .onAppear { model.startRealtimeHR() }
+        .onDisappear { model.stopRealtimeHR() }
+        // A new connection must be re-armed; the count is unchanged.
+        .onChangeCompat(of: live.bonded) { _ in model.rearmRealtimeIfWanted() }
     }
 
     private var liveHeartRate: some View {
@@ -200,7 +207,8 @@ struct WhoopHealthMonitorScreen: View {
                     .font(WhoopStyle.smallLabel)
                     .foregroundStyle(StrandPalette.textSecondary)
             }
-            Text(model.bpm == nil ? String(localized: "Device disconnected") : String(localized: "Live from your strap"))
+            Text(model.bpm != nil ? String(localized: "Live from your strap")
+                 : (live.connected ? String(localized: "Reading your heart rate…") : String(localized: "Device disconnected")))
                 .font(WhoopStyle.caption)
                 .foregroundStyle(StrandPalette.textSecondary)
         }
