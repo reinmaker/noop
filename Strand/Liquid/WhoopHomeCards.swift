@@ -79,35 +79,26 @@ struct WhoopTonightsSleepCard: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var router: NavRouter
 
-    private var strapAlarmWillArm: Bool {
-        !(model.whoop5Detected && !PuffinExperiment.isEnabled)
-    }
-
-    private func nextAlarm(from now: Date) -> Date? {
-        guard behavior.smartAlarmEnabled, strapAlarmWillArm else { return nil }
+    /// The next armed strap alarm, or nil (no alarm, or the strap cannot arm one).
+    static func nextAlarm(behavior: BehaviorStore, model: AppModel, from now: Date = Date()) -> Date? {
+        guard behavior.smartAlarmEnabled, !(model.whoop5Detected && !PuffinExperiment.isEnabled) else { return nil }
         return AppModel.nextSmartAlarmDate(minutes: behavior.smartAlarmMinutes,
                                            weekdays: behavior.smartAlarmWeekdays,
                                            overrides: WindDownNudge.perDayWakeOverrides,
                                            from: now)
     }
 
-    /// The next occurrence of the usual wake time, used when no alarm is armed.
-    private func usualWake(from now: Date) -> Date {
-        let cal = Calendar.current
-        let minutes = WindDownNudge.wakeMinutes
-        let today = cal.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: now) ?? now
-        return today > now ? today : (cal.date(byAdding: .day, value: 1, to: today) ?? today)
-    }
-
     var body: some View {
         let now = Date()
-        let alarm = nextAlarm(from: now)
-        let wake = alarm ?? usualWake(from: now)
-        let needMin = SleepModel.sleepNeedMin(days: repo.days)
-        let bedtime = wake.addingTimeInterval(-needMin * 60)
+        let alarm = Self.nextAlarm(behavior: behavior, model: model, from: now)
+        // WHOOP's Sleep Planner: tonight's need (healthy minimum + Strain + debt) over the usual efficiency,
+        // back from the alarm or the usual wake time of recent nights.
+        let plan = WhoopSleepPlan.tonight(repo: repo, alarm: alarm, now: now)
+        let wake = plan.wake
+        let bedtime = plan.bedtime
         let bedtimeText = bedtime <= now ? String(localized: "Now") : WhoopTime.clock(bedtime)
 
-        Button { router.openAlarms() } label: {
+        NavigationLink(value: TabRoute.sleepPlanner) {
             WhoopTitledCard(title: String(localized: "TONIGHT'S SLEEP")) {
                 HStack(alignment: .top) {
                     VStack(spacing: NoopMetrics.space1) {
@@ -147,6 +138,7 @@ struct WhoopTonightsSleepCard: View {
             }
         }
         .buttonStyle(.plain)
+        .onAppear { WhoopSleepPlan.lastShown = plan }
     }
 }
 

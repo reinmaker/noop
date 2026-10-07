@@ -40,6 +40,8 @@ enum TabRoute: Hashable {
     case strain
     /// WHOOP's Health Monitor: live heart rate and the five overnight vitals against their range.
     case healthMonitor
+    /// WHOOP's Sleep Planner: when to get in bed for tonight's sleep need and the wake time.
+    case sleepPlanner
 }
 
 extension View {
@@ -82,6 +84,7 @@ extension View {
             case .recovery: WhoopRecoveryScreen()
             case .strain: WhoopStrainScreen()
             case .healthMonitor: WhoopHealthMonitorScreen()
+            case .sleepPlanner: WhoopSleepPlannerScreen()
             }
             }
             // WHOOP-style: the Coach opens about the screen being viewed.

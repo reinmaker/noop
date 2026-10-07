@@ -129,8 +129,9 @@ struct StressView: View {
                 let lo = max(w.startTs, from), hi = min(w.endTs, to)
                 return lo < hi ? lo...hi : nil
             }
+            let reference = await StressDayCurve.whoopStressReference(repo, to: to)
             daytime = await runUnescalated(priority: .userInitiated) {
-                WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz)
+                WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz, reference: reference)
             }
             stressIndex = nil
             freqHRV = nil
