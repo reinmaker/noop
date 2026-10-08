@@ -715,12 +715,20 @@ enum WhoopStylePreset {
             defaults.set(true, forKey: PuffinExperiment.whoopNapRuleKey)
             defaults.set(true, forKey: napRuleKey)
         }
+        // Recovery and Sleep Performance computed WHOOP's way, fitted to the user's WHOOP export.
+        if !defaults.bool(forKey: whoopScoresKey) {
+            defaults.set(true, forKey: PuffinExperiment.whoopScoresKey)
+            // HRV measured over deep (slow-wave) sleep, the window WHOOP measures it in.
+            defaults.set(HrvWindow.deep.rawValue, forKey: UnitPrefs.hrvWindowKey)
+            defaults.set(true, forKey: whoopScoresKey)
+        }
     }
 
     private static let strainCurveKey = "whoopStyle.strainCurve.v1"
     private static let autoDetectKey = "whoopStyle.autoDetectWorkouts.v1"
     private static let whoopStressKey = "whoopStyle.stress.v1"
     private static let napRuleKey = "whoopStyle.napRule.v1"
+    private static let whoopScoresKey = "whoopStyle.scores.v1"
 
     private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
     /// NOOP Home sections that WHOOP-style cards replace (Synthesis by the insight card, Key Metrics by

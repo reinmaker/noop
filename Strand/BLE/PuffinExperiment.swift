@@ -121,6 +121,12 @@ enum PuffinExperiment {
 
     static var mainNightMinSeconds: Int { UserDefaults.standard.bool(forKey: whoopNapRuleKey) ? 3 * 3600 : 0 }
 
+    /// Yoop: Recovery and Sleep Performance computed WHOOP's way (`WhoopScores`), fitted to the user's
+    /// WHOOP export.
+    static let whoopScoresKey = "yoopWhoopScores"
+
+    static var whoopScoresEnabled: Bool { UserDefaults.standard.bool(forKey: whoopScoresKey) }
+
     /// The TRIMP recipe every Effort computation on this device should use.
     static var effortMethod: StrainScorer.Method {
         if UserDefaults.standard.bool(forKey: whoopStrainCurveKey) { return .whoop }
