@@ -718,6 +718,8 @@ enum WhoopStylePreset {
         // Recovery and Sleep Performance computed WHOOP's way, fitted to the user's WHOOP export.
         if !defaults.bool(forKey: whoopScoresKey) {
             defaults.set(true, forKey: PuffinExperiment.whoopScoresKey)
+            // HRV measured over deep (slow-wave) sleep, the window WHOOP measures it in.
+            defaults.set(HrvWindow.deep.rawValue, forKey: UnitPrefs.hrvWindowKey)
             defaults.set(true, forKey: whoopScoresKey)
         }
     }

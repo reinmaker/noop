@@ -2208,7 +2208,12 @@ final class IntelligenceEngine: ObservableObject {
         let whoopNeedMin = SleepModel.sleepNeedMin(days: repo.days)
         if whoopScores {
             var byDay: [String: WhoopScores.Inputs] = [:]
-            for d in scoredNights.map({ $0.daily }) + hist {
+            for d in scoredNights.map({ $0.daily }) {
+                byDay[d.day] = WhoopScores.Inputs(day: d.day, hrv: d.avgHrv,
+                                                  rhr: primarySessionRHRByDay[d.day] ?? d.restingHr.map(Double.init),
+                                                  resp: d.respRateBpm)
+            }
+            for d in hist {
                 byDay[d.day] = WhoopScores.Inputs(day: d.day, hrv: d.avgHrv, rhr: d.restingHr.map(Double.init),
                                                   resp: d.respRateBpm)
             }
@@ -2233,6 +2238,11 @@ final class IntelligenceEngine: ObservableObject {
             var daily = sleepEditedDaily(night.daily, detected: night.cachedSleep, editsByStart: editsByStart,
                                          habitualMidsleepSec: habitualMidsleepSec)
             daily = DayCycleIntelligenceIntegration.applying(physiologicalSteps, to: daily)
+            // Yoop: resting HR is the main sleep's mean heart rate, which tracked official WHOOP RHR within
+            // about 1-2 bpm in #1169's test where the five-minute floor read 6-7 bpm low.
+            if whoopScores, let mean = primarySessionRHRByDay[daily.day] {
+                daily = daily.with(restingHr: Int(mean.rounded()))
+            }
             daily = Self.recomputeRecoveryDaily(daily, nightlySkinTempC: night.nightlySkin,
                                                baselines: baselines2)
             if whoopScores, let whoopRecovery = WhoopScores.recovery(
@@ -3609,6 +3619,17 @@ extension DailyMetric {
                     spo2Pct: spo2Pct, skinTempDevC: sd, respRateBpm: respRateBpm,
                     steps: steps, activeKcalEst: activeKcalEst,
                     spo2Red: spo2Red, spo2Ir: spo2Ir, avgSdnn: avgSdnn, skinTempC: sa,
+                    sleepHrOnly: sleepHrOnly)
+    }
+
+    /// Rebuild with a substituted resting heart rate (Yoop: the main sleep's mean heart rate, WHOOP's way).
+    func with(restingHr rhr: Int?) -> DailyMetric {
+        DailyMetric(day: day, totalSleepMin: totalSleepMin, efficiency: efficiency, deepMin: deepMin,
+                    remMin: remMin, lightMin: lightMin, disturbances: disturbances, restingHr: rhr,
+                    avgHrv: avgHrv, recovery: recovery, strain: strain, exerciseCount: exerciseCount,
+                    spo2Pct: spo2Pct, skinTempDevC: skinTempDevC, respRateBpm: respRateBpm,
+                    steps: steps, activeKcalEst: activeKcalEst,
+                    spo2Red: spo2Red, spo2Ir: spo2Ir, avgSdnn: avgSdnn, skinTempC: skinTempC,
                     sleepHrOnly: sleepHrOnly)
     }
 
