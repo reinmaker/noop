@@ -289,7 +289,8 @@ struct WhoopRecoveryScreen: View {
         let days = shown.upTo
         let today = shown.day
         let prior = shown.prior
-        let sleepPerf = SleepModel.performanceSeries(days: days, importedSleep: repo.importedSleep)
+        let sleepPerf = SleepModel.performanceSeries(days: days, importedSleep: repo.importedSleep,
+                                                     sleeps: repo.sleeps)
         let rows = [
             WhoopContributorMath.make(id: "hrv", label: String(localized: "HEART RATE VARIABILITY"),
                                       icon: "waveform.path.ecg", today: today?.avgHrv,

@@ -2199,6 +2199,27 @@ final class IntelligenceEngine: ObservableObject {
             nowLocalMidnight: nowLocalMidnight, now: now, offsetSec: tzOffset,
             maxDays: maxDays, strictCanonicalAlias: strictCanonicalAlias)
         var appliedLegacySnapshots: [String: LegacyScoreSnapshot] = [:]
+        // Yoop: Recovery and Sleep Performance the way WHOOP computes them (`WhoopScores`). Recovery reads
+        // the 14 days before each day (imported WHOOP days win, as on the dashboard); Sleep Performance
+        // needs each night's consistency.
+        let whoopScores = PuffinExperiment.whoopScoresEnabled
+        var whoopHistory: [WhoopScores.Inputs] = []
+        var whoopConsistency: [String: Double] = [:]
+        let whoopNeedMin = SleepModel.sleepNeedMin(days: repo.days)
+        if whoopScores {
+            var byDay: [String: WhoopScores.Inputs] = [:]
+            for d in scoredNights.map({ $0.daily }) + hist {
+                byDay[d.day] = WhoopScores.Inputs(day: d.day, hrv: d.avgHrv, rhr: d.restingHr.map(Double.init),
+                                                  resp: d.respRateBpm)
+            }
+            whoopHistory = byDay.values.sorted { $0.day < $1.day }
+            var seen = Set<Int>()
+            var sleeps: [CachedSleepSession] = []
+            for s in repo.sleeps + scoredNights.flatMap({ $0.cachedSleep }) where seen.insert(s.startTs).inserted {
+                sleeps.append(s)
+            }
+            whoopConsistency = SleepModel.consistencyByWakeDay(sleeps)
+        }
         var paceMark = DispatchTime.now().uptimeNanoseconds
         for night in scoredNights {
             await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
@@ -2214,6 +2235,12 @@ final class IntelligenceEngine: ObservableObject {
             daily = DayCycleIntelligenceIntegration.applying(physiologicalSteps, to: daily)
             daily = Self.recomputeRecoveryDaily(daily, nightlySkinTempC: night.nightlySkin,
                                                baselines: baselines2)
+            if whoopScores, let whoopRecovery = WhoopScores.recovery(
+                day: daily.day, hrv: daily.avgHrv, rhr: daily.restingHr.map(Double.init),
+                resp: daily.respRateBpm, history: whoopHistory) {
+                daily = daily.with(recovery: whoopRecovery, skinTempDevC: daily.skinTempDevC,
+                                   skinTempC: daily.skinTempC)
+            }
             let recovery = daily.recovery
             let skinDev = daily.skinTempDevC
             // Charge term-breakdown trace (Group G): only when the Recovery test mode is on. Emits which
@@ -2303,7 +2330,11 @@ final class IntelligenceEngine: ObservableObject {
             // same `night.nightlySkin` the line above takes the deviation from — so the two can never
             // describe different nights, and no second derivation exists to drift.
             dailies.append(daily)
-            if let rest = AnalyticsEngine.Rest.composite(daily: daily) {
+            let sleepPerformance = whoopScores
+                ? WhoopScores.sleepPerformance(daily: daily, needMin: whoopNeedMin,
+                                               consistency: whoopConsistency[daily.day])
+                : AnalyticsEngine.Rest.composite(daily: daily)
+            if let rest = sleepPerformance {
                 restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: rest))
             }
             if let onset = physiologicalSteps.onsetByWakeDay[daily.day] {

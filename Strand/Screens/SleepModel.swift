@@ -419,10 +419,19 @@ extension SleepModel {
 
     /// Sleep performance %: the imported WHOOP figure when the export carried one for that day;
     /// else the REAL resolved Rest composite for that day. (#614 follow-up)
-    static func performanceSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures]) -> Metric {
+    static func performanceSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
+                                  sleeps: [CachedSleepSession] = []) -> Metric {
         let imported = importedSleep
+        // Yoop: WHOOP's Sleep Performance (hours vs needed, consistency, efficiency; `WhoopScores`).
+        let whoop = PuffinExperiment.whoopScoresEnabled
+        let consistency = whoop ? consistencyByWakeDay(sleeps) : [:]
+        let fallbackNeed = sleepNeedMin(days: days)
         return metric(days: days) { d in
             if let p = imported[d.day]?.performancePct { return p }   // export-verbatim
+            if whoop {
+                return WhoopScores.sleepPerformance(daily: d, needMin: imported[d.day]?.needMin ?? fallbackNeed,
+                                                    consistency: consistency[d.day])
+            }
             return AnalyticsEngine.Rest.composite(daily: d)            // real resolved Rest composite
         }
     }
@@ -443,31 +452,46 @@ extension SleepModel {
             let series = days.compactMap { imported[$0.day]?.consistencyPct }
             return (series.last, nil, mean(series), series)
         }
-        // WHOOP-style consistency, fitted to WHOOP's own nightly figures (RMSE about 6 points): each
-        // night's bedtime and wake time against each of the three nights before it. A pair scores
-        // 1 - ((|bedtime shift| + |wake shift|) / 700 min)^0.75, floored at 0; the night's score is the
-        // mean. Nights, not records: a night broken by a wake-up is one window (`nightWindows`).
+        let scores = consistencyScores(nightWindows(sleeps)).map(\.score)
+        guard !scores.isEmpty else { return (nil, nil, nil, []) }
+        return (scores.last, nil, mean(scores), scores)
+    }
+
+    /// WHOOP-style consistency for each night from the second on, with the night's end: fitted to WHOOP's
+    /// own nightly figures (RMSE about 6 points). Each night's bedtime and wake time against each of the
+    /// three nights before it; a pair scores 1 - ((|bedtime shift| + |wake shift|) / 700 min)^0.75,
+    /// floored at 0, and the night's score is the mean.
+    static func consistencyScores(_ nights: [(start: Int, end: Int)]) -> [(end: Int, score: Double)] {
         let cal = Calendar.current
         func clock(_ ts: Int) -> Double {
             let comps = cal.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(ts)))
             let m = Double((comps.hour ?? 0) * 60 + (comps.minute ?? 0))
             return m < 12 * 60 ? m + 24 * 60 : m   // minutes on a noon-to-noon clock
         }
-        let windows = nightWindows(sleeps).map { w -> (bed: Double, wake: Double) in
+        let windows = nights.map { w -> (bed: Double, wake: Double) in
             let bed = clock(w.start)
             return (bed, bed + Double(w.end - w.start) / 60)
         }
-        guard windows.count >= 2 else { return (nil, nil, nil, []) }
-        var scores: [Double] = []
+        guard windows.count >= 2 else { return [] }
+        var out: [(end: Int, score: Double)] = []
         for i in 1..<windows.count {
             let previous = windows[Swift.max(0, i - 3)..<i]
             let pairScores = previous.map { p -> Double in
                 let shift = abs(windows[i].bed - p.bed) + abs(windows[i].wake - p.wake)
                 return Swift.max(0, 1 - pow(shift / 700, 0.75))
             }
-            scores.append(pairScores.reduce(0, +) / Double(pairScores.count) * 100)
+            out.append((nights[i].end, pairScores.reduce(0, +) / Double(pairScores.count) * 100))
         }
-        return (scores.last, nil, mean(scores), scores)
+        return out
+    }
+
+    /// WHOOP-style consistency keyed by the day each night ends on.
+    static func consistencyByWakeDay(_ sleeps: [CachedSleepSession]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for night in consistencyScores(nightWindows(sleeps)) {
+            out[BodyVitalSigns.logicalDayKey(Date(timeIntervalSince1970: TimeInterval(night.end)))] = night.score
+        }
+        return out
     }
 
     /// One sleep window per night, oldest first, timed the way WHOOP times it: from falling asleep to
@@ -613,7 +637,8 @@ extension SleepModel {
             intervals: night.intervals,
             isPersistedHypnogram: (night.realSegments?.count ?? 0) >= 2,
             isStubNight: isStub,
-            performance: performanceSeries(days: inputs.days, importedSleep: inputs.importedSleep),
+            performance: performanceSeries(days: inputs.days, importedSleep: inputs.importedSleep,
+                                           sleeps: inputs.sleeps),
             efficiency: efficiencySeries(days: inputs.days),
             consistency: consistencySeries(days: inputs.days, sleeps: inputs.sleeps, importedSleep: inputs.importedSleep),
             hoursVsNeeded: hoursVsNeededSeries(days: inputs.days, importedSleep: inputs.importedSleep),
