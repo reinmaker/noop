@@ -14,7 +14,7 @@ final class WhoopActivityDetectorTests: XCTestCase {
         var hr: [(ts: Int, bpm: Int)] = []
         for round in 0..<5 {
             hr += block(110, from: round * 4, minutes: 3)
-            hr += block(72, from: round * 4 + 3, minutes: 1)
+            hr += block(80, from: round * 4 + 3, minutes: 1)
         }
         let found = WhoopActivityDetector.detect(hr: hr, restingBpm: 52, excluded: [])
         XCTAssertEqual(found.count, 1)

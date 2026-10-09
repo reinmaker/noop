@@ -3323,6 +3323,23 @@ final class Repository: ObservableObject {
         return true
     }
 
+    /// Yoop: WHOOP adds a detected activity by itself. Saves each bout found in the last two days as an
+    /// "Activity" and marks it handled, so one the user deletes stays deleted. Runs after every completed
+    /// sync and when Home's Activities card appears. Returns whether anything was added.
+    @discardableResult
+    func addDetectedActivities() async -> Bool {
+        guard PuffinExperiment.whoopScoresEnabled, PuffinExperiment.autoDetectWorkoutsEnabled else { return false }
+        var added = false
+        for _ in 0..<5 {
+            guard let found = await autoDetectCandidate() else { break }
+            dismissDetectedSuggestion(found)
+            guard await saveDetectedWorkout(found, sport: "Activity") else { break }
+            added = true
+        }
+        if added { await refresh() }
+        return added
+    }
+
     /// DISMISS a suggested window: record its span durably so it never re-prompts. Idempotent.
     /// Prunes the stored list on every add (drop spans older than ~30 days + hard-cap to 200 most-recent)
     /// so it can never grow unbounded. Byte-mirrored in the Android `AutoWorkoutPrefs.dismiss`.
