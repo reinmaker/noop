@@ -26,15 +26,24 @@ final class WhoopStressCurveTests: XCTestCase {
         XCTAssertLessThan(result.timeline.first?.level ?? 3, 1.0)
     }
 
-    /// With a day of history the level is the bucket's place in it: 35% low, 52% medium, 13% high.
+    /// With a day of history the level is the bucket's place in it: 50% low, 40% medium, 10% high.
     func testHistoryPlacesTheBucket() {
         let reference = (0..<300).map { Double(50 + $0 / 10) }   // 50...79 bpm
         let sorted = reference.sorted()
         XCTAssertLessThan(WhoopStressCurve.level(meanHR: 52, reference: sorted), 1.0)
-        let middle = WhoopStressCurve.level(meanHR: 65, reference: sorted)
+        XCTAssertLessThan(WhoopStressCurve.level(meanHR: 64, reference: sorted), 1.0)
+        let middle = WhoopStressCurve.level(meanHR: 68, reference: sorted)
         XCTAssertTrue((1.0..<2.0).contains(middle))
         XCTAssertGreaterThanOrEqual(WhoopStressCurve.level(meanHR: 78, reference: sorted), 2.0)
         XCTAssertEqual(WhoopStressCurve.level(meanHR: 120, reference: sorted), 3.0, accuracy: 1e-9)
+    }
+
+    /// A day like the reference splits like the user's WHOOP trends: half low, a tenth high.
+    func testTypicalDaySplitsLikeWhoopTrends() {
+        let reference = (0..<1000).map(Double.init)
+        let levels = reference.map { WhoopStressCurve.level(meanHR: $0, reference: reference) }
+        XCTAssertEqual(Double(levels.filter { $0 < 1 }.count) / 1000, 0.50, accuracy: 0.01)
+        XCTAssertEqual(Double(levels.filter { $0 >= 2 }.count) / 1000, 0.10, accuracy: 0.01)
     }
 
     func testTooSparseOrNoRestingRateScoresNothing() {

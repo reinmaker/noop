@@ -5,8 +5,10 @@ import WhoopProtocol
 // WhoopStressCurve.swift — WHOOP-style stress across the whole day, sleep included.
 //
 // Each 5-minute bucket's mean heart rate is placed in the user's own last 14 days of 5-minute heart
-// rates: the bottom 35% reads low, the next 52% medium, the top 13% high, the shares WHOOP's Stress
-// Monitor gave this user on 6 Oct 2026 (sleep low, an ordinary waking day medium, 2 h 48 min high).
+// rates: the bottom 50% reads low, the next 40% medium, the top 10% high. Those are this user's shares
+// in WHOOP's Stress Monitor trends (read 9 Oct 2026): 47/42/11 averaged over Jun to Oct, 52/39/9 over
+// the last 30 days. The first fit used the shares of one day, 6 Oct (35/52/13), which WHOOP itself
+// called 41 min above a typical day, and read every day too stressed.
 // Until there is a day of history it falls back to the nightly resting heart rate: rest about 0.6
 // (low), +20 bpm 1.5, +30 bpm high. Reading against resting heart rate alone still put 7 hours of a day
 // high, because one low resting figure moves every bucket; `DaytimeStress`, which scores each hour
@@ -37,11 +39,14 @@ enum WhoopStressCurve {
     /// qualifies; under that, the resting-rate curve put 7 of that day's hours high.
     static let minReferenceBuckets: Int = 144
 
+    /// Share of the reference that reads low, and the share below the high band.
+    static let lowShare = 0.50
+    static let highFloorShare = 0.90
+
     /// WHOOP-scale stress (0-3) for a mean heart rate placed in the user's own recent 5-minute heart
-    /// rates (`reference`, sorted ascending): the bottom 35% reads low, the next 52% medium and the top
-    /// 13% high. Those are the shares WHOOP's Stress Monitor gave this user on 6 Oct 2026 (7:41 low,
-    /// 11:11 medium, 2:48 high), so a typical day comes out like WHOOP's, and a day running hotter than
-    /// usual spends more of itself high.
+    /// rates (`reference`, sorted ascending): the bottom 50% reads low, the next 40% medium and the top
+    /// 10% high, this user's typical shares in WHOOP's trends, so a typical day comes out like WHOOP's
+    /// and a day running hotter than usual spends more of itself high.
     static func level(meanHR: Double, reference sorted: [Double]) -> Double {
         var lo = 0, hi = sorted.count
         while lo < hi {
@@ -49,9 +54,9 @@ enum WhoopStressCurve {
             if sorted[mid] < meanHR { lo = mid + 1 } else { hi = mid }
         }
         let p = Double(lo) / Double(max(1, sorted.count))
-        if p < 0.35 { return p / 0.35 }
-        if p < 0.87 { return 1 + (p - 0.35) / 0.52 }
-        return min(3, 2 + (p - 0.87) / 0.13)
+        if p < lowShare { return p / lowShare }
+        if p < highFloorShare { return 1 + (p - lowShare) / (highFloorShare - lowShare) }
+        return min(3, 2 + (p - highFloorShare) / (1 - highFloorShare))
     }
 
     /// The day's stress, one point per scored 5-minute bucket, earliest first. With at least a day of
