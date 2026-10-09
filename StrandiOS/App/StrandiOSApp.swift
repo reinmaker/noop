@@ -728,14 +728,6 @@ enum WhoopStylePreset {
             defaults.set(HrvWindow.whole.rawValue, forKey: UnitPrefs.hrvWindowKey)
             defaults.set(true, forKey: hrvWholeKey)
         }
-        // Live recording all day (the user's choice): the strap streams every beat to Yoop as it happens,
-        // so a night or workout another app pulls off the strap first is still recorded, and HRV is
-        // measured from every beat instead of the sparser stored history.
-        if !defaults.bool(forKey: liveCaptureKey) {
-            defaults.set(true, forKey: PuffinExperiment.keepRealtimeForDataKey)
-            defaults.set(false, forKey: PuffinExperiment.continuousHrvOvernightOnlyKey)
-            defaults.set(true, forKey: liveCaptureKey)
-        }
     }
 
     private static let strainCurveKey = "whoopStyle.strainCurve.v1"
@@ -744,7 +736,6 @@ enum WhoopStylePreset {
     private static let napRuleKey = "whoopStyle.napRule.v1"
     private static let whoopScoresKey = "whoopStyle.scores.v1"
     private static let hrvWholeKey = "whoopStyle.hrvWhole.v1"
-    private static let liveCaptureKey = "whoopStyle.liveCapture.v1"
 
     private static let homeLayoutKey = "whoopStyle.homeLayout.v1"
     /// NOOP Home sections that WHOOP-style cards replace (Synthesis by the insight card, Key Metrics by
