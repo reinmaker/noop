@@ -400,7 +400,8 @@ struct LiquidTodayView: View {
                     // (after the cards block, before Data Sources) and the same leaf Android renders.
                     // Self-gates on the toggle AND on the detector finding an unsaved, un-dismissed window,
                     // so it renders nothing by default.
-                    AutoWorkoutCard()
+                    // Yoop adds detected activities to My Day's Activities card itself (WHOOP's way).
+                    if !PuffinExperiment.whoopScoresEnabled { AutoWorkoutCard() }
                     dataSourcesSection
                     Color.clear.frame(height: 90) // floating tab-bar clearance
                 }

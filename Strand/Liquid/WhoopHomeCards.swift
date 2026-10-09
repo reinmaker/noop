@@ -153,8 +153,20 @@ struct WhoopActivitiesCard: View {
     let workouts: [WorkoutRow]
 
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var repo: Repository
     @State private var showLiveWorkout = false
     @State private var showStartSport = false
+
+    /// WHOOP adds a detected activity to the day by itself. A bout found in the last two days is saved
+    /// as an "Activity" and also marked handled, so deleting it later keeps it gone.
+    private func addDetectedActivities() async {
+        guard PuffinExperiment.whoopScoresEnabled, PuffinExperiment.autoDetectWorkoutsEnabled,
+              let found = await repo.autoDetectCandidate() else { return }
+        repo.dismissDetectedSuggestion(found)
+        if await repo.saveDetectedWorkout(found, sport: "Activity") {
+            await repo.refresh()
+        }
+    }
 
     var body: some View {
         WhoopTitledCard(title: String(localized: "ACTIVITIES"), showsChevron: false) {
@@ -211,6 +223,7 @@ struct WhoopActivitiesCard: View {
                 showLiveWorkout = true
             }
         }
+        .task(id: repo.refreshSeq) { await addDetectedActivities() }
     }
 
     private func row(icon: String, chip: String, chipColor: Color, name: String,
