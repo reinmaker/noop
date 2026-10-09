@@ -3296,7 +3296,10 @@ final class Repository: ObservableObject {
             let reference = recent.isEmpty ? (restingBpm ?? AutoWorkoutDetector.defaultRestingHR) : recent[recent.count / 2]
             let excluded = saved.map { $0.startTs...max($0.startTs, $0.endTs) }
                 + sleeps.map { $0.effectiveStartTs...max($0.effectiveStartTs, $0.endTs) }
+            // Only bouts that have ended (no raised minute in the last five): one still going is added once
+            // it finishes, with its full length, rather than cut at the moment it was first seen.
             candidates = WhoopActivityDetector.detect(hr: hr, restingBpm: reference, excluded: excluded)
+                .filter { $0.endSec <= now - 5 * 60 }
         } else {
             candidates = AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
                                                     motion: nil, savedSpans: savedSpans,
