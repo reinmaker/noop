@@ -3296,7 +3296,10 @@ final class Repository: ObservableObject {
             let reference = recent.isEmpty ? (restingBpm ?? AutoWorkoutDetector.defaultRestingHR) : recent[recent.count / 2]
             let excluded = saved.map { $0.startTs...max($0.startTs, $0.endTs) }
                 + sleeps.map { $0.effectiveStartTs...max($0.effectiveStartTs, $0.endTs) }
+            // Only bouts that have ended (no raised minute in the last five): one still going is added once
+            // it finishes, with its full length, rather than cut at the moment it was first seen.
             candidates = WhoopActivityDetector.detect(hr: hr, restingBpm: reference, excluded: excluded)
+                .filter { $0.endSec <= now - 5 * 60 }
         } else {
             candidates = AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
                                                     motion: nil, savedSpans: savedSpans,
@@ -3321,6 +3324,23 @@ final class Repository: ObservableObject {
                                                      energyKcal: nil) else { return false }
         await saveManualWorkout(row)
         return true
+    }
+
+    /// Yoop: WHOOP adds a detected activity by itself. Saves each bout found in the last two days as an
+    /// "Activity" and marks it handled, so one the user deletes stays deleted. Runs after every completed
+    /// sync and when Home's Activities card appears. Returns whether anything was added.
+    @discardableResult
+    func addDetectedActivities() async -> Bool {
+        guard PuffinExperiment.whoopScoresEnabled, PuffinExperiment.autoDetectWorkoutsEnabled else { return false }
+        var added = false
+        for _ in 0..<5 {
+            guard let found = await autoDetectCandidate() else { break }
+            dismissDetectedSuggestion(found)
+            guard await saveDetectedWorkout(found, sport: "Activity") else { break }
+            added = true
+        }
+        if added { await refresh() }
+        return added
     }
 
     /// DISMISS a suggested window: record its span durably so it never re-prompts. Idempotent.

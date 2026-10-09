@@ -174,7 +174,9 @@ struct CoachView: View {
             guard let prompt = coach.pendingPrompt, !prompt.isEmpty else { return }
             coach.pendingPrompt = nil
             guard coach.isConfigured else { return }
-            await coach.send(prompt)
+            // Its own Task, not this one: clearing pendingPrompt changes this task's id, so SwiftUI
+            // cancels it, and an awaited send went with it ("Network problem: cancelled").
+            Task { await coach.send(prompt) }
         }
         // K15: persist the composer draft so it survives an app relaunch.
         .onChangeCompat(of: draft) { newValue in

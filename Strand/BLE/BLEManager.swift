@@ -662,7 +662,9 @@ public final class BLEManager: NSObject, ObservableObject {
     /// other lever composes on top with `max`, so a lever can only ever make the cadence QUIETER, never
     /// restore a faster one the user asked to slow down. Unit-testable without a CoreBluetooth seam.
     static func baseBackfillInterval(lowRefresh: Bool) -> Int {
-        lowRefresh ? lowRefreshBackfillIntervalSeconds : backfillIntervalSeconds
+        if lowRefresh { return lowRefreshBackfillIntervalSeconds }
+        // Yoop: sync every 5 minutes so a finished workout lands in the day about as fast as in WHOOP's app.
+        return PuffinExperiment.whoopScoresEnabled ? BackfillPolicy.yoopPeriodicFloorSeconds : backfillIntervalSeconds
     }
 
     /// #battery: is a keep-alive tick due to poll the strap's battery?

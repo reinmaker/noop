@@ -19,6 +19,8 @@ enum BackfillTrigger {
 /// (observed: ~15-min periodic + expedited event syncs).
 enum BackfillPolicy {
     static let periodicFloorSeconds: TimeInterval = 900   // 15 min
+    /// Yoop's periodic floor: 5 min, so a finished workout shows within minutes as in WHOOP's app.
+    static let yoopPeriodicFloorSeconds = 300
     static let eventFloorSeconds: TimeInterval = 90       // absorbs reconnect-flaps / event bursts
     static let emptyBackoffThreshold = 3                  // empties before the floor starts stretching
     static let maxEmptyBackoff: Double = 4                // cap → ~6-min event / 1-hr periodic floor
@@ -57,7 +59,9 @@ enum BackfillPolicy {
         // trust the range) but each holds the link ~60s and starves the WHOOP4 realtime-HR re-arm, so skip
         // them entirely — not just stretch the floor. The .connect pass above still re-checks the clock.
         case .strap:                 return !clockUntrusted && elapsed >= eventFloorSeconds * backoff
-        case .periodic:              return !clockUntrusted && elapsed >= periodicFloorSeconds * backoff
+        case .periodic:
+            let floor = PuffinExperiment.whoopScoresEnabled ? TimeInterval(yoopPeriodicFloorSeconds) : periodicFloorSeconds
+            return !clockUntrusted && elapsed >= floor * backoff
         }
     }
 }

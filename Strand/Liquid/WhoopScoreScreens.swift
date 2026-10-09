@@ -197,15 +197,18 @@ struct WhoopWeeklyBars: View {
     let points: [(day: String, value: Double, label: String, color: Color)]
     let maxValue: Double
 
-    /// The day under the reader's finger: the other bars dim and the day's value is read out.
+    /// The bar under the reader's finger: the other bars dim and the day's value is read out.
     @State private var selected: String?
 
+    /// Keyed by position, not by weekday: seven entries with a missing day among them span eight days,
+    /// so two share a weekday, and a weekday key stacked them into one bar taller than the card.
     private struct Bar: Identifiable {
         let id: Int
         let day: String
         let value: Double
         let label: String
         let color: Color
+        var key: String { String(id) }
     }
 
     var body: some View {
@@ -218,19 +221,25 @@ struct WhoopWeeklyBars: View {
                     .foregroundStyle(StrandPalette.textTertiary)
             } else {
                 Chart(bars) { bar in
-                    let dimmed = selected != nil && selected != bar.day
-                    BarMark(x: .value("Day", bar.day), y: .value("Value", bar.value), width: .ratio(0.5))
+                    let dimmed = selected != nil && selected != bar.key
+                    BarMark(x: .value("Day", bar.key), y: .value("Value", bar.value), width: .ratio(0.5))
                         .foregroundStyle(bar.color.opacity(dimmed ? 0.3 : 1))
                         .annotation(position: .top, spacing: 2) {
                             Text(bar.label)
-                                .font(selected == bar.day ? WhoopStyle.smallLabel : WhoopStyle.chevron)
+                                .font(selected == bar.key ? WhoopStyle.smallLabel : WhoopStyle.chevron)
                                 .foregroundStyle(bar.color.opacity(dimmed ? 0.4 : 1))
                         }
                 }
-                .chartYScale(domain: 0...(maxValue * 1.1))
+                // Room for the tallest bar and its label even when it passes the usual top.
+                .chartYScale(domain: 0...(max(maxValue, bars.map(\.value).max() ?? 0) * 1.1))
                 .chartYAxis(.hidden)
                 .chartXAxis {
-                    AxisMarks { _ in AxisValueLabel().foregroundStyle(StrandPalette.textSecondary) }
+                    AxisMarks { value in
+                        AxisValueLabel {
+                            Text(value.as(String.self).flatMap { k in bars.first { $0.key == k }?.day } ?? "")
+                                .foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
                 }
                 .whoopScrub($selected)
                 .frame(height: 170)
@@ -250,6 +259,15 @@ enum WhoopSelectedDay {
         let index = key.flatMap { k in days.lastIndex(where: { $0.day == k }) } ?? days.count - 1
         let upTo = Array(days[...index])
         return (days[index], upTo, Array(upTo.dropLast().suffix(30)))
+    }
+
+    /// The days within the seven calendar days ending on the last one. `suffix(7)` alone reaches back past
+    /// a missing day, so a weekly chart showed eight days with one weekday twice.
+    nonisolated static func lastWeek(_ days: [DailyMetric]) -> [DailyMetric] {
+        guard let last = days.last, let end = WhoopDays.parser.date(from: last.day),
+              let start = Calendar.current.date(byAdding: .day, value: -6, to: end) else { return Array(days.suffix(7)) }
+        let from = WhoopDays.parser.string(from: start)
+        return days.suffix(7).filter { $0.day >= from }
     }
 
     /// "TODAY" for the latest day, otherwise the weekday and date.
@@ -306,7 +324,7 @@ struct WhoopRecoveryScreen: View {
                                       suffix: "%", higherIsBetter: true),
         ]
         let recovery = today?.recovery
-        let week = days.suffix(7)
+        let week = WhoopSelectedDay.lastWeek(days)
 
         ScrollView {
             VStack(spacing: NoopMetrics.space4) {
@@ -400,7 +418,7 @@ struct WhoopStrainScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, NoopMetrics.space2)
                 WhoopWeeklyBars(title: String(localized: "STRAIN"),
-                                points: days.suffix(7).compactMap { d in
+                                points: WhoopSelectedDay.lastWeek(days).compactMap { d in
                                     d.strain.map { s -> (day: String, value: Double, label: String, color: Color) in
                                         let v = AICoachEngine.strain21(s)
                                         return (WhoopDays.short(d.day), v, String(format: "%.1f", v), StrandPalette.effortColor)

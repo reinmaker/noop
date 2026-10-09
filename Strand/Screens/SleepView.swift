@@ -526,7 +526,7 @@ struct SleepView: View {
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
         parser.dateFormat = "yyyy-MM-dd"
-        return repo.days.suffix(7).compactMap { d -> (day: String, value: Double, label: String, color: Color)? in
+        return WhoopSelectedDay.lastWeek(repo.days).compactMap { d -> (day: String, value: Double, label: String, color: Color)? in
             guard let minutes = d.totalSleepMin else { return nil }
             let label = parser.date(from: d.day).map { $0.formatted(.dateTime.weekday(.abbreviated)) } ?? d.day
             let text = String(format: "%d:%02d", Int(minutes) / 60, Int(minutes) % 60)
