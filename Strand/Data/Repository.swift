@@ -3326,21 +3326,75 @@ final class Repository: ObservableObject {
         return true
     }
 
-    /// Yoop: WHOOP adds a detected activity by itself. Saves each bout found in the last two days as an
-    /// "Activity" and marks it handled, so one the user deletes stays deleted. Runs after every completed
-    /// sync and when Home's Activities card appears. Returns whether anything was added.
+    /// Yoop: WHOOP adds a detected activity by itself. Saves each bout found in the last two days under
+    /// the type `WhoopActivityTyper` reads from the user's history ("Activity" when unsure) and marks it
+    /// handled, so one the user deletes stays deleted. Runs after every completed sync and when Home's
+    /// Activities card appears. Returns whether anything was added.
     @discardableResult
     func addDetectedActivities() async -> Bool {
         guard PuffinExperiment.whoopScoresEnabled, PuffinExperiment.autoDetectWorkoutsEnabled else { return false }
         var added = false
+        var history: [WhoopActivityTyper.Example]?
         for _ in 0..<5 {
             guard let found = await autoDetectCandidate() else { break }
+            if history == nil { history = await activityTypeHistory() }
+            let sport = WhoopActivityTyper.guess(avgBpm: Double(found.avgBpm), maxBpm: Double(found.peakBpm),
+                                                 durationMin: Double(found.durationMin),
+                                                 startHour: Self.localHour(found.startSec),
+                                                 history: history ?? []) ?? "Activity"
             dismissDetectedSuggestion(found)
-            guard await saveDetectedWorkout(found, sport: "Activity") else { break }
+            guard await saveDetectedWorkout(found, sport: sport) else { break }
+            autoTypedStarts = Array((autoTypedStarts + [found.startSec]).suffix(200))
             added = true
         }
         if added { await refresh() }
         return added
+    }
+
+    /// Start times of activities Yoop added and typed by itself. Their type is a guess, so they are not
+    /// learnt from until the user picks one (`changeActivityType`).
+    private static let autoTypedKey = "yoop.autoTypedActivityStarts"
+    private var autoTypedStarts: [Int] {
+        get { (UserDefaults.standard.array(forKey: Self.autoTypedKey) as? [Int]) ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: Self.autoTypedKey) }
+    }
+
+    /// Whether Yoop named this activity itself and the user has not picked a type for it yet.
+    func isAutoTyped(_ row: WorkoutRow) -> Bool {
+        WorkoutSource.classify(row.source) == .manual && autoTypedStarts.contains(row.startTs)
+    }
+
+    /// The user's own say on what an activity was. Saves it under the new type and drops it from the
+    /// guesses, so the next detection learns from it.
+    func changeActivityType(_ row: WorkoutRow, to sport: String) async {
+        let trimmed = sport.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, WorkoutSource.classify(row.source) == .manual else { return }
+        let renamed = WorkoutRow(startTs: row.startTs, endTs: row.endTs, sport: trimmed, source: row.source,
+                                 durationS: row.durationS, energyKcal: row.energyKcal, avgHr: row.avgHr,
+                                 maxHr: row.maxHr, strain: row.strain, distanceM: row.distanceM,
+                                 zonesJSON: row.zonesJSON, notes: row.notes, steps: row.steps)
+        await saveManualWorkout(renamed, replacing: row)
+        autoTypedStarts.removeAll { $0 == row.startTs }
+        await refresh()
+    }
+
+    /// Every workout of the last year with a real type and heart rate, minus Yoop's unconfirmed guesses.
+    private func activityTypeHistory() async -> [WhoopActivityTyper.Example] {
+        let guesses = Set(autoTypedStarts)
+        return await workoutRows(days: 365).compactMap { r -> WhoopActivityTyper.Example? in
+            guard !guesses.contains(r.startTs), !WhoopActivityTyper.isUnnamed(r.sport),
+                  let avg = r.avgHr, let peak = r.maxHr, r.endTs > r.startTs else { return nil }
+            return WhoopActivityTyper.Example(sport: WorkoutSource.displaySport(r.sport), avgBpm: Double(avg),
+                                              maxBpm: Double(peak),
+                                              durationMin: Double(r.endTs - r.startTs) / 60,
+                                              startHour: Self.localHour(r.startTs))
+        }
+    }
+
+    /// Local clock hour of a moment, with minutes as a fraction (14:30 is 14.5).
+    nonisolated private static func localHour(_ ts: Int) -> Double {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(ts)))
+        return Double(parts.hour ?? 12) + Double(parts.minute ?? 0) / 60
     }
 
     /// DISMISS a suggested window: record its span durably so it never re-prompts. Idempotent.

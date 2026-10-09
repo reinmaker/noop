@@ -156,6 +156,15 @@ struct WhoopActivitiesCard: View {
     @EnvironmentObject private var repo: Repository
     @State private var showLiveWorkout = false
     @State private var showStartSport = false
+    /// The activity tapped (its options), the one being re-typed, and the one whose details are open.
+    @State private var picked: ActivityTarget?
+    @State private var retyping: ActivityTarget?
+    @State private var detail: ActivityTarget?
+
+    struct ActivityTarget: Identifiable {
+        let row: WorkoutRow
+        var id: Int { row.startTs }
+    }
 
     /// WHOOP adds a detected activity to the day by itself (`Repository.addDetectedActivities`).
     private func addDetectedActivities() async {
@@ -174,15 +183,15 @@ struct WhoopActivitiesCard: View {
                     .buttonStyle(.plain)
                 }
                 ForEach(workouts, id: \.startTs) { w in
-                    NavigationLink(value: TabRoute.workouts) {
-                        row(icon: "figure.run",
-                            chip: w.strain.map { String(format: "%.1f", AICoachEngine.strain21($0)) } ?? "–",
-                            chipColor: StrandPalette.effortColor,
-                            name: WorkoutSource.displaySport(w.sport).uppercased(),
-                            start: Date(timeIntervalSince1970: TimeInterval(w.startTs)),
-                            end: Date(timeIntervalSince1970: TimeInterval(w.endTs)))
+                    // An activity of the user's own (detected by Yoop or logged) opens its options, where
+                    // the type can be changed; imported history is read-only and opens the list.
+                    if WorkoutSource.classify(w.source) == .manual {
+                        Button { picked = ActivityTarget(row: w) } label: { workoutRow(w) }
+                            .buttonStyle(.plain)
+                    } else {
+                        NavigationLink(value: TabRoute.workouts) { workoutRow(w) }
+                            .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
                 if sleepMinutes == nil && workouts.isEmpty {
                     Text("No activities yet today")
@@ -190,6 +199,35 @@ struct WhoopActivitiesCard: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+            }
+            .confirmationDialog(picked.map { WorkoutSource.displaySport($0.row.sport) } ?? "",
+                                isPresented: Binding(get: { picked != nil }, set: { if !$0 { picked = nil } }),
+                                titleVisibility: .visible, presenting: picked) { target in
+                Button("Change activity type") { retyping = target }
+                Button("Details") { detail = target }
+                Button("Not an activity", role: .destructive) {
+                    Task { await repo.deleteWorkout(target.row); await repo.refresh() }
+                }
+            } message: { target in
+                if repo.isAutoTyped(target.row) { Text("Yoop named this from your heart rate.") }
+            }
+            .workoutSelectionCover(item: $retyping) { target in
+                StartWorkoutSheet(title: String(localized: "Change activity"),
+                                  subtitle: String(localized: "Pick what this was. Yoop learns from your choice for the next ones."),
+                                  actionVerb: String(localized: "Choose")) { name in
+                    Task { await repo.changeActivityType(target.row, to: name) }
+                }
+            }
+            .sheet(item: $detail) { target in
+                NavigationStack {
+                    WorkoutDetailView(row: target.row)
+                        .environmentObject(repo)
+                }
+                #if os(iOS)
+                .noopSheetPresentation(largeFirst: true)
+                #else
+                .frame(width: 620, height: 720)
+                #endif
             }
             HStack(spacing: NoopMetrics.space2) {
                 NavigationLink(value: TabRoute.workouts) {
@@ -218,6 +256,15 @@ struct WhoopActivitiesCard: View {
             }
         }
         .task(id: repo.refreshSeq) { await addDetectedActivities() }
+    }
+
+    private func workoutRow(_ w: WorkoutRow) -> some View {
+        row(icon: "figure.run",
+            chip: w.strain.map { String(format: "%.1f", AICoachEngine.strain21($0)) } ?? "–",
+            chipColor: StrandPalette.effortColor,
+            name: WorkoutSource.displaySport(w.sport).uppercased(),
+            start: Date(timeIntervalSince1970: TimeInterval(w.startTs)),
+            end: Date(timeIntervalSince1970: TimeInterval(w.endTs)))
     }
 
     private func row(icon: String, chip: String, chipColor: Color, name: String,
