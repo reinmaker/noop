@@ -261,6 +261,15 @@ enum WhoopSelectedDay {
         return (days[index], upTo, Array(upTo.dropLast().suffix(30)))
     }
 
+    /// The days within the seven calendar days ending on the last one. `suffix(7)` alone reaches back past
+    /// a missing day, so a weekly chart showed eight days with one weekday twice.
+    nonisolated static func lastWeek(_ days: [DailyMetric]) -> [DailyMetric] {
+        guard let last = days.last, let end = WhoopDays.parser.date(from: last.day),
+              let start = Calendar.current.date(byAdding: .day, value: -6, to: end) else { return Array(days.suffix(7)) }
+        let from = WhoopDays.parser.string(from: start)
+        return days.suffix(7).filter { $0.day >= from }
+    }
+
     /// "TODAY" for the latest day, otherwise the weekday and date.
     static func title(_ day: DailyMetric?, days: [DailyMetric]) -> String {
         guard let day, day.day != days.last?.day,
@@ -315,7 +324,7 @@ struct WhoopRecoveryScreen: View {
                                       suffix: "%", higherIsBetter: true),
         ]
         let recovery = today?.recovery
-        let week = days.suffix(7)
+        let week = WhoopSelectedDay.lastWeek(days)
 
         ScrollView {
             VStack(spacing: NoopMetrics.space4) {
@@ -409,7 +418,7 @@ struct WhoopStrainScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, NoopMetrics.space2)
                 WhoopWeeklyBars(title: String(localized: "STRAIN"),
-                                points: days.suffix(7).compactMap { d in
+                                points: WhoopSelectedDay.lastWeek(days).compactMap { d in
                                     d.strain.map { s -> (day: String, value: Double, label: String, color: Color) in
                                         let v = AICoachEngine.strain21(s)
                                         return (WhoopDays.short(d.day), v, String(format: "%.1f", v), StrandPalette.effortColor)

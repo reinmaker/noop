@@ -586,16 +586,26 @@ struct WhoopStrainRecoveryCard: View {
         return d.formatted(.dateTime.weekday(.abbreviated))
     }
 
+    /// The seven calendar days ending on the latest day, as day keys. Points are keyed by these, not by
+    /// weekday name: seven entries with a missing day among them reach back eight days, and two Fridays
+    /// on one weekday slot sent the lines back across the chart. A day with no data keeps its slot.
+    private var week: [String] {
+        guard let last = days.last?.day, let end = Self.dayParser.date(from: last) else { return [] }
+        return (0..<7).reversed().compactMap { Calendar.current.date(byAdding: .day, value: -$0, to: end) }
+            .map { Self.dayParser.string(from: $0) }
+    }
+
     private var points: [Point] {
-        days.suffix(7).flatMap { d -> [Point] in
+        let keys = Set(week)
+        return days.suffix(8).filter { keys.contains($0.day) }.flatMap { d -> [Point] in
             var out: [Point] = []
             if let s = d.strain {
                 let v = AICoachEngine.strain21(s)
-                out.append(Point(day: shortDay(d.day), series: "Strain", value: v,
+                out.append(Point(day: d.day, series: "Strain", value: v,
                                  label: String(format: "%.1f", v), color: StrandPalette.effortColor))
             }
             if let r = d.recovery {
-                out.append(Point(day: shortDay(d.day), series: "Recovery", value: r * 21 / 100,
+                out.append(Point(day: d.day, series: "Recovery", value: r * 21 / 100,
                                  label: "\(Int(r.rounded()))%", color: StrandPalette.recoveryColor(r)))
             }
             return out
@@ -638,8 +648,14 @@ struct WhoopStrainRecoveryCard: View {
                         AxisValueLabel().foregroundStyle(StrandPalette.textTertiary)
                     }
                 }
+                .chartXScale(domain: week)
                 .chartXAxis {
-                    AxisMarks { _ in AxisValueLabel().foregroundStyle(StrandPalette.textSecondary) }
+                    AxisMarks(values: week) { value in
+                        AxisValueLabel {
+                            Text(shortDay(value.as(String.self) ?? ""))
+                                .foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
                 }
                 .frame(height: 190)
             }
@@ -654,7 +670,7 @@ extension WhoopStrainRecoveryCard {
         let held = all.filter { $0.day == selectedDay }
         return HStack(spacing: NoopMetrics.space3) {
             if let selectedDay, !held.isEmpty {
-                Text(selectedDay)
+                Text(shortDay(selectedDay))
                     .font(WhoopStyle.smallLabel)
                     .foregroundStyle(StrandPalette.textPrimary)
                 ForEach(held) { p in
