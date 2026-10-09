@@ -158,6 +158,9 @@ jobs:
 
   android:
     needs: bump
+    # Yoop ships to iPhone only (AltStore). Skipped to keep the fork's Actions usage down: GitHub paused
+    # this fork's workflows for usage after about 30 releases in two days.
+    if: false
     runs-on: ubuntu-latest
     # Uploads the built APK to the release created by the `bump` job.
     permissions:
@@ -191,6 +194,8 @@ jobs:
 
   macos:
     needs: bump
+    # Yoop ships to iPhone only; see the android job.
+    if: false
     runs-on: macos-15
     timeout-minutes: 40
     # Uploads the built .app zip to the release created by the `bump` job.
