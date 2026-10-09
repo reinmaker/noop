@@ -3289,6 +3289,14 @@ final class Repository: ObservableObject {
                 emitWorkouts(line)
             }
             candidates = results
+        } else if PuffinExperiment.whoopScoresEnabled {
+            // Yoop: WHOOP-style detection that keeps a bout through set breaks, against the median
+            // resting HR of the last two weeks (one low night cannot move it), never over a sleep.
+            let recent = days.suffix(14).compactMap(\.restingHr).sorted()
+            let reference = recent.isEmpty ? (restingBpm ?? AutoWorkoutDetector.defaultRestingHR) : recent[recent.count / 2]
+            let excluded = saved.map { $0.startTs...max($0.startTs, $0.endTs) }
+                + sleeps.map { $0.effectiveStartTs...max($0.effectiveStartTs, $0.endTs) }
+            candidates = WhoopActivityDetector.detect(hr: hr, restingBpm: reference, excluded: excluded)
         } else {
             candidates = AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
                                                     motion: nil, savedSpans: savedSpans,
@@ -3305,11 +3313,11 @@ final class Repository: ObservableObject {
     /// it persists exactly like a hand-entered session under the strap source. After saving, the screen
     /// re-queries (the new saved span now excludes this window from re-suggestion).
     @discardableResult
-    func saveDetectedWorkout(_ w: DetectedWorkout) async -> Bool {
+    func saveDetectedWorkout(_ w: DetectedWorkout, sport: String = "Workout") async -> Bool {
         let durationMin = max(1, w.durationMin)
         let start = Date(timeIntervalSince1970: TimeInterval(w.startSec))
         guard let row = WorkoutSource.buildManualRow(start: start, durationMin: durationMin,
-                                                     sport: "Workout", avgHr: w.avgBpm,
+                                                     sport: sport, avgHr: w.avgBpm,
                                                      energyKcal: nil) else { return false }
         await saveManualWorkout(row)
         return true
