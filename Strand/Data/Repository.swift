@@ -3363,9 +3363,10 @@ final class Repository: ObservableObject {
     private func reconcileAutoActivities(daysBack: Int = 2) async -> Bool {
         let from = Int(Date().timeIntervalSince1970) - daysBack * 86_400
         let auto = Set(autoTypedStarts)
+        let userTyped = Set(userTypedDetectedStarts)
         let rows = await workoutRows(days: daysBack + 1).filter {
             WorkoutSource.classify($0.source) == .manual && $0.startTs >= from
-                && (auto.contains($0.startTs) || $0.sport == "Activity")
+                && (auto.contains($0.startTs) || userTyped.contains($0.startTs) || $0.sport == "Activity")
         }
         guard !rows.isEmpty else { return false }
         let bouts = await yoopActivityBouts(daysBack: daysBack, ignoring: Set(rows.map(\.startTs)))
@@ -3373,11 +3374,31 @@ final class Repository: ObservableObject {
         for row in rows where !bouts.contains(where: {
             abs($0.startSec - row.startTs) <= 120 && abs($0.endSec - row.endTs) <= 120
         }) {
-            await deleteWorkout(row)
-            autoTypedStarts.removeAll { $0 == row.startTs }
+            if userTyped.contains(row.startTs) {
+                // The type is the user's, the span the detector's: move the span, keep the type. With no
+                // bout over it any more the row stays, since the user said what it was.
+                guard let bout = bouts.first(where: { $0.startSec < row.endTs && row.startTs < $0.endSec }) else {
+                    continue
+                }
+                await deleteWorkout(row)
+                dismissDetectedSuggestion(bout)
+                guard await saveDetectedWorkout(bout, sport: row.sport) else { continue }
+                userTypedDetectedStarts = userTypedDetectedStarts.filter { $0 != row.startTs } + [bout.startSec]
+            } else {
+                await deleteWorkout(row)
+                autoTypedStarts.removeAll { $0 == row.startTs }
+            }
             changed = true
         }
         return changed
+    }
+
+    /// Activities Yoop detected whose type the user then set. The type is theirs but the span is still the
+    /// detector's, so a corrected rule may move the span while keeping the type (`reconcileAutoActivities`).
+    private static let userTypedDetectedKey = "yoop.userTypedDetectedStarts"
+    private var userTypedDetectedStarts: [Int] {
+        get { (UserDefaults.standard.array(forKey: Self.userTypedDetectedKey) as? [Int]) ?? [] }
+        set { UserDefaults.standard.set(Array(newValue.suffix(200)), forKey: Self.userTypedDetectedKey) }
     }
 
     /// SAVE a suggested window as a manual-style "Workout" (generic sport , we don't claim a sport we
@@ -3443,8 +3464,13 @@ final class Repository: ObservableObject {
                                  durationS: row.durationS, energyKcal: row.energyKcal, avgHr: row.avgHr,
                                  maxHr: row.maxHr, strain: row.strain, distanceM: row.distanceM,
                                  zonesJSON: row.zonesJSON, notes: row.notes, steps: row.steps)
+        let detected = autoTypedStarts.contains(row.startTs) || WhoopActivityTyper.isUnnamed(row.sport)
+            || userTypedDetectedStarts.contains(row.startTs)
         await saveManualWorkout(renamed, replacing: row)
         autoTypedStarts.removeAll { $0 == row.startTs }
+        if detected {
+            userTypedDetectedStarts = userTypedDetectedStarts.filter { $0 != row.startTs } + [row.startTs]
+        }
         await refresh()
     }
 
