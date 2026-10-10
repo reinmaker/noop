@@ -42,6 +42,8 @@ enum TabRoute: Hashable {
     case healthMonitor
     /// WHOOP's Sleep Planner: when to get in bed for tonight's sleep need and the wake time.
     case sleepPlanner
+    /// One activity's WHOOP-style page, from Home's ACTIVITIES card.
+    case activity(WhoopActivityRoute)
 }
 
 extension View {
@@ -85,6 +87,7 @@ extension View {
             case .strain: WhoopStrainScreen()
             case .healthMonitor: WhoopHealthMonitorScreen()
             case .sleepPlanner: WhoopSleepPlannerScreen()
+            case .activity(let route): WhoopActivityScreen(row: route.row)
             }
             }
             // WHOOP-style: the Coach opens about the screen being viewed.
