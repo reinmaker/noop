@@ -41,7 +41,9 @@ public enum StepsCounter {
     /// Yoop: size of one pedometer release, in ticks within at most two seconds.
     public static var yoopReleaseTicks = 5...9
     /// Yoop: a still-labelled release counts when a walk or run second lies within this many seconds of it.
-    public static var yoopReleaseWindowSeconds = 2
+    /// On the user's 41 hours, 3,354 released ticks sat within 2 s of a walk label, 880 more within 60 s
+    /// (with the wrist moving as in walking) and 99 beyond that, so a minute keeps the short walks.
+    public static var yoopReleaseWindowSeconds = 60
     /// Yoop: an interval longer than this is a dropout, whose closing label does not describe it.
     public static var yoopDropoutSeconds = 2
     /// Yoop: the most steps credited per elapsed second, above any sustained human cadence (210 a minute).

@@ -2094,16 +2094,17 @@ struct LiquidTodayView: View {
             : String(localized: "Good evening")
     }
 
-    // Yoop: the iPhone's Apple Health count ?: measured strap count ?: motion estimate. The phone's
-    // count leads because the strap's step counter reads low. The detail routing follows the same order,
-    // so the tapped-through source always matches the number shown (#377).
+    // Yoop: measured strap count ?: the iPhone's Apple Health count ?: motion estimate. The strap leads now
+    // that it counts the steps its pedometer releases (`StepsCounter.yoopCountingEnabled`): it is worn all
+    // day, the phone only when carried. The detail routing follows the same order, so the tapped-through
+    // source always matches the number shown (#377).
     private var stepCount: Double? {
-        importedStepsDay.map(Double.init) ?? displayDay?.steps.map(Double.init) ?? stepsEst
+        displayDay?.steps.map(Double.init) ?? importedStepsDay.map(Double.init) ?? stepsEst
     }
 
     private var stepsDetailMetric: MetricDescriptor? {
-        MetricCatalog.todayStepsMetric(hasMeasuredSteps: importedStepsDay == nil && displayDay?.steps != nil,
-                                       hasImportedSteps: importedStepsDay != nil)
+        MetricCatalog.todayStepsMetric(hasMeasuredSteps: displayDay?.steps != nil,
+                                       hasImportedSteps: displayDay?.steps == nil && importedStepsDay != nil)
     }
 
     private var stepsDetailKey: String { stepsDetailMetric?.key ?? "steps_est" }

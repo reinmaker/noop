@@ -403,10 +403,10 @@ struct WhoopStrainScreen: View {
                              average: workoutCount == 1 ? String(localized: "1 activity")
                                                         : String(localized: "\(workoutCount) activities"),
                              direction: 0, higherIsBetter: true),
-            // Steps: the iPhone's count first (the strap's reads low), as on Home.
+            // Steps: the strap's count first, else the iPhone's, as on Home.
             WhoopContributorMath.make(id: "steps", label: String(localized: "STEPS"), icon: "shoeprints.fill",
-                                      today: today.flatMap { appleSteps[$0.day] } ?? today?.steps.map(Double.init),
-                                      history: prior.compactMap { appleSteps[$0.day] ?? $0.steps.map(Double.init) },
+                                      today: today?.steps.map(Double.init) ?? today.flatMap { appleSteps[$0.day] },
+                                      history: prior.compactMap { $0.steps.map(Double.init) ?? appleSteps[$0.day] },
                                       floor: 1000, higherIsBetter: true),
             // Yoop stores ACTIVE energy (`Calories.yoopEnergyEnabled`); NOOP stores the whole-day total.
             WhoopContributorMath.make(id: "kcal", label: PuffinExperiment.whoopScoresEnabled

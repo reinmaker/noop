@@ -42,7 +42,7 @@ final class YoopStepsEnergyTests: XCTestCase {
     }
 
     func testStillReleaseBatchFarFromAnyWalkIsRejected() {
-        let result = count([s(9, 100, 0), s(10, 106, 0), s(20, 106, 0), s(21, 108, 1)])
+        let result = count([s(9, 100, 0), s(10, 106, 0), s(100, 106, 0), s(101, 108, 1)])
         XCTAssertEqual(result.totalTicks, 2)
         XCTAssertEqual(result.rejectedActivityClassTicks, 6)
     }
@@ -61,7 +61,7 @@ final class YoopStepsEnergyTests: XCTestCase {
     }
 
     func testReleaseStillHeldAtTheEndIsRejected() {
-        let result = count([s(9, 100, 1), s(20, 100, 0), s(21, 106, 0)])
+        let result = count([s(9, 100, 1), s(100, 100, 0), s(101, 106, 0)])
         XCTAssertEqual(result.totalTicks, 0)
         XCTAssertEqual(result.rejectedActivityClassTicks, 6)
     }

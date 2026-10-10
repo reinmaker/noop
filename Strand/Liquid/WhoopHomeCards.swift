@@ -368,11 +368,9 @@ struct WhoopDashboardSection: View {
         return prior.count < 3 ? nil : prior.reduce(0, +) / Double(prior.count)
     }
 
+    /// Each day's strap count, else the phone's for days before the strap counted (as Home's figure).
     private var stepsAverage: Double? {
-        let phone = days.filter { $0.day != today?.day }.suffix(30)
-            .compactMap { appleStepsByDay[$0.day] }.filter { $0 > 1000 }
-        if phone.count >= 3 { return phone.reduce(0, +) / Double(phone.count) }
-        return average(floor: 1000) { $0.steps.map(Double.init) }
+        average(floor: 1000) { $0.steps.map(Double.init) ?? appleStepsByDay[$0.day] }
     }
 
     private var rows: [Row] {
