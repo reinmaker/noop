@@ -86,7 +86,8 @@ public enum SleepStagerV2 {
                 StreamFingerprint.gravityQuant(x: $0.x, y: $0.y, z: $0.z)
             }),
             hr: StreamFingerprint.of(hrW, ts: { $0.ts }, quant: { Int($0.bpm) }),
-            rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }))
+            rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }),
+            remShift: remLogShift, deepShift: deepLogShift, respWeight: respWeightOverride ?? respWeight)
         return stageCache.value(key) {
             stageSessionUncached(start: start, end: end, grav: gravW, hr: hrW, rr: rrW, resp: resp)
         }
@@ -122,6 +123,7 @@ public enum SleepStagerV2 {
     private struct V2Key: Hashable {
         let start: Int; let end: Int
         let grav: StreamFingerprint; let hr: StreamFingerprint; let rr: StreamFingerprint
+        let remShift: Double; let deepShift: Double; let respWeight: Double
     }
 
     /// ≈ a couple of weeks of distinct nights (incl. re-staged edits); FIFO-evicted, result-only.
@@ -170,6 +172,11 @@ public enum SleepStagerV2 {
     static let baseLogPrior: [String: Double] = [
         "light": log(0.50), "deep": log(0.15), "rem": log(0.22), "awake": log(0.10)]
 
+    /// Yoop: log-prior shifts for REM and deep, fitted by the app to the user's own WHOOP stage history so a
+    /// typical night splits like their WHOOP nights. 0 (NOOP's priors) until the app sets them.
+    public static var remLogShift: Double = 0
+    public static var deepLogShift: Double = 0
+
     /// Deep is eligible only in the night's lowest ~25 % HR-flatness epochs (≈ deep base rate + margin).
     /// Widened 0.20 -> 0.25 by the multi-subject (AAUWSS + sleep-accel LOSO) deep-boundary tune, which
     /// recovers the deep recall the other deep-tightening edits shed while keeping precision up.
@@ -199,6 +206,11 @@ public enum SleepStagerV2 {
 
     /// Weight of the RSA respiration-regularity term (regular → deep, irregular → REM).
     static let respWeight = 0.6
+
+    /// Yoop: the weight the app stages with instead of `respWeight` (nil = `respWeight`). The PSG check
+    /// (`sleeppsg`) has no R-R, so the term is unvalidated on wrist-optical R-R; on the user's WHOOP nights it
+    /// took REM from 22-28 % to 34-37 % and deep from 10-14 % to 20-28 %, outside adult PSG norms.
+    public static var respWeightOverride: Double?
 
     /// Transition matrix (rows = from, cols = to). Self-transitions dominate; deep↔rem rare; wake mostly
     /// to/from light. A priori, not fit.
@@ -617,6 +629,7 @@ public enum SleepStagerV2 {
 
         var seq: [[String: Double]] = []
         seq.reserveCapacity(feats.count)
+        let resp = respWeightOverride ?? respWeight
         for f in feats {
             let zhrv = zhr(f.hr), zhvv = zhv(f.hrVar), zmvv = zmv(f.moveFrac)
             let gate = deepGateSlope * max(0.0, fpct(f.hrFlat11) - deepGateThresh)
@@ -628,8 +641,8 @@ public enum SleepStagerV2 {
             let awakeCardiac0 = 0.8 * zhvv + 0.4 * zhrv
             let awakeCardiac = motionQuiescent(f) ? min(0.0, awakeCardiac0) : awakeCardiac0
             var em: [String: Double] = [
-                "deep": -1.1 * zhvv - 0.5 * zmvv - gate + baseLogPrior["deep"]!,
-                "rem": 0.6 * zhvv - 0.6 * zmvv + 0.4 * zhrv + baseLogPrior["rem"]!,
+                "deep": -1.1 * zhvv - 0.5 * zmvv - gate + baseLogPrior["deep"]! + deepLogShift,
+                "rem": 0.6 * zhvv - 0.6 * zmvv + 0.4 * zhrv + baseLogPrior["rem"]! + remLogShift,
                 "light": baseLogPrior["light"]!,
                 "awake": 1.0 * zmvv + awakeCardiac + baseLogPrior["awake"]!,
             ]
@@ -637,7 +650,7 @@ public enum SleepStagerV2 {
             let pr = cyclePrior(f.clock, .infinity)
             for s in stageNames { em[s]! += pr[s]! }
             if f.jerkMax > f.jerkScale * jerkFloorGateMult { em["awake"]! += motionGateBoost }
-            if let rg = f.respReg { let z = zrg(rg); em["deep"]! += respWeight * z; em["rem"]! -= respWeight * z }
+            if let rg = f.respReg { let z = zrg(rg); em["deep"]! += resp * z; em["rem"]! -= resp * z }
             seq.append(em)
         }
 

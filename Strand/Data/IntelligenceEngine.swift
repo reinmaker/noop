@@ -1044,6 +1044,13 @@ final class IntelligenceEngine: ObservableObject {
         // into the config signature below rather than the per-day key.
         let effortMethodGlobal = PuffinExperiment.effortMethod
         let mainNightMinGlobal = PuffinExperiment.mainNightMinSeconds
+        // Yoop: the night starts and ends where the band itself says asleep, as WHOOP times it.
+        SleepStager.bandStateBoundsEnabled = PuffinExperiment.whoopScoresEnabled
+        let bandBoundsGlobal = SleepStager.bandStateBoundsEnabled
+        // Yoop: stage as the sleep-lab check validated it, without the wrist R-R breathing term, which the
+        // PSG data cannot check and which put this user's REM at 34-37 % (lab-validated recipe: 22-28 %).
+        SleepStagerV2.respWeightOverride = PuffinExperiment.whoopScoresEnabled ? 0 : nil
+        let respWeightGlobal = SleepStagerV2.respWeightOverride.map { "\($0)" } ?? "default"
         let dayCycleMode = DayCycleMode.persisted(UserDefaults.standard.string(forKey: DayCycleMode.storageKey))
 
         // Zero the per-day probe counters so the line emitted after the steps phase describes THIS pass
@@ -1109,6 +1116,8 @@ final class IntelligenceEngine: ObservableObject {
             "\(effortMethodGlobal)",
             dayCycleMode.rawValue,
             "\(mainNightMinGlobal)",
+            "\(bandBoundsGlobal)",
+            "\(respWeightGlobal)",
         ].joined(separator: "|")
         // Drop the whole cache on a config change, then snapshot it into a Sendable `let` for the detached
         // loop (the engine is @MainActor; the loop can't touch `self`). The loop returns the updated cache

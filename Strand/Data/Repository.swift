@@ -1812,6 +1812,8 @@ final class Repository: ObservableObject {
         // which engine runs over the already-detected window — detection is identical either way.
         // (V7 Pillar 3b)
         let useV2 = PuffinExperiment.experimentalSleepV2Enabled
+        // Yoop: the same lab-validated recipe the engine stages with (no wrist R-R breathing term).
+        SleepStagerV2.respWeightOverride = PuffinExperiment.whoopScoresEnabled ? 0 : nil
         let segs = await Task.detached(priority: .utility) {
             let staged = useV2
                 ? SleepStagerV2.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr, resp: resp)
@@ -3475,6 +3477,16 @@ final class Repository: ObservableObject {
         let tiz = HRZones.timeInZone(samples, zoneSet: zoneSet)
         let minutes = tiz.seconds.map { $0 / 60.0 }
         return minutes.contains(where: { $0 > 0 }) ? minutes : nil
+    }
+
+    /// The raw readings over a workout window, from the same strap ids as the chart and zones above, for
+    /// the WHOOP-style activity page's own zones (`WhoopActivityZones`). The cap covers a whole session
+    /// at 1 Hz, so a long one is not cut to its first 8000 seconds.
+    func workoutHrSamples(from: Int, to: Int, source: String = "") async -> [HRSample] {
+        guard to > from else { return [] }
+        let ids = Self.workoutHrDeviceIds(source: source, activeStrapId: deviceId,
+                                          importedIds: importedReadIds)
+        return await hrSamples(deviceIds: ids, from: from, to: to, limit: max(8000, to - from + 60))
     }
 
     /// HRR for one workout (#516), derived from the final five minutes of recorded effort plus the five

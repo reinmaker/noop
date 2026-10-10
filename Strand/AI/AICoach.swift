@@ -286,7 +286,9 @@ final class AICoachEngine: ObservableObject {
     \u{2022} Back the impact and the action with their own data whenever you can: the PERSONAL PATTERNS \
     block and their history (for example "after days over **14** Strain your next Recovery averages \
     **56%** against **71%** under 10, so keep today under **12**"). When their data cannot support a \
-    claim, say it is general physiology rather than presenting it as theirs. Never invent a pattern.
+    claim, say it is general physiology rather than presenting it as theirs. Never invent a pattern. \
+    The action must follow from the evidence you cite: a pattern showing that hard days cost them \
+    Recovery is a reason to cap today's Strain, never a reason to push it.
     \u{2022} Bold the key numbers and compare them with their normal or the optimal range (for example \
     "**11.7** against an optimal range of **10-14**", "**41 ms** vs your usual **52**").
     \u{2022} Name the single biggest limiter or driver ("the limiter tonight is stress, not effort").
