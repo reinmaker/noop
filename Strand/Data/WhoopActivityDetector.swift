@@ -26,6 +26,12 @@ enum WhoopActivityDetector {
     /// at 19:31 (the 19:20 shoot-around sat behind a six-minute break, which this does not bridge).
     static let warmUpMotionG = 0.3
     static let warmUpReachMinutes = 5
+    /// A moving sport (median wrist motion over the bout at least `warmUpMotionG`) ends at its last minute
+    /// with both that motion and heart rate at 40 % of the reserve or more. After the 10 Oct game the user
+    /// walked off at 100-128 bpm with the wrist nearly still (0.1-0.15 g, against 0.4-1.8 g on court), and
+    /// heart rate alone ran the session to 21:10; this ends it at 21:00. Lifting moves the wrist little, so
+    /// its median stays under the bar and its end is left to heart rate.
+    static let cooldownReserveShare = 0.40
     static let minMinutes = 12
     static let maxGapMinutes = 3
     static let minActiveShare = 0.65
@@ -70,8 +76,20 @@ enum WhoopActivityDetector {
                     if let g = motion[probe], g >= warmUpMotionG, mean(probe) >= rest + 0.25 * reserve { start = probe }
                 }
             }
-            let length = last - start + 1
-            let span = (start * 60)...(last * 60 + 59)
+            // The cool-down: a moving sport ends at its last minute that still moves and works like it, with
+            // at least 3 of the 5 minutes up to it doing the same, so a brisk step on the walk home is not it.
+            var end = last
+            let coreMotion = inBout.compactMap { motion[$0] }.sorted()
+            if !coreMotion.isEmpty, coreMotion[coreMotion.count / 2] >= warmUpMotionG {
+                let playing = { (m: Int) -> Bool in
+                    (motion[m] ?? 0) >= warmUpMotionG && mean(m) >= rest + cooldownReserveShare * reserve
+                }
+                while end > first, !(playing(end) && ((end - 4)...end).filter(playing).count >= 3) {
+                    end -= 1
+                }
+            }
+            let length = end - start + 1
+            let span = (start * 60)...(end * 60 + 59)
             let avg = inBout.map(mean).reduce(0, +) / Double(max(1, inBout.count))
             let peakMinute = inBout.map(mean).max() ?? 0
             if last - first + 1 >= minMinutes, Double(active) / Double(last - first + 1) >= minActiveShare,

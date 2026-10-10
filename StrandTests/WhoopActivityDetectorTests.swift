@@ -48,4 +48,19 @@ final class WhoopActivityDetectorTests: XCTestCase {
         let still = WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: [])
         XCTAssertEqual(still.first?.startSec, 1_800_000_000 + 6 * 60)
     }
+
+    /// A moving sport ends at its last moving, working minute; the walk-off at a raised heart rate is not
+    /// part of it.
+    func testCoolDownWalkIsNotPartOfAMovingSport() {
+        var hr = block(140, from: 0, minutes: 20)         // the game, minutes 0-19
+        hr += block(110, from: 20, minutes: 10)           // walking off, still above the active bar
+        let base = 1_800_000_000 / 60
+        var motion: [Int: Double] = [:]
+        for m in 0..<20 { motion[base + m] = 1.0 }
+        for m in 20..<30 { motion[base + m] = 0.12 }
+        let found = WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: [], motion: motion)
+        XCTAssertEqual(found.first?.endSec, 1_800_000_000 + 19 * 60 + 59)
+        XCTAssertEqual(WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: []).first?.endSec,
+                       1_800_000_000 + 29 * 60 + 59)
+    }
 }
