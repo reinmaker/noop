@@ -87,7 +87,7 @@ public enum SleepStagerV2 {
             }),
             hr: StreamFingerprint.of(hrW, ts: { $0.ts }, quant: { Int($0.bpm) }),
             rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }),
-            remShift: remLogShift, deepShift: deepLogShift, respWeight: respWeight)
+            remShift: remLogShift, deepShift: deepLogShift, respWeight: respWeightOverride ?? respWeight)
         return stageCache.value(key) {
             stageSessionUncached(start: start, end: end, grav: gravW, hr: hrW, rr: rrW, resp: resp)
         }
@@ -205,10 +205,12 @@ public enum SleepStagerV2 {
     }
 
     /// Weight of the RSA respiration-regularity term (regular → deep, irregular → REM).
-    /// Yoop: `var` so the app can stage without it. The PSG check (`sleeppsg`) has no R-R, so the term is
-    /// unvalidated on wrist-optical R-R; on the user's WHOOP nights it took REM from 22-28 % to 34-37 % and
-    /// deep from 10-14 % to 20-28 %, outside the PSG norms for an adult of his age.
-    public static var respWeight = 0.6
+    static let respWeight = 0.6
+
+    /// Yoop: the weight the app stages with instead of `respWeight` (nil = `respWeight`). The PSG check
+    /// (`sleeppsg`) has no R-R, so the term is unvalidated on wrist-optical R-R; on the user's WHOOP nights it
+    /// took REM from 22-28 % to 34-37 % and deep from 10-14 % to 20-28 %, outside adult PSG norms.
+    public static var respWeightOverride: Double?
 
     /// Transition matrix (rows = from, cols = to). Self-transitions dominate; deep↔rem rare; wake mostly
     /// to/from light. A priori, not fit.
@@ -627,6 +629,7 @@ public enum SleepStagerV2 {
 
         var seq: [[String: Double]] = []
         seq.reserveCapacity(feats.count)
+        let resp = respWeightOverride ?? respWeight
         for f in feats {
             let zhrv = zhr(f.hr), zhvv = zhv(f.hrVar), zmvv = zmv(f.moveFrac)
             let gate = deepGateSlope * max(0.0, fpct(f.hrFlat11) - deepGateThresh)
@@ -647,7 +650,7 @@ public enum SleepStagerV2 {
             let pr = cyclePrior(f.clock, .infinity)
             for s in stageNames { em[s]! += pr[s]! }
             if f.jerkMax > f.jerkScale * jerkFloorGateMult { em["awake"]! += motionGateBoost }
-            if let rg = f.respReg { let z = zrg(rg); em["deep"]! += respWeight * z; em["rem"]! -= respWeight * z }
+            if let rg = f.respReg { let z = zrg(rg); em["deep"]! += resp * z; em["rem"]! -= resp * z }
             seq.append(em)
         }
 

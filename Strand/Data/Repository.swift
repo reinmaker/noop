@@ -1813,7 +1813,7 @@ final class Repository: ObservableObject {
         // (V7 Pillar 3b)
         let useV2 = PuffinExperiment.experimentalSleepV2Enabled
         // Yoop: the same lab-validated recipe the engine stages with (no wrist R-R breathing term).
-        SleepStagerV2.respWeight = PuffinExperiment.whoopScoresEnabled ? 0 : 0.6
+        SleepStagerV2.respWeightOverride = PuffinExperiment.whoopScoresEnabled ? 0 : nil
         let segs = await Task.detached(priority: .utility) {
             let staged = useV2
                 ? SleepStagerV2.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr, resp: resp)

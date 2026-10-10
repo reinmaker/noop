@@ -1049,8 +1049,8 @@ final class IntelligenceEngine: ObservableObject {
         let bandBoundsGlobal = SleepStager.bandStateBoundsEnabled
         // Yoop: stage as the sleep-lab check validated it, without the wrist R-R breathing term, which the
         // PSG data cannot check and which put this user's REM at 34-37 % (lab-validated recipe: 22-28 %).
-        SleepStagerV2.respWeight = PuffinExperiment.whoopScoresEnabled ? 0 : 0.6
-        let respWeightGlobal = SleepStagerV2.respWeight
+        SleepStagerV2.respWeightOverride = PuffinExperiment.whoopScoresEnabled ? 0 : nil
+        let respWeightGlobal = SleepStagerV2.respWeightOverride.map { "\($0)" } ?? "default"
         let dayCycleMode = DayCycleMode.persisted(UserDefaults.standard.string(forKey: DayCycleMode.storageKey))
 
         // Zero the per-day probe counters so the line emitted after the steps phase describes THIS pass
