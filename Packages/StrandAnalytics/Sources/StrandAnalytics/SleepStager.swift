@@ -1408,7 +1408,7 @@ public enum SleepStager {
             v2: useSleepStagerV2,
             sleepHRBaseline: sleepHRBaseline,
             bounds: bandStateBoundsEnabled,
-            bars: [SleepStagerV2.remLogShift, SleepStagerV2.deepLogShift])
+            bars: [SleepStagerV2.remLogShift, SleepStagerV2.deepLogShift, SleepStagerV2.respWeight])
         return detectSleepCache.value(key) {
             detectSleepUncached(hr: hr, rr: rr, resp: resp, gravity: gravity,
                                 tzOffsetSeconds: tzOffsetSeconds, wristOff: wristOff,

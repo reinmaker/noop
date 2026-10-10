@@ -87,7 +87,7 @@ public enum SleepStagerV2 {
             }),
             hr: StreamFingerprint.of(hrW, ts: { $0.ts }, quant: { Int($0.bpm) }),
             rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }),
-            remShift: remLogShift, deepShift: deepLogShift)
+            remShift: remLogShift, deepShift: deepLogShift, respWeight: respWeight)
         return stageCache.value(key) {
             stageSessionUncached(start: start, end: end, grav: gravW, hr: hrW, rr: rrW, resp: resp)
         }
@@ -123,7 +123,7 @@ public enum SleepStagerV2 {
     private struct V2Key: Hashable {
         let start: Int; let end: Int
         let grav: StreamFingerprint; let hr: StreamFingerprint; let rr: StreamFingerprint
-        let remShift: Double; let deepShift: Double
+        let remShift: Double; let deepShift: Double; let respWeight: Double
     }
 
     /// ≈ a couple of weeks of distinct nights (incl. re-staged edits); FIFO-evicted, result-only.
@@ -205,7 +205,10 @@ public enum SleepStagerV2 {
     }
 
     /// Weight of the RSA respiration-regularity term (regular → deep, irregular → REM).
-    static let respWeight = 0.6
+    /// Yoop: `var` so the app can stage without it. The PSG check (`sleeppsg`) has no R-R, so the term is
+    /// unvalidated on wrist-optical R-R; on the user's WHOOP nights it took REM from 22-28 % to 34-37 % and
+    /// deep from 10-14 % to 20-28 %, outside the PSG norms for an adult of his age.
+    public static var respWeight = 0.6
 
     /// Transition matrix (rows = from, cols = to). Self-transitions dominate; deep↔rem rare; wake mostly
     /// to/from light. A priori, not fit.
