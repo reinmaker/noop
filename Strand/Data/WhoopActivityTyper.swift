@@ -16,7 +16,13 @@ enum WhoopActivityTyper {
         let maxBpm: Double
         let durationMin: Double
         let startHour: Double
+        /// How much this example's vote counts (`userLabelWeight` for a type the user set in Yoop).
+        var weight: Double = 1
     }
+
+    /// Vote weight of a type the user set or logged in Yoop, against 1 for imported history: one
+    /// correction ("this was basketball") should outweigh a few old sessions that look alike.
+    static let userLabelWeight = 3.0
 
     static let neighbours = 7
     static let minExamples = 5
@@ -44,17 +50,17 @@ enum WhoopActivityTyper {
             let sd = (column.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(column.count)).squareRoot()
             return sd > 0 ? sd : 1
         }
-        let nearest = zip(rows, named).map { row, example -> (distance: Double, sport: String) in
+        let nearest = zip(rows, named).map { row, example -> (distance: Double, sport: String, weight: Double) in
             let squares: Double = (0..<target.count).reduce(0.0) { sum, j in
                 let z = (target[j] - row[j]) / spread[j]
                 return sum + z * z
             }
-            return (squares.squareRoot(), example.sport)
+            return (squares.squareRoot(), example.sport, example.weight)
         }
         .sorted { $0.distance < $1.distance }
         .prefix(neighbours)
         var votes: [String: Double] = [:]
-        for n in nearest { votes[n.sport, default: 0] += 1 / (n.distance + 0.3) }
+        for n in nearest { votes[n.sport, default: 0] += n.weight / (n.distance + 0.3) }
         let total = votes.values.reduce(0, +)
         guard total > 0, let best = votes.max(by: { $0.value < $1.value }),
               best.value / total >= minShare else { return nil }

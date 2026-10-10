@@ -43,13 +43,38 @@ enum WhoopActivityZones {
         return out
     }
 
+    /// Gaps up to this long are filled from the readings either side. During play the strap's stored
+    /// history has holes of about 80 s, every stream at once (ten in the user's 10 Oct basketball game,
+    /// about 20 minutes in all); an 80 s hole in a game is still the game. Longer gaps stay uncounted.
+    static let shortGapFillSeconds = 120
+
+    /// `samples` sorted, with every gap of 3 to `shortGapFillSeconds` seconds filled one reading per second
+    /// on the straight line between its two ends.
+    static func filledShortGaps(_ samples: [HRSample]) -> [HRSample] {
+        let sorted = samples.sorted { $0.ts < $1.ts }
+        guard let last = sorted.last, sorted.count >= 2 else { return sorted }
+        var out: [HRSample] = []
+        out.reserveCapacity(sorted.count)
+        for (a, b) in zip(sorted, sorted.dropFirst()) {
+            out.append(a)
+            let gap = b.ts - a.ts
+            guard gap > 2, gap <= shortGapFillSeconds else { continue }
+            for t in 1..<gap {
+                let bpm = Double(a.bpm) + Double(b.bpm - a.bpm) * Double(t) / Double(gap)
+                out.append(HRSample(ts: a.ts + t, bpm: Int(bpm.rounded())))
+            }
+        }
+        out.append(last)
+        return out
+    }
+
     /// Seconds in each band, restorative first, from the readings inside `[from, to]`; nil without one.
     /// Each reading holds until the next, capped at the stream's usual spacing (`HRZones.timeInZone`), so
-    /// a dropout is not credited to the zone before it.
+    /// a long dropout is not credited to the zone before it; a short one is filled (`filledShortGaps`).
     static func bandSeconds(_ samples: [HRSample], from: Int, to: Int, restingHR: Double,
                             maxHR: Double = StrainScorer.whoopCurveMaxHR) -> [Double]? {
         guard let edges = lowerBounds(restingHR: restingHR, maxHR: maxHR) else { return nil }
-        let inside = samples.filter { $0.ts >= from && $0.ts <= to }
+        let inside = filledShortGaps(samples).filter { $0.ts >= from && $0.ts <= to }
         guard !inside.isEmpty else { return nil }
         let zones = HRZones.zones(maxHR: maxHR, source: "whoop", customLowerBounds: edges.map(Double.init))
         let tiz = HRZones.timeInZone(inside, zoneSet: zones)
