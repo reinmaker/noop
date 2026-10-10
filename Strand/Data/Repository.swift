@@ -3477,6 +3477,16 @@ final class Repository: ObservableObject {
         return minutes.contains(where: { $0 > 0 }) ? minutes : nil
     }
 
+    /// The raw readings over a workout window, from the same strap ids as the chart and zones above, for
+    /// the WHOOP-style activity page's own zones (`WhoopActivityZones`). The cap covers a whole session
+    /// at 1 Hz, so a long one is not cut to its first 8000 seconds.
+    func workoutHrSamples(from: Int, to: Int, source: String = "") async -> [HRSample] {
+        guard to > from else { return [] }
+        let ids = Self.workoutHrDeviceIds(source: source, activeStrapId: deviceId,
+                                          importedIds: importedReadIds)
+        return await hrSamples(deviceIds: ids, from: from, to: to, limit: max(8000, to - from + 60))
+    }
+
     /// HRR for one workout (#516), derived from the final five minutes of recorded effort plus the five
     /// post-workout minutes. This is a narrow read (at most ~10 minutes), not a whole-workout scan, and the
     /// pure engine owns every eligibility/coverage guard. Missing post-workout HR therefore returns nil
