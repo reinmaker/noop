@@ -311,6 +311,9 @@ private enum WhoopDays {
 
 struct WhoopRecoveryScreen: View {
     @EnvironmentObject private var repo: Repository
+    /// The stored `sleep_performance` series by day, the read Home's SLEEP ring makes, so this screen's
+    /// SLEEP PERFORMANCE row states the same number.
+    @State private var storedSleep: [String: Double] = [:]
 
     var body: some View {
         let shown = WhoopSelectedDay.split(repo.days)
@@ -318,7 +321,7 @@ struct WhoopRecoveryScreen: View {
         let today = shown.day
         let prior = shown.prior
         let sleepPerf = SleepModel.performanceSeries(days: days, importedSleep: repo.importedSleep,
-                                                     sleeps: repo.sleeps)
+                                                     sleeps: repo.sleeps, stored: storedSleep)
         let rows = [
             WhoopContributorMath.make(id: "hrv", label: String(localized: "HEART RATE VARIABILITY"),
                                       icon: "waveform.path.ecg", today: today?.avgHrv,
@@ -372,6 +375,10 @@ struct WhoopRecoveryScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .safeAreaInset(edge: .bottom, spacing: 0) { WhoopCoachPill(screen: .recovery) }
+        .task(id: repo.refreshSeq) {
+            let series = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
+            storedSleep = Dictionary(series.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
+        }
     }
 }
 

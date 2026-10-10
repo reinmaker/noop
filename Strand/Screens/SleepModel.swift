@@ -426,8 +426,8 @@ extension SleepModel {
 
     /// Sleep performance %, one value per day from `performanceByDay`. (#614 follow-up)
     static func performanceSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
-                                  sleeps: [CachedSleepSession] = []) -> Metric {
-        let byDay = performanceByDay(days: days, importedSleep: importedSleep, sleeps: sleeps)
+                                  sleeps: [CachedSleepSession] = [], stored: [String: Double] = [:]) -> Metric {
+        let byDay = performanceByDay(days: days, importedSleep: importedSleep, sleeps: sleeps, stored: stored)
         return metric(days: days) { byDay[$0.day] }
     }
 
