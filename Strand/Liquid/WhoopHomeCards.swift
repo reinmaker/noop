@@ -345,6 +345,9 @@ struct WhoopDashboardSection: View {
     let vo2max: Double?
     /// Apple Health steps per day; when present, the steps average uses the phone's history.
     var appleStepsByDay: [String: Double] = [:]
+    /// Yoop: the day's total energy (basal + active), and one day's basal energy for the total's average.
+    var totalCalories: Double?
+    var basalKcalPerDay: Double?
     let onCustomize: () -> Void
 
     private struct Row: Identifiable {
@@ -389,11 +392,27 @@ struct WhoopDashboardSection: View {
             Row(id: "steps", label: String(localized: "STEPS"), icon: "shoeprints.fill",
                 value: steps, average: stepsAverage, decimals: 0,
                 higherIsBetter: true, route: nil),
-            Row(id: "kcal", label: String(localized: "CALORIES"), icon: "flame",
-                value: calories, average: average(floor: 100) { $0.activeKcalEst }, decimals: 0, higherIsBetter: true,
-                route: nil),
+        ] + calorieRows + [
             Row(id: "vo2", label: String(localized: "VO₂ MAX"), icon: "bicycle",
                 value: vo2max, average: nil, decimals: 0, higherIsBetter: true, route: nil),
+        ]
+    }
+
+    /// Yoop stores ACTIVE energy, so its row says so and a TOTAL row adds the basal energy; NOOP's stored
+    /// figure is the whole-day total, shown as CALORIES.
+    private var calorieRows: [Row] {
+        guard PuffinExperiment.whoopScoresEnabled else {
+            return [Row(id: "kcal", label: String(localized: "CALORIES"), icon: "flame",
+                        value: calories, average: average(floor: 100) { $0.activeKcalEst }, decimals: 0,
+                        higherIsBetter: true, route: nil)]
+        }
+        let activeAverage = average { $0.activeKcalEst }
+        return [
+            Row(id: "kcal", label: String(localized: "ACTIVE CALORIES"), icon: "flame",
+                value: calories, average: activeAverage, decimals: 0, higherIsBetter: true, route: nil),
+            Row(id: "kcalTotal", label: String(localized: "TOTAL CALORIES"), icon: "flame.fill",
+                value: totalCalories, average: basalKcalPerDay.flatMap { basal in activeAverage.map { $0 + basal } },
+                decimals: 0, higherIsBetter: true, route: nil),
         ]
     }
 

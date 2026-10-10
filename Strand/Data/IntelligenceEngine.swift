@@ -1055,6 +1055,12 @@ final class IntelligenceEngine: ObservableObject {
         // time in bed, and one resting HR for the display, Strain, calories and the baseline.
         SleepStager.asleepVitalsEnabled = PuffinExperiment.whoopScoresEnabled
         let asleepVitalsGlobal = SleepStager.asleepVitalsEnabled
+        // Yoop: count steps as the strap's pedometer releases them, and store ACTIVE energy priced from heart
+        // rate and steps, with resting energy added where a total is shown.
+        StepsCounter.yoopCountingEnabled = PuffinExperiment.whoopScoresEnabled
+        Calories.yoopEnergyEnabled = PuffinExperiment.whoopScoresEnabled
+        let yoopStepsGlobal = StepsCounter.yoopCountingEnabled
+        let yoopEnergyGlobal = Calories.yoopEnergyEnabled
         let dayCycleMode = DayCycleMode.persisted(UserDefaults.standard.string(forKey: DayCycleMode.storageKey))
 
         // Zero the per-day probe counters so the line emitted after the steps phase describes THIS pass
@@ -1123,6 +1129,8 @@ final class IntelligenceEngine: ObservableObject {
             "\(bandBoundsGlobal)",
             "\(respWeightGlobal)",
             "\(asleepVitalsGlobal)",
+            "\(yoopStepsGlobal)",
+            "\(yoopEnergyGlobal)",
         ].joined(separator: "|")
         // Drop the whole cache on a config change, then snapshot it into a Sendable `let` for the detached
         // loop (the engine is @MainActor; the loop can't touch `self`). The loop returns the updated cache
@@ -2178,6 +2186,8 @@ final class IntelligenceEngine: ObservableObject {
             profile: up,
             maxHROverride: maxHR,
             effortMethod: effortMethodGlobal,
+            // Yoop: the HR-flex point sits above the resting rate Yoop shows, the main sleep's mean.
+            energyRestingHRByDay: Calories.yoopEnergyEnabled ? primarySessionRHRByDay : [:],
             trace: stepsTraceActive ? { self.diagnosticSink?($0, .steps) } : nil)
         // #299: `editsByStart` is now built PER DAY inside the scoring loop (scoped to the day each edit
         // belongs to), NOT window-wide here. sleepEditedDaily folds any edited row that isn't a twin of THIS

@@ -408,7 +408,10 @@ struct WhoopStrainScreen: View {
                                       today: today.flatMap { appleSteps[$0.day] } ?? today?.steps.map(Double.init),
                                       history: prior.compactMap { appleSteps[$0.day] ?? $0.steps.map(Double.init) },
                                       floor: 1000, higherIsBetter: true),
-            WhoopContributorMath.make(id: "kcal", label: String(localized: "CALORIES"), icon: "flame",
+            // Yoop stores ACTIVE energy (`Calories.yoopEnergyEnabled`); NOOP stores the whole-day total.
+            WhoopContributorMath.make(id: "kcal", label: PuffinExperiment.whoopScoresEnabled
+                                          ? String(localized: "ACTIVE CALORIES") : String(localized: "CALORIES"),
+                                      icon: "flame",
                                       today: today?.activeKcalEst, history: prior.compactMap(\.activeKcalEst),
                                       floor: 100, higherIsBetter: true),
             WhoopContributorMath.make(id: "strain", label: String(localized: "DAY STRAIN"), icon: "bolt",

@@ -328,6 +328,14 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::estimateYoopDayEnergy/6#1",
+      "identity_sha256": "6b7dcf4e7f277616035c194c765bac84d041647ee7c0e40907cac2a8d2068ddc",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the day's energy split into resting (Mifflin-St Jeor BMR over the whole day window) and active (steps priced by the ACSM walking cost, other minutes by Keytel above an HR-flex point), called only when Calories.yoopEnergyEnabled is set (default off, so NOOP's stored total is unchanged). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
       "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::asleepRestingHR/4#1",
       "identity_sha256": "51ed80d11922fb6a8c15df33235360f82a744490057b990fb2f8cc24ce5e9b67",
       "platform": "swift",
@@ -348,6 +356,14 @@
       "identity_sha256": "aa0e42e73df9a121eb3f098fc24e7ea486819cdb922a7cfbd6041563ee6a8fd7",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: respiratory rate from the spectral RSA peak of the asleep R-R, gated per window against a shuffled control, replacing a quantised peak count (asleepVitalsEnabled, default off, byte-identical when off). The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::mifflinStJeorKcalPerDay/1#1",
+      "identity_sha256": "defe5f6a82d697eba40eeb6e7d793c700ba208bb015bec1d5c9719f6990210b9",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: Mifflin-St Jeor BMR, used by the Yoop energy split and by the app to add resting energy where a total is shown. NOOP's estimators keep the revised Harris-Benedict BMR. The fork ships no Android build, so there is no Kotlin twin."
     }
   ]
 }

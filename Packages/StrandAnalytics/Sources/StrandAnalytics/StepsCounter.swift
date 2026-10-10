@@ -28,6 +28,25 @@ public enum StepsCounter {
     public static let maxStepDelta = 512
     public static let maxTicksPerSecond = 4
 
+    /// Yoop: count the counter the way the strap's pedometer releases it (rules in
+    /// `SleepAwareStepCounter.Accumulator`). Set by the app; off keeps the NOOP rules above unchanged.
+    ///
+    /// On the user's raw data (9 Oct 2026) the u16 counter advanced 19,049 with no wrap or reset while the
+    /// NOOP rules stored 12,678. The pedometer holds the first steps of a walk until it has confirmed one,
+    /// then releases them in one second: over 41 hours, 708 one-second batches of exactly 6 or 7 ticks
+    /// carried a "still" label, and still seconds carried no other ticks at all. Under the walk label the
+    /// same release shows as 7 to 9 ticks in one second, which the 4 per second cap rejected, and the 512
+    /// cap rejected the 1,543 steps the counter banked across a 37 minute dropout while the strap was worn.
+    public static var yoopCountingEnabled = false
+    /// Yoop: size of one pedometer release, in ticks within at most two seconds.
+    public static var yoopReleaseTicks = 5...9
+    /// Yoop: a still-labelled release counts when a walk or run second lies within this many seconds of it.
+    public static var yoopReleaseWindowSeconds = 2
+    /// Yoop: an interval longer than this is a dropout, whose closing label does not describe it.
+    public static var yoopDropoutSeconds = 2
+    /// Yoop: the most steps credited per elapsed second, above any sustained human cadence (210 a minute).
+    public static var yoopMaxStepsPerSecond = 3.5
+
     /// Kotlin twin: `StepsCounter.isPlausibleDelta`.
     static func isPlausibleDelta(previousTs: Int, currentTs: Int, delta: Int) -> Bool {
         guard delta >= 1, delta < maxStepDelta else { return false }
@@ -44,6 +63,11 @@ public enum StepsCounter {
     /// window is legacy-unclassed, all valid increments retain the historical counter-only fallback. Sorts
     /// by `ts` internally and returns `nil` for fewer than two samples or no retained movement.
     public static func stepsInWindow(_ samples: [StepSample]) -> Int? {
+        if yoopCountingEnabled {
+            // One implementation of the Yoop rules: the accumulator, with no sleep to gate.
+            let total = SleepAwareStepCounter.count(samples, sleepSessions: []).totalTicks
+            return total > 0 ? total : nil
+        }
         let sorted = samples.sorted { $0.ts < $1.ts }
         if sorted.count < 2 { return nil }
         let hasActivityClasses = hasActivityClasses(sorted)
