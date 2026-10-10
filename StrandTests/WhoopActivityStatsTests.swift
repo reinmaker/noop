@@ -89,6 +89,15 @@ final class WhoopActivityStatsTests: XCTestCase {
         XCTAssertEqual(seconds?[0], 30)
     }
 
+    /// An 80 s hole in play (the strap's dropped records) is filled from the readings either side.
+    func testShortGapIsFilled() {
+        let start = 4_000_000
+        var samples = (0..<30).map { HRSample(ts: start + $0, bpm: 150) }
+        samples += (0..<30).map { HRSample(ts: start + 110 + $0, bpm: 150) }
+        let seconds = WhoopActivityZones.bandSeconds(samples, from: start, to: start + 140, restingHR: 50)
+        XCTAssertEqual(seconds?[3] ?? 0, 140, accuracy: 1)
+    }
+
     func testNoSecondsWithoutReadings() {
         XCTAssertNil(WhoopActivityZones.bandSeconds([], from: 0, to: 100, restingHR: 50))
         XCTAssertNil(WhoopActivityZones.bandSeconds([HRSample(ts: 500, bpm: 150)], from: 0, to: 100, restingHR: 50))
