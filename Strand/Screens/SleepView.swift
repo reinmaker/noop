@@ -122,6 +122,16 @@ struct SleepView: View {
     /// the stage rows. Loaded once per night via `.task(id:)` on the stage card. (ryanAtriumAi #988)
     @State private var nightHR: [HRBucket] = []
 
+    /// The stored `sleep_performance` series by day, loaded with the same call Home's Rest uses, so the
+    /// Rest hero and the Rest tile state the score Home shows for a night. Refreshed with `allSessions`.
+    @State private var storedRest: [String: Double] = [:]
+
+    /// The shown night's stress (`SleepStressNight`) and the `startTs` of the night it was scored for, so
+    /// a navigated night never shows the previous night's curve while its own loads. Nil when WHOOP-style
+    /// stress is off or the night has no heart rate.
+    @State private var sleepStress: SleepStressNight?
+    @State private var sleepStressNightStart: Int?
+
     /// The transient UNDO banner shown after a suppressing delete (#65). Non-nil for ~7 seconds: carries
     /// the snapshot needed to restore the deleted night into its ORIGINAL namespace and the window text
     /// for the message. A user-created/edited delete writes no tombstone but still offers undo (restore).
@@ -248,10 +258,14 @@ struct SleepView: View {
                 // Per-epoch motion for every block (#407), keyed by detected start. mergeDay reads only the
                 // already-resolved group's entries — this just pre-fetches them all so the model build is sync.
                 let motions = await repo.sessionMotions(sessions: sessions)
+                // The SAME read Home's Rest makes (`LiquidTodayView.load`), so a night's score here is the
+                // one Home shows.
+                let rest = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
                 guard !Task.isCancelled, refresh == repo.refreshSeq else { return }
                 allSessions = sessions
                 habitualMidsleepSec = habitual
                 motionByStart = motions
+                storedRest = Dictionary(rest.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
                 nightOffset = 0
                 navNight = nil
                 modelKey = dataKey
@@ -463,16 +477,15 @@ struct SleepView: View {
         (nightOffset == 0 ? model.night : navNight) ?? model.night
     }
 
-    /// The sleep-performance score (0–100) for a SPECIFIC night: the imported WHOOP figure for that
-    /// night's LOCAL wake-day when the export carried one, else the resolved Rest composite for that
-    /// day. Mirrors `performanceSeries`'s per-day transform exactly (the same single source of truth
-    /// the Today Rest score reads), keyed by the wake-day (sleep is filed under the day you woke) so
-    /// a navigated past night reads ITS OWN score, never last night's. nil when that day has no score.
-    private func performanceScore(for night: Night) -> Double? {
-        let wakeDay = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(night.session.endTs)))
-        if let p = repo.importedSleep[wakeDay]?.performancePct { return p }
-        guard let daily = repo.days.last(where: { $0.day == wakeDay }) else { return nil }
-        return AnalyticsEngine.Rest.composite(daily: daily)
+    /// The sleep-performance score (0 to 100) for a SPECIFIC night, the number Home's Rest shows for it:
+    /// the stored `sleep_performance` series Home reads (`storedRest`), keyed by the night's wake day (or
+    /// the logical day of its wake time). Only when that series has no value for the night does it fall
+    /// back to the model's own figure for the day: the imported WHOOP figure, else WHOOP's formula when
+    /// that experiment is on, else the Rest composite (`SleepModel.performanceByDay`). Keyed per night,
+    /// so a navigated past night reads ITS OWN score, never last night's. nil when nothing scores it.
+    private func performanceScore(for night: Night, _ model: SleepModel) -> Double? {
+        SleepModel.nightPerformance(wakeTs: night.session.endTs, stored: storedRest,
+                                    byDay: model.performanceByDay, days: repo.days)
     }
 
     /// Dispatch a reorderable Sleep section to its card. Naps rides with `.stages` (drawn inside the stages
@@ -556,7 +569,7 @@ struct SleepView: View {
     @ViewBuilder
     private func restHero(_ model: SleepModel) -> some View {
         let night = heroNight(model)
-        let score = performanceScore(for: night)
+        let score = performanceScore(for: night, model)
         VStack(spacing: 0) {
             Text("Sleep")
                 .font(StrandFont.rounded(24, weight: .semibold))
@@ -603,9 +616,11 @@ struct SleepView: View {
             )
             .padding(.top, 8)
 
-            // WHOOP-style contributors under the ring: Hours vs. Needed, Consistency, Efficiency, Restorative.
+            // WHOOP-style contributors under the ring: Hours vs. Needed, Consistency, Efficiency, and High
+            // Sleep Stress from the same curve as the Sleep Stress card.
             WhoopSleepContributors(model: model,
-                                   efficiency: WhoopNightFigures.make(night: model.night, days: repo.days).efficiency)
+                                   efficiency: WhoopNightFigures.make(night: model.night, days: repo.days).efficiency,
+                                   highSleepStress: shownStress(for: night)?.highPercent)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
 
@@ -616,6 +631,20 @@ struct SleepView: View {
                 .padding(.bottom, 6)
         }
         .frame(maxWidth: .infinity)
+        // The shown night's stress, re-scored when the night changes or new data lands.
+        .task(id: [night.session.startTs, repo.refreshSeq]) {
+            let start = night.session.startTs
+            let stress = await SleepStressNight.load(repo: repo, session: night.session)
+            guard !Task.isCancelled else { return }
+            sleepStress = stress
+            sleepStressNightStart = start
+        }
+    }
+
+    /// The stress scored for `night`, or nil while it loads, when WHOOP-style stress is off, or when the
+    /// night has no heart rate.
+    private func shownStress(for night: Night) -> SleepStressNight? {
+        sleepStressNightStart == night.session.startTs ? sleepStress : nil
     }
 
     /// Fixed night-scene band behind Sleep scroll content — same ScreenScaffold.topBackground pattern
@@ -640,7 +669,7 @@ struct SleepView: View {
 
     /// Whether a SPECIFIC night's sleep-performance score is WHOOP's own imported figure, an Oura
     /// ring-provided figure, or NOOP's on-device approximation — so the hero is honest about provenance,
-    /// like Today's badges. Keyed by the night's wake-day (matching `performanceScore(for:)`) so a
+    /// like Today's badges. Keyed by the night's wake-day (matching `performanceScore(for:_:)`) so a
     /// navigated night's badge tracks ITS OWN score's provenance, not last night's.
     private func heroSource(for night: Night) -> LocalizedStringKey {
         let wakeDay = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(night.session.endTs)))
@@ -677,10 +706,12 @@ struct SleepView: View {
 
     // MARK: - 1. HERO — stage breakdown
 
-    /// WHOOP's Last Night's Sleep cards, with the night's 1-minute heart rate for their graph. The HR load
-    /// lives here because the stage card that used to load it is no longer shown.
+    /// WHOOP's Last Night's Sleep cards, with the night's 1-minute heart rate for their graph and its
+    /// stress for the Sleep Stress card. The HR load lives here because the stage card that used to load
+    /// it is no longer shown; the stress is scored with the Rest hero, which also reads it.
     private func lastNightCards(_ night: Night, _ model: SleepModel) -> some View {
-        WhoopLastNightCards(night: night, model: model, nightHR: nightHR, days: repo.days, sleeps: repo.sleeps)
+        WhoopLastNightCards(night: night, model: model, nightHR: nightHR, days: repo.days, sleeps: repo.sleeps,
+                            stress: shownStress(for: night))
             .task(id: night.session.startTs) {
                 nightHR = await repo.hrBuckets(from: night.session.startTs,
                                                to: night.session.endTs,
@@ -1936,7 +1967,8 @@ struct SleepView: View {
             allSessions: allSessions,
             importedSleep: repo.importedSleep,
             habitualMidsleepSec: habitualMidsleepSec,
-            motionByStart: motionByStart))
+            motionByStart: motionByStart,
+            storedPerformance: storedRest))
     }
 
     // MARK: - Derived model

@@ -15,6 +15,9 @@ struct WhoopLastNightCards: View {
     let days: [DailyMetric]
     /// One session per night (`Repository.sleeps`), for the Sleep Consistency chart.
     var sleeps: [CachedSleepSession] = []
+    /// The night's stress (`SleepStressNight`), for the Sleep Stress card and the heart-rate readout.
+    /// Nil hides the card.
+    var stress: SleepStressNight? = nil
 
     /// The time under the reader's finger on the heart-rate graph, as in WHOOP.
     @State private var hrSelection: Date?
@@ -57,6 +60,16 @@ struct WhoopLastNightCards: View {
         return String(format: "%d:%02d", m / 60, m % 60)
     }
 
+    /// A stage's colour, the same as its bar in the Hours of Sleep card.
+    static func stageColor(_ stage: SleepStage) -> Color {
+        switch stage {
+        case .awake: return WhoopStyle.stageAwake
+        case .light: return WhoopStyle.stageLight
+        case .deep: return WhoopStyle.stageDeep
+        case .rem: return WhoopStyle.stageREM
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
             VStack(alignment: .leading, spacing: 2) {
@@ -71,6 +84,9 @@ struct WhoopLastNightCards: View {
             hoursVsNeededCard
             consistencyCard
             efficiencyCard
+            if let stress {
+                WhoopSleepStressCard(stress: stress, start: night.session.effectiveStartTs, end: night.session.endTs)
+            }
         }
     }
 
@@ -168,12 +184,29 @@ struct WhoopLastNightCards: View {
             }
             HStack(spacing: NoopMetrics.space2) {
                 if let picked {
-                    Text("\(Int(picked.bpm.rounded())) bpm")
-                        .font(WhoopStyle.smallLabel)
-                        .foregroundStyle(StrandPalette.textPrimary)
+                    // The held moment as WHOOP reads it: the time, the sleep stage then (in its stage
+                    // colour), the heart rate, and the stress level when the night's curve is scored.
                     Text(picked.time, format: .dateTime.hour().minute())
                         .font(WhoopStyle.caption)
                         .foregroundStyle(StrandPalette.textSecondary)
+                    if let stage = night.recordedStage(at: picked.id) {
+                        Text(stage.label)
+                            .font(WhoopStyle.smallLabel)
+                            .foregroundStyle(Self.stageColor(stage))
+                    }
+                    Text("\(Int(picked.bpm.rounded())) bpm")
+                        .font(WhoopStyle.smallLabel)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    if let level = stress?.level(at: picked.id) {
+                        HStack(spacing: NoopMetrics.space1) {
+                            Text("Stress")
+                                .font(WhoopStyle.caption)
+                                .foregroundStyle(StrandPalette.textSecondary)
+                            Text(String(format: "%.1f", level))
+                                .font(WhoopStyle.smallLabel)
+                                .foregroundStyle(WhoopStyle.stressBand(level).color)
+                        }
+                    }
                 } else {
                     Text("Press and hold the graph to see your heart rate")
                         .font(WhoopStyle.caption)

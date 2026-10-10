@@ -20,15 +20,19 @@ struct WhoopStressHero: View {
     /// The time under the reader's finger on the stress line.
     @State private var selection: Date?
 
-    private struct Sample: Identifiable {
+    /// One scored reading on the line. Shared with the Sleep screen's stress card (`SleepStressNight`).
+    struct Sample: Identifiable {
         let ts: Int
         let level: Double
         var time: Date { Date(timeIntervalSince1970: TimeInterval(ts)) }
         var id: Int { ts }
     }
 
-    private var samples: [Sample] {
-        (daytime?.timeline ?? []).compactMap { p in p.level.map { Sample(ts: p.startTs, level: $0) } }
+    private var samples: [Sample] { Self.scoredSamples(daytime?.timeline ?? []) }
+
+    /// The scored points of a stress timeline, earliest first; unscored points are left out.
+    nonisolated static func scoredSamples(_ timeline: [DaytimeStress.HourPoint]) -> [Sample] {
+        timeline.compactMap { p in p.level.map { Sample(ts: p.startTs, level: $0) } }
     }
 
     private static func word(_ level: Double) -> String {
@@ -40,13 +44,14 @@ struct WhoopStressHero: View {
     }
 
     /// The spacing between readings (5 minutes for WHOOP-style stress, longer for the hourly read).
-    private static func step(_ points: [Sample]) -> Int {
+    nonisolated private static func step(_ points: [Sample]) -> Int {
         let gaps = zip(points, points.dropFirst()).map { $1.ts - $0.ts }.filter { $0 > 0 }
         return min(3600, max(300, gaps.min() ?? 300))
     }
 
-    /// Minutes in each band (0 low, 1 medium, 2 high) over the readings `include` keeps.
-    private static func minutesByBand(_ points: [Sample], include: (Int) -> Bool = { _ in true }) -> [Double] {
+    /// Minutes in each band (0 low, 1 medium, 2 high, from `DaytimeStress.highBandFloor`) over the
+    /// readings `include` keeps. The Sleep screen's stress card and HIGH SLEEP STRESS row count with it too.
+    nonisolated static func minutesByBand(_ points: [Sample], include: (Int) -> Bool = { _ in true }) -> [Double] {
         let span = Double(step(points)) / 60
         var minutes = [0.0, 0.0, 0.0]
         for p in points where include(p.ts) {
