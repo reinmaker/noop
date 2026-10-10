@@ -215,6 +215,16 @@ final class Repository: ObservableObject {
     @Published private(set) var cycleTrackingSeq = 0
     func noteCycleTrackingChanged() { cycleTrackingSeq += 1 }
 
+    /// Bumped by every in-app journal save or clear. A journal write never causes a `refreshSeq` data
+    /// refresh, so the Home journal strip and the Today journal widget re-read on this instead, and their
+    /// checks appear the moment an answer is saved. It also drops the Insights re-mount snapshot, so the
+    /// next open of the journal reads the answers fresh instead of restoring the day as it was.
+    @Published private(set) var journalSeq = 0
+    private func noteJournalChanged() {
+        journalSeq += 1
+        insightsCache = nil
+    }
+
     /// Workouts & GPS test mode (Test Centre): the tagged sink for the `.workouts` diagnostic lines
     /// (auto-detect inputs/thresholds/why, cross-source dedup decisions). Default nil (inert) so tests +
     /// non-prod inits get the byte-identical untraced path; AppModel wires it to `live.append(log:domain:)`.
@@ -2717,15 +2727,16 @@ final class Repository: ObservableObject {
         return out
     }
 
-    /// Distinct local-day keys (yyyy-MM-dd) in the inclusive range [from, to] that carry at least one
-    /// NATIVE journal entry (the "noop-journal" device id only — matching the Android widget's
-    /// `repo.journal(JOURNAL_DEVICE_ID, from, to)`). Backs the #627 Today journal widget's completion
-    /// strip. Read-only.
-    func nativeJournalDays(from: String, to: String) async -> Set<String> {
+    /// Distinct stored day keys (yyyy-MM-dd) in the inclusive range [from, to] that carry at least one
+    /// journal answer, imported WHOOP rows and in-app rows alike (`JournalDays.answeredDays`, so a saved
+    /// Coach note does not count). The one read behind the Home journal strip, the Today journal widget
+    /// and the morning prompt, so a day answered in WHOOP shows as done everywhere. Read-only.
+    func journalAnsweredDays(from: String, to: String) async -> Set<String> {
         guard let store = await ensureStore() else { return [] }
-        let rows = (try? await store.journalEntries(deviceId: Self.journalDeviceId,
-                                                    from: from, to: to)) ?? []
-        return Set(rows.map { $0.day })
+        var rows: [JournalEntry] = []
+        for id in importedReadIds { rows += (try? await store.journalEntries(deviceId: id, from: from, to: to)) ?? [] }
+        rows += (try? await store.journalEntries(deviceId: Self.journalDeviceId, from: from, to: to)) ?? []
+        return JournalDays.answeredDays(rows)
     }
 
     /// Union; the NATIVE row wins per (day, question) , the in-app answer is the user's most recent
@@ -2743,6 +2754,15 @@ final class Repository: ObservableObject {
         _ = try? await store.upsertJournal(
             [JournalEntry(day: day, question: question, answeredYes: answeredYes, notes: notes)],
             deviceId: Self.journalDeviceId)
+        noteJournalChanged()
+    }
+
+    /// Write several native answers in one upsert ("Use previous answers" filling a day), so the journal
+    /// change signal fires once for the batch rather than once per answer.
+    func saveJournalEntries(_ entries: [JournalEntry]) async {
+        guard !entries.isEmpty, let store = await ensureStore() else { return }
+        _ = try? await store.upsertJournal(entries, deviceId: Self.journalDeviceId)
+        noteJournalChanged()
     }
 
     /// Write one native NUMERIC answer (#322): stores the value AND answeredYes=true, so the existing
@@ -2754,6 +2774,7 @@ final class Repository: ObservableObject {
             [JournalEntry(day: day, question: question, answeredYes: true, notes: notes,
                           numericValue: value)],
             deviceId: Self.journalDeviceId)
+        noteJournalChanged()
     }
 
     /// Per-question numeric series (question → [day: value]) over the imported ∪ native union, native
@@ -2774,6 +2795,7 @@ final class Repository: ObservableObject {
     func clearJournalAnswer(day: String, question: String) async {
         guard let store = await ensureStore() else { return }
         _ = try? await store.deleteJournal(deviceId: Self.journalDeviceId, day: day, question: question)
+        noteJournalChanged()
     }
 
     /// All workouts (WHOOP + Apple Health + manual + grandfathered detected bouts), newest first.

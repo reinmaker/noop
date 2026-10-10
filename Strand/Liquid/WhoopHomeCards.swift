@@ -296,44 +296,59 @@ struct WhoopActivitiesCard: View {
 
 // MARK: - My Journal
 
-/// "MY JOURNAL": the last seven days with a check for each day that has journal answers, plus the
-/// Behavior Insights button (NOOP's "What Moves You" hub).
+/// "MY JOURNAL": the last seven days with a check for each day whose journal is saved, plus the Behavior
+/// Insights button (NOOP's "What Moves You" hub). Days follow the journal's one day model
+/// (`JournalDays`): a check under Friday means "What happened on Friday?" is answered, in Yoop or in an
+/// imported WHOOP journal. Tapping a day opens the journal on that day; tapping the rest of the card opens
+/// it on the day WHOOP would ask about.
 struct WhoopJournalCard: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var router: NavRouter
-    @State private var loggedDays: Set<String> = []
+    /// Stored day keys with any journal answer across the strip (`Repository.journalAnsweredDays`).
+    @State private var answeredDays: Set<String> = []
 
-    private var lastSevenDays: [Date] {
-        let cal = Calendar.current
-        let today = Repository.logicalDay(Date())
-        return (0..<7).reversed().compactMap { cal.date(byAdding: .day, value: -$0, to: today) }
-    }
+    /// The strip's `JournalDays` offsets, oldest on the left: six days ago through today.
+    private var stripOffsets: [Int] { Array((0..<JournalDays.stripCount).reversed()) }
 
     var body: some View {
-        WhoopTitledCard(title: String(localized: "MY JOURNAL")) {
-            Button { router.openJournal() } label: {
-                HStack(spacing: 0) {
-                    ForEach(lastSevenDays, id: \.self) { day in
-                        dayColumn(day)
+        let logicalToday = Repository.logicalDay(Date())
+        return WhoopTitledCard(title: String(localized: "MY JOURNAL")) {
+            HStack(spacing: 0) {
+                ForEach(stripOffsets, id: \.self) { offset in
+                    Button { router.openJournal(day: offset) } label: {
+                        dayColumn(offset: offset, logicalToday: logicalToday)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(JournalLogCard.dayLabel(offset))
                 }
             }
-            .buttonStyle(.plain)
             Button { router.openInsightsHub() } label: {
                 WhoopActionButtonLabel(title: String(localized: "BEHAVIOR INSIGHTS"), systemImage: "lightbulb")
             }
             .buttonStyle(.plain)
         }
-        .task {
-            let entries = await repo.journalEntries(days: 8)
-            loggedDays = Set(entries.map(\.day))
+        // The title and the card's bare surface open the journal on the day WHOOP would ask about; the
+        // day buttons and Behavior Insights take their own taps first.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            router.openJournal(day: JournalDays.dueOffset(answered: answeredDays,
+                                                          logicalToday: Repository.logicalDay(Date())))
+        }
+        // Re-read on a data refresh, on every journal save or clear, and when the logical day rolls, so a
+        // check appears the moment a day's journal is answered.
+        .task(id: JournalStripLoadKey(seq: repo.refreshSeq, journalSeq: repo.journalSeq,
+                                      day: Repository.logicalDayKey(Date()))) {
+            let today = Repository.logicalDay(Date())
+            answeredDays = await repo.journalAnsweredDays(
+                from: JournalDays.storageKey(offset: JournalDays.stripCount - 1, logicalToday: today),
+                to: JournalDays.storageKey(offset: 0, logicalToday: today))
         }
     }
 
-    private func dayColumn(_ day: Date) -> some View {
-        let key = Repository.localDayKey(day)
-        let logged = loggedDays.contains(key)
-        let isToday = Calendar.current.isDate(day, inSameDayAs: Repository.logicalDay(Date()))
+    private func dayColumn(offset: Int, logicalToday: Date) -> some View {
+        let day = JournalDays.behaviourDay(offset: offset, logicalToday: logicalToday)
+        let logged = answeredDays.contains(JournalDays.storageKey(offset: offset, logicalToday: logicalToday))
+        let isToday = offset == 0
         return VStack(spacing: NoopMetrics.space2) {
             Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
                 .font(WhoopStyle.smallLabel)
@@ -350,7 +365,15 @@ struct WhoopJournalCard: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())   // the whole column is the day's tap target
     }
+}
+
+/// Reload key for the Home journal strip: a data refresh, a journal save or clear, or a logical-day rollover.
+private struct JournalStripLoadKey: Equatable {
+    let seq: Int
+    let journalSeq: Int
+    let day: String
 }
 
 // MARK: - My Dashboard

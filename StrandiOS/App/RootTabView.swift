@@ -144,9 +144,10 @@ struct RootTabView: View {
         }
     }
 
-    /// WHOOP-style morning routine: the first time the app comes up between 4am and 2pm, if yesterday has
-    /// no journal answers, open the journal at yesterday. Once per day, and never before the first-run
-    /// gates are done.
+    /// WHOOP-style morning routine: the first time the app comes up between 4am and 2pm, if yesterday's
+    /// journal ("What happened yesterday?") has no answers, open the journal on it. Once per day, and
+    /// never before the first-run gates are done. Reads the same answered-day funnel and day model
+    /// (`JournalDays`) as the Home journal strip, so the prompt and the strip agree on what is answered.
     private func maybePromptMorningJournal() {
         guard homeScreenQuickActionsEnabled else { return }
         let now = Date()
@@ -156,11 +157,12 @@ struct RootTabView: View {
         guard UserDefaults.standard.string(forKey: key) != today else { return }
         UserDefaults.standard.set(today, forKey: key)
         Task {
-            guard let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now) else { return }
-            let keys: Set<String> = [Repository.logicalDayKey(yesterday), Repository.localDayKey(yesterday)]
-            let entries = await repo.journalEntries(days: 3)
-            guard !entries.contains(where: { keys.contains($0.day) }) else { return }
-            router.openJournal(day: 1)
+            let logicalToday = Repository.logicalDay(now)
+            let answered = await repo.journalAnsweredDays(
+                from: JournalDays.storageKey(offset: JournalDays.stripCount - 1, logicalToday: logicalToday),
+                to: JournalDays.storageKey(offset: 0, logicalToday: logicalToday))
+            guard !answered.contains(JournalDays.storageKey(offset: 1, logicalToday: logicalToday)) else { return }
+            router.openJournal(day: JournalDays.dueOffset(answered: answered, logicalToday: logicalToday))
         }
     }
 

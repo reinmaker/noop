@@ -1,13 +1,18 @@
 import SwiftUI
 import StrandDesign
+import WhoopStore
 
 /// Native journal logging, yes/no chips and numeric fields for the merged behaviour catalog plus a
 /// custom-question field, hosted at the top of Insights. Answers write under
 /// `Repository.journalDeviceId` ("noop-journal"), NEVER the imported source, so a CSV re-import can't
 /// clobber them and clearing is safe (imported rows are never touched). Tri-state: tapping the selected
-/// chip again clears the answer. Day attribution follows the importer's wake-day convention, answers
-/// describe the night and day leading into the selected morning, so logged days line up with imported
-/// history.
+/// chip again clears the answer.
+///
+/// Yoop (WHOOP parity): the card shows one behaviour day and asks "What happened yesterday?" about it.
+/// `JournalDays` maps that day to its stored row (the morning after, the importer's wake-day
+/// convention), so logged days line up with imported history and with the Home journal strip. A day
+/// answered in WHOOP shows its imported picks, and "Use previous answers" fills an empty past day from
+/// the most recent earlier journal.
 ///
 /// v2 (#322): items sit under collapsible groups (Nutrition / Supplements / …); an item can be a
 /// numeric value (with a unit) instead of a toggle; and custom items can be renamed / regrouped /
@@ -22,19 +27,31 @@ struct JournalLogCard: View {
     /// Distinct imported question strings (from InsightsView's load), adopted into the catalog so
     /// logged answers and imported history group under the same behaviour.
     let importedQuestions: [String]
-    /// question → answeredYes for the selected day, native rows only (drives the chip state).
+    /// question → answeredYes for the shown day, native rows only (drives the chip state).
     let answers: [String: Bool]
-    /// question → numeric value for the selected day, native rows only (drives the numeric fields).
+    /// question → numeric value for the shown day, native rows only (drives the numeric fields).
     let numericAnswers: [String: Double]
-    @Binding var dayOffset: Int            // -1 = tomorrow, 0 = today, 1 = yesterday
+    /// The shown day's imported WHOOP answers, keyed by `JournalDays.questionKey`. A question with no
+    /// in-app answer shows its WHOOP pick, so a day answered in WHOOP reads as answered here too.
+    let importedAnswers: [String: Bool]
+    /// The most recent earlier journal's rows: what "Use previous answers" copies onto an empty day.
+    let previousAnswers: [JournalEntry]
+    /// The stored day key the inputs above were read for. A prefill waits until it matches the shown
+    /// day, so switching days can never copy answers onto a day whose own answers have not loaded yet.
+    let loadedDayKey: String
+    @Binding var dayOffset: Int            // `JournalDays` offset: 0 = today, 1 = yesterday, up to 7
     let onChanged: () -> Void              // parent re-runs load() after a write
 
     init(importedQuestions: [String], answers: [String: Bool],
-         numericAnswers: [String: Double] = [:], dayOffset: Binding<Int>,
-         onChanged: @escaping () -> Void) {
+         numericAnswers: [String: Double] = [:], importedAnswers: [String: Bool] = [:],
+         previousAnswers: [JournalEntry] = [], loadedDayKey: String = "",
+         dayOffset: Binding<Int>, onChanged: @escaping () -> Void) {
         self.importedQuestions = importedQuestions
         self.answers = answers
         self.numericAnswers = numericAnswers
+        self.importedAnswers = importedAnswers
+        self.previousAnswers = previousAnswers
+        self.loadedDayKey = loadedDayKey
         self._dayOffset = dayOffset
         self.onChanged = onChanged
     }
@@ -49,10 +66,50 @@ struct JournalLogCard: View {
     /// The item being renamed (drives the rename sheet).
     @State private var renaming: JournalCatalogItem?
     @State private var renameDraft = ""
+    /// "Use previous answers" (WHOOP's toggle, on by default): an empty past day is filled from the most
+    /// recent earlier journal, so only what was different needs a tap.
+    @AppStorage("journal.usePreviousAnswers") private var usePreviousAnswers = true
+    /// Stored day keys "Use previous answers" has already filled, oldest first and capped, so a day the
+    /// user empties afterwards is never filled again behind their back.
+    @AppStorage("journal.prefilledDays") private var prefilledDaysRaw = ""
+    /// Which field has the keyboard: a numeric item's canonical question, or `Self.customFieldFocus`.
+    /// One focus for the whole card, so the single keyboard Done button resigns any of its fields.
+    @FocusState private var focusedField: String?
+    /// What has been typed into a numeric field, held until the field loses focus. The decimal pad has
+    /// no Return key, so saving only on submit lost every typed number; leaving the field now saves it.
+    @State private var numericDrafts: [String: String] = [:]
 
+    /// Focus tag for the custom-item text field. Starts with a control character, so it is never a question.
+    private static let customFieldFocus = "\u{0}custom"
+    /// How many filled days `prefilledDaysRaw` remembers, well past the picker's one-week reach.
+    private static let prefilledDaysKept = 30
+
+    /// The logical (04:00) today the shown day counts back from: the same clock the Home strip uses.
+    private var logicalToday: Date { Repository.logicalDay(Date()) }
+
+    /// The stored row key for the shown day, through the one journal day model (`JournalDays`).
     private var dayKey: String {
-        Repository.localDayKey(
-            Calendar.current.date(byAdding: .day, value: -dayOffset, to: Date()) ?? Date())
+        JournalDays.storageKey(offset: dayOffset, logicalToday: logicalToday)
+    }
+
+    /// WHOOP's question line for the shown day: "What happened yesterday?", "What happened today?" when
+    /// logging ahead, otherwise the dated form ("What happened on Friday, October 9?").
+    private var dayQuestion: String {
+        switch dayOffset {
+        case 0: return String(localized: "What happened today?")
+        case 1: return String(localized: "What happened yesterday?")
+        default:
+            let day = JournalDays.behaviourDay(offset: dayOffset, logicalToday: logicalToday)
+            let dayText = day.formatted(.dateTime.weekday(.wide).month(.wide).day())
+            return String(localized: "What happened on \(dayText)?")
+        }
+    }
+
+    /// No answer of any kind on the shown day: no in-app answer (a saved Coach note aside), no number
+    /// and no imported WHOOP pick. Only such a day is ever filled from previous answers.
+    private var dayIsEmpty: Bool {
+        !answers.keys.contains { $0 != JournalDays.coachAdviceQuestion }
+            && numericAnswers.isEmpty && importedAnswers.isEmpty
     }
 
     /// The resolved, grouped catalog for the current imported set. Hidden items included only while
@@ -88,16 +145,16 @@ struct JournalLogCard: View {
                     pillButton("Edit", selected: false) { editing = true }
                 }
             }
-            // Day picker (#656): a bounded, scrollable range — Tomorrow back through the last 7 days — so
-            // any recent day can be backfilled (was Yesterday/Today/Tomorrow only). Chronological
-            // left→right; snaps to the selected day, so a deep-link from the Today journal widget lands on
-            // that day's pill. Only when not editing.
+            // Day picker (#656): a bounded, scrollable range, today back through the last 7 days, so any
+            // recent day can be backfilled. Chronological left→right; snaps to the selected day, so a
+            // deep-link from the Home strip or the Today journal widget lands on that day's pill. Only
+            // when not editing.
             if !editing {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(Self.journalDayOffsets, id: \.self) { off in
-                                dayPill(journalDayLabel(off), offset: off).id(off)
+                                dayPill(Self.dayLabel(off), offset: off).id(off)
                             }
                         }
                         .padding(.horizontal, 1)   // don't clip the selected pill's ring
@@ -112,14 +169,14 @@ struct JournalLogCard: View {
             }
             NoopCard(tint: StrandPalette.restColor) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(editing
-                         ? "Rename, regroup, or remove an item to tidy your list. Renaming keeps the original question behind the scenes, so a WHOOP import still lines up. Custom items are deleted; built-in ones are hidden and can be restored below."
-                         : dayOffset == -1
-                         ? "Logging ahead for tomorrow: today's activities inform tomorrow's recovery, just as yesterday's are reflected in today's. Tomorrow's answers line up with tomorrow's morning."
-                         : "Answers are about the night and day leading into this morning, the same attribution a WHOOP export uses, so logged and imported days line up.")
-                        .font(StrandFont.footnote)
-                        .foregroundStyle(StrandPalette.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if editing {
+                        Text("Rename, regroup, or remove an item to tidy your list. Renaming keeps the original question behind the scenes, so a WHOOP import still lines up. Custom items are deleted; built-in ones are hidden and can be restored below.")
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        dayHeader
+                    }
 
                     ForEach(JournalGroup.displayOrder, id: \.self) { group in
                         groupBlock(group)
@@ -131,6 +188,79 @@ struct JournalLogCard: View {
             }
         }
         .sheet(item: $renaming) { item in renameSheet(item) }
+        // One Done button on the keyboard for every field in the card (the decimal pad has no Return).
+        .keyboardDoneToolbar($focusedField)
+        // Leaving a numeric field, by Done or by tapping elsewhere, saves what was typed into it.
+        .onChangeCompat(of: focusedField) { now in commitNumericDrafts(except: now) }
+        // A reload brings the saved values in: drop the drafts it caught up with, not the one being typed.
+        .onChangeCompat(of: numericAnswers) { _ in
+            numericDrafts = numericDrafts.filter { $0.key == focusedField }
+        }
+        .onDisappear { commitNumericDrafts(except: nil) }
+        // "Use previous answers": fill an empty past day once its own answers have loaded.
+        .task(id: PrefillTrigger(day: dayKey, loadedDay: loadedDayKey,
+                                 previousDay: previousAnswers.first?.day ?? "", empty: dayIsEmpty)) {
+            prefillFromPreviousIfNeeded(force: false)
+        }
+        // Turning the toggle on fills the day on screen straight away, if it is still empty.
+        .onChangeCompat(of: usePreviousAnswers) { on in
+            if on { prefillFromPreviousIfNeeded(force: true) }
+        }
+    }
+
+    // MARK: - Day header
+
+    /// The shown day's question, the "Use previous answers" toggle (past days only, logging ahead has
+    /// nothing earlier to copy), and how the answers are attributed.
+    private var dayHeader: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            Text(dayQuestion)
+                .font(StrandFont.headline)
+                .foregroundStyle(StrandPalette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if dayOffset >= 1 {
+                Toggle(isOn: $usePreviousAnswers) {
+                    Text("Use previous answers")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                }
+                .toggleStyle(.switch)
+                .tint(StrandPalette.restColor)
+            }
+            Text("Your answers count toward the next morning's recovery, the same way a WHOOP export lines them up.")
+                .font(StrandFont.footnote)
+                .foregroundStyle(StrandPalette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - Use previous answers
+
+    /// Copy the most recent earlier journal onto the shown past day when that day has no answer yet,
+    /// saving the copied answers at once (there is no Save button; every answer saves as it is set), so
+    /// the user only changes what was different. A day is filled once; `force` (the toggle was just
+    /// turned on) fills it again if it is empty. A day with any answer, in-app or WHOOP, is never touched.
+    private func prefillFromPreviousIfNeeded(force: Bool) {
+        let day = dayKey
+        guard usePreviousAnswers, dayOffset >= 1, loadedDayKey == day, dayIsEmpty,
+              !previousAnswers.isEmpty else { return }
+        var filled = prefilledDaysRaw.split(separator: ",").map(String.init)
+        guard force || !filled.contains(day) else { return }
+        let items = catalog.resolvedItems(imported: importedQuestions)
+            .map { (canonical: $0.canonical, isNumeric: $0.kind.isNumeric) }
+        let plan = JournalDays.prefillPlan(items: items, previous: previousAnswers)
+        guard !plan.isEmpty else { return }
+        filled.removeAll { $0 == day }
+        filled.append(day)
+        prefilledDaysRaw = filled.suffix(Self.prefilledDaysKept).joined(separator: ",")
+        let entries = plan.map {
+            JournalEntry(day: day, question: $0.question, answeredYes: $0.answeredYes, notes: nil,
+                         numericValue: $0.value)
+        }
+        Task {
+            await repo.saveJournalEntries(entries)
+            onChanged()
+        }
     }
 
     // MARK: - Group block
@@ -188,23 +318,27 @@ struct JournalLogCard: View {
     // MARK: - Numeric field
 
     private func numericField(_ item: JournalCatalogItem) -> some View {
-        let current = numericAnswers[item.canonical]
+        let q = item.canonical
+        let current = numericAnswers[q]
         return HStack(spacing: 6) {
-            stepperButton("minus", q: item.canonical, current: current)
+            stepperButton("minus", q: q, current: current)
             NumericLogField(
-                value: current,
+                text: numericText(q),
                 placeholder: "—",
-                onCommit: { v in commitNumeric(item.canonical, value: v) })
+                focus: $focusedField, id: q,
+                onSubmit: { submitNumericDraft(q) })
             .frame(width: 64)
             if let unit = item.kind.unitLabel, !unit.isEmpty {
                 Text(verbatim: unit)
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
-            stepperButton("plus", q: item.canonical, current: current)
+            stepperButton("plus", q: q, current: current)
             if current != nil {
                 Button {
-                    Task { await repo.clearJournalAnswer(day: dayKey, question: item.canonical); onChanged() }
+                    numericDrafts[q] = nil
+                    let day = dayKey
+                    Task { await repo.clearJournalAnswer(day: day, question: q); onChanged() }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(StrandFont.footnote)
@@ -218,8 +352,10 @@ struct JournalLogCard: View {
 
     private func stepperButton(_ symbol: String, q: String, current: Double?) -> some View {
         Button {
-            let base = current ?? 0
+            // Step from what is typed if there is a number in the field, else from the saved value.
+            let base = draftValue(q) ?? current ?? 0
             let next = max(0, symbol == "plus" ? base + 1 : base - 1)
+            numericDrafts[q] = nil
             commitNumeric(q, value: next)
         } label: {
             Image(systemName: "\(symbol).circle")
@@ -231,10 +367,47 @@ struct JournalLogCard: View {
     }
 
     private func commitNumeric(_ q: String, value: Double) {
+        let day = dayKey   // read now: a day switch right after this tap must not move the write
         Task {
-            await repo.saveJournalNumeric(day: dayKey, question: q, value: value)
+            await repo.saveJournalNumeric(day: day, question: q, value: value)
             onChanged()
         }
+    }
+
+    /// The text a numeric field shows: what is being typed, else the saved value.
+    private func numericText(_ q: String) -> Binding<String> {
+        Binding(get: { numericDrafts[q] ?? numericAnswers[q].map(Self.formatNumeric) ?? "" },
+                set: { numericDrafts[q] = $0 })
+    }
+
+    /// A typed draft read as a number (a decimal comma is accepted), or nil when it is not one.
+    private func draftValue(_ q: String) -> Double? {
+        guard let text = numericDrafts[q] else { return nil }
+        return Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
+    }
+
+    /// Save the number typed into one field (Return on a hardware keyboard, or the field losing focus).
+    /// An unchanged value is not written again. Returns whether a save was started.
+    @discardableResult
+    private func submitNumericDraft(_ q: String) -> Bool {
+        guard let value = draftValue(q), value != numericAnswers[q] else { return false }
+        commitNumeric(q, value: value)
+        return true
+    }
+
+    /// Save every typed number except the field still being edited. A saved draft stays on screen until
+    /// the reload brings its value in (no blank flash); a draft that is not a new number is dropped. Runs
+    /// when focus moves (the keyboard's Done included), before a day switch, and when the card goes away.
+    private func commitNumericDrafts(except focused: String?) {
+        var kept: [String: String] = [:]
+        for (q, text) in numericDrafts {
+            if q == focused || submitNumericDraft(q) { kept[q] = text }
+        }
+        numericDrafts = kept
+    }
+
+    private static func formatNumeric(_ v: Double) -> String {
+        v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
     }
 
     // MARK: - Edit-mode controls
@@ -320,6 +493,7 @@ struct JournalLogCard: View {
             HStack {
                 TextField("Add a custom item…", text: $customDraft)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: Self.customFieldFocus)
                 pillButton(customIsNumeric ? "Number" : "Yes/No", selected: customIsNumeric) {
                     customIsNumeric.toggle()
                 }
@@ -349,21 +523,25 @@ struct JournalLogCard: View {
 
     private func dayPill(_ label: LocalizedStringKey, offset: Int) -> some View {
         pillButton(label, selected: dayOffset == offset) {
+            // Save anything typed on the day being left, then clear the fields for the day being opened.
+            commitNumericDrafts(except: nil)
+            numericDrafts = [:]
+            focusedField = nil
             dayOffset = offset
             onChanged()   // reload the selected day's answers
         }
     }
 
-    /// The bounded day-picker range (#656): Tomorrow (-1) plus today and the 6 prior days, chronological
-    /// oldest → newest left-to-right. Bounded on purpose — journal answers feed the correlation engine, so
-    /// unbounded backfill of stale days would distort it (matches WHOOP's limited retroactive window).
-    private static let journalDayOffsets: [Int] = Array((-1...6).reversed())
+    /// The bounded day-picker range (#656): today plus the 7 prior days, as `JournalDays` offsets,
+    /// chronological oldest → newest left-to-right. Bounded on purpose: journal answers feed the
+    /// correlation engine, so unbounded backfill of stale days would distort it (matches WHOOP's limited
+    /// retroactive window). Same stored rows as before: today's pill is the old "Tomorrow" row.
+    private static let journalDayOffsets: [Int] = Array((0...JournalDays.maxOffset).reversed())
 
-    /// Short pill label for a day-picker offset (daysBack; -1 = Tomorrow). "%lld days ago" is a String
-    /// Catalog key, so 2–6 stay localized just like the twin "%lld nights ago" (#527/#656).
-    private func journalDayLabel(_ offset: Int) -> LocalizedStringKey {
+    /// Short label for a `JournalDays` offset, shared with the Home journal strip. "%lld days ago" is a
+    /// String Catalog key, so 2 to 7 stay localized just like the twin "%lld nights ago" (#527/#656).
+    static func dayLabel(_ offset: Int) -> LocalizedStringKey {
         switch offset {
-        case -1: return "Tomorrow"
         case 0: return "Today"
         case 1: return "Yesterday"
         default: return "\(offset) days ago"
@@ -371,15 +549,20 @@ struct JournalLogCard: View {
     }
 
     private func answerPill(_ label: LocalizedStringKey, q: String, value: Bool) -> some View {
-        let selected = answers[q] == value
+        let native = answers[q]
+        // No in-app answer yet: show the day's imported WHOOP pick for the same question.
+        let shown = native ?? importedAnswers[JournalDays.questionKey(q)]
+        let selected = shown == value
         return pillButton(label, selected: selected) {
+            let day = dayKey
             Task {
-                // Tri-state: re-tapping the filled chip clears the answer (natural-key delete,
-                // scoped to "noop-journal", imported rows can never be removed this way).
-                if selected {
-                    await repo.clearJournalAnswer(day: dayKey, question: q)
+                // Tri-state: re-tapping the filled chip clears the in-app answer (natural-key delete,
+                // scoped to "noop-journal", imported rows can never be removed this way). A chip filled
+                // only by a WHOOP pick is saved in-app instead, so it becomes editable here.
+                if selected, native != nil {
+                    await repo.clearJournalAnswer(day: day, question: q)
                 } else {
-                    await repo.saveJournalAnswer(day: dayKey, question: q, answeredYes: value)
+                    await repo.saveJournalAnswer(day: day, question: q, answeredYes: value)
                 }
                 onChanged()
             }
@@ -403,34 +586,32 @@ struct JournalLogCard: View {
     }
 }
 
-/// A compact numeric log field: shows the current value or a ghost placeholder, commits a Double on
-/// return / focus-out. Kept small so the numeric row reads like the yes/no pills.
+/// A compact numeric log field: shows the typed text or the saved value (both owned by the card) with a
+/// ghost placeholder. The card saves on Return and whenever the field loses focus, the keyboard's Done
+/// included. Kept small so the numeric row reads like the yes/no pills.
 private struct NumericLogField: View {
-    let value: Double?
+    @Binding var text: String
     let placeholder: String
-    let onCommit: (Double) -> Void
-
-    @State private var text = ""
+    let focus: FocusState<String?>.Binding
+    let id: String
+    let onSubmit: () -> Void
 
     var body: some View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.center)
             .font(StrandFont.number(15))
-            .onAppear { text = value.map(Self.format) ?? "" }
-            .onChangeCompat(of: value) { v in text = v.map(Self.format) ?? "" }
-            .onSubmit { commit() }
-        #if os(iOS)
-            .keyboardType(.decimalPad)
-        #endif
+            .focused(focus, equals: id)
+            .onSubmit(onSubmit)
+            .numericKeyboard()
     }
+}
 
-    private func commit() {
-        let cleaned = text.replacingOccurrences(of: ",", with: ".")
-        if let v = Double(cleaned) { onCommit(v) }
-    }
-
-    private static func format(_ v: Double) -> String {
-        v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
-    }
+/// `.task(id:)` key for "Use previous answers": re-checked whenever the shown day, the day its answers
+/// were read for, the earlier journal it would copy, or whether the day is empty changes.
+private struct PrefillTrigger: Equatable {
+    let day: String
+    let loadedDay: String
+    let previousDay: String
+    let empty: Bool
 }
