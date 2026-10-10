@@ -61,7 +61,8 @@ struct WhoopSleepPlan {
     static func tonight(repo: Repository, alarm: Date?, now: Date = Date()) -> WhoopSleepPlan {
         let days = repo.days
         let baseline = SleepModel.sleepNeedMin(days: days)
-        let strain = days.last?.strain.map(AICoachEngine.strain21) ?? 0
+        // The day's Strain as the Strain ring shows it, effort ratings included (`Repository.dayStrain`).
+        let strain = days.last.flatMap { repo.dayStrain($0) }.map(AICoachEngine.strain21) ?? 0
         let debt = SleepModel.sleepDebtSeries(days: days, importedSleep: repo.importedSleep,
                                               napSleepMinByDay: [:]).latest ?? 0
         let efficiencies = days.suffix(14).compactMap(\.efficiency).filter { $0 > 0.5 && $0 <= 1 }

@@ -750,7 +750,7 @@ struct WorkoutsView: View {
     /// Effort axis, mirroring the Today effort ring); the headline number is shown on the user's scale.
     @ViewBuilder
     private func effortHero(rows: [WorkoutRow], effectiveRange: Range, groups: [SportGroup]) -> some View {
-        let strains = rows.compactMap(\.strain)
+        let strains = rows.compactMap { repo.activityStrain($0) }
         let avgStrain = strains.isEmpty ? 0 : strains.reduce(0, +) / Double(strains.count)
         let totalTimeH = rows.compactMap(\.durationS).reduce(0, +) / 3600.0
         NoopCard(padding: 20, tint: StrandPalette.effortColor) {
@@ -1442,8 +1442,8 @@ struct WorkoutsView: View {
                  color: row.energyKcal != nil ? StrandPalette.metricAmber : nil)
             cell(distanceLabel(row.distanceM), width: ColWidth.dist)
             // #796 - per-session Effort, on the user's scale, tinted the Effort colour when present.
-            cell(Self.effortCellLabel(strain: row.strain, scale: effortScale), width: ColWidth.effort,
-                 color: row.strain != nil ? StrandPalette.effortColor : nil)
+            cell(Self.effortCellLabel(strain: repo.activityStrain(row), scale: effortScale), width: ColWidth.effort,
+                 color: repo.activityStrain(row) != nil ? StrandPalette.effortColor : nil)
 
             Spacer(minLength: 0)
 
@@ -1515,9 +1515,9 @@ struct WorkoutsView: View {
                             .foregroundStyle(StrandPalette.textPrimary)
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        Text(Self.effortCellLabel(strain: row.strain, scale: effortScale))
+                        Text(Self.effortCellLabel(strain: repo.activityStrain(row), scale: effortScale))
                             .font(StrandFont.number(15))
-                            .foregroundStyle(row.strain != nil ? StrandPalette.effortColor : StrandPalette.textTertiary)
+                            .foregroundStyle(repo.activityStrain(row) != nil ? StrandPalette.effortColor : StrandPalette.textTertiary)
                     }
                     Text(compactRowSubtitle(row))
                         .font(StrandFont.footnote)
@@ -1590,8 +1590,8 @@ struct WorkoutsView: View {
 
     /// A full-sentence a11y label for a compact row.
     private func compactRowAccessibilityLabel(_ row: WorkoutRow, selectable: Bool, isSelected: Bool) -> String {
-        let effort = row.strain != nil
-            ? String(localized: "Effort \(Self.effortCellLabel(strain: row.strain, scale: effortScale))")
+        let effort = repo.activityStrain(row) != nil
+            ? String(localized: "Effort \(Self.effortCellLabel(strain: repo.activityStrain(row), scale: effortScale))")
             : String(localized: "no Effort recorded")
         let base = String(localized: "\(WorkoutSource.displaySport(row.sport)), \(compactRowSubtitle(row)), \(effort)")
         guard selectionMode else { return base }

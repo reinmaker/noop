@@ -26,7 +26,7 @@ struct WhoopCoachPill: View {
         var parts: [String] = [d?.day ?? ""]
         let recovery: Double? = d?.recovery
         let sleep: Double? = d?.totalSleepMin
-        let strain: Double? = d?.strain.map { AICoachEngine.strain21($0) }
+        let strain: Double? = d.flatMap { repo.dayStrain($0) }.map { AICoachEngine.strain21($0) }
         parts.append(recovery.map { String(Int($0)) } ?? "")
         parts.append(sleep.map { String(Int($0)) } ?? "")
         parts.append(strain.map { String(Int($0)) } ?? "")
@@ -391,7 +391,9 @@ struct WhoopStrainScreen: View {
     @State private var appleSteps: [String: Double] = [:]
 
     var body: some View {
-        let shown = WhoopSelectedDay.split(repo.days)
+        // Strain through the one funnel (`Repository.strainDays`): the ring, the contributor row and the
+        // weekly bars read what Home reads, effort ratings included.
+        let shown = WhoopSelectedDay.split(repo.strainDays)
         let days = shown.upTo
         let today = shown.day
         let prior = shown.prior

@@ -217,7 +217,7 @@ struct WhoopActivitiesCard: View {
 
     private func workoutRow(_ w: WorkoutRow) -> some View {
         row(icon: sportSymbol(w.sport),
-            chip: w.strain.map { String(format: "%.1f", AICoachEngine.strain21($0)) } ?? "–",
+            chip: repo.activityStrain(w).map { String(format: "%.1f", AICoachEngine.strain21($0)) } ?? "–",
             chipColor: StrandPalette.effortColor,
             name: WorkoutSource.displaySport(w.sport).uppercased(),
             start: Date(timeIntervalSince1970: TimeInterval(w.startTs)),

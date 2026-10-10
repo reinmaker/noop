@@ -1031,7 +1031,12 @@ final class Repository: ObservableObject {
             && merged.importedSleep == importedSleep
             && merged.vitalRows == vitalRows
             && merged.freshness == freshness
-        guard !unchanged else { return }
+        // Yoop: what effort ratings add is read from the workouts, which this diff does not cover, so it is
+        // rebuilt on both paths (a no-op without ratings).
+        guard !unchanged else {
+            await rebuildStrainBook()
+            return
+        }
 
         // One consistent publish per refresh: assign every cache, flip `loaded`, then bump `refreshSeq` so
         // the intraday-updating views reload exactly once for this real change.
@@ -1054,6 +1059,7 @@ final class Repository: ObservableObject {
         // and an appended line after the bump is how that invariant quietly stops being true.
         self.exploreAllCache = nil
         self.refreshSeq += 1
+        await rebuildStrainBook()
     }
 
     /// Per-source coverage counts for the Freshness Pipeline card. Pure over the rows already read.
@@ -3036,6 +3042,7 @@ final class Repository: ObservableObject {
             // visibility remain untouched; a failed explicit edit must not turn into data loss.
             do { _ = try await store.upsertWorkouts([row], deviceId: deviceId) }
             catch { return }
+            activityEffortStore.move(from: old.startTs, to: row.startTs)
             await dismissDetected(old)
             return
         } else if let old, old.startTs != row.startTs || old.sport != row.sport {
@@ -3044,6 +3051,8 @@ final class Repository: ObservableObject {
             // rows rather than lost history.
             do { _ = try await store.upsertWorkouts([row], deviceId: deviceId) }
             catch { return }
+            // The rating is keyed by start alone, so a type change keeps it and a moved start takes it along.
+            activityEffortStore.move(from: old.startTs, to: row.startTs)
             // #10: the GPS route lives in RouteStore keyed by the natural key (startTs + sport), NOT in the
             // DB row. Copy it only after the replacement row is durable. Keep the old copy until the old
             // DB row is successfully retired, so a delete failure preserves both complete versions.
@@ -3106,6 +3115,7 @@ final class Repository: ObservableObject {
     /// gets a durable dismissal marker; everything else the screen can delete (manual) lives under the
     /// active strap id.
     func deleteWorkout(_ row: WorkoutRow) async {
+        await forgetActivityEffort(startTs: row.startTs)
         if WorkoutSource.classify(row.source) == .detected { await dismissDetected(row); return }
         guard let store = await ensureStore() else { return }
         // Sweep every STRAP namespace, not just the active one. A manual row banked under a retained
@@ -3189,7 +3199,9 @@ final class Repository: ObservableObject {
     func bulkDeleteWorkouts(_ rows: [WorkoutRow]) async {
         for r in rows {
             switch WorkoutSource.classify(r.source) {
-            case .detected: await dismissDetected(r)
+            case .detected:
+                await forgetActivityEffort(startTs: r.startTs)
+                await dismissDetected(r)
             case .manual:   await deleteWorkout(r)
             case .whoop, .apple, .lifting, .activityFile: continue
             }
@@ -3381,10 +3393,12 @@ final class Repository: ObservableObject {
         }) {
             if let bout = bouts.first(where: { $0.startSec < row.endTs && row.startTs < $0.endSec }) {
                 // The same session over a corrected span: move the span and keep the type (the user's, or
-                // the guess it already had), so a session is never lost in between.
+                // the guess it already had) and the user's effort rating, so a session is never lost in between.
+                let effort = activityEffortStore.effort(startTs: row.startTs)
                 await deleteWorkout(row)
                 dismissDetectedSuggestion(bout)
                 guard await saveDetectedWorkout(bout, sport: row.sport) else { continue }
+                if let effort { activityEffortStore.set(effort, startTs: bout.startSec) }
                 if userTyped.contains(row.startTs) {
                     userTypedDetectedStarts = userTypedDetectedStarts.filter { $0 != row.startTs } + [bout.startSec]
                 } else {
@@ -3533,6 +3547,106 @@ final class Repository: ObservableObject {
         guard !spans.contains(token) else { return }
         spans.append(token)
         autoDetectDismissedSpans = prunedAutoDetectSpans(spans, now: Int(Date().timeIntervalSince1970))
+    }
+
+    // MARK: - Yoop: session effort and muscle load
+    //
+    // The user rates how hard each of their own activities was (`MuscleLoad`), and a rated strength session
+    // adds muscle load to its Strain and to its day's. `strainBook` holds what the ratings add, and every
+    // Strain readout resolves through `dayStrain`, `activityStrain` or `strainDays`, so no two screens can
+    // show different Strain for one day or activity. Only with Yoop's scores on the WHOOP-calibrated curve
+    // (`muscleLoadEnabled`); without them each resolver returns the stored value, as before.
+
+    /// Whether ratings add muscle load: Yoop's scores, with Strain on the curve muscle load is placed on.
+    static var muscleLoadEnabled: Bool {
+        PuffinExperiment.whoopScoresEnabled && PuffinExperiment.effortMethod == .whoop
+    }
+
+    /// Where the ratings live. A var so tests can give it their own defaults.
+    var activityEffortStore = ActivityEffortStore()
+
+    /// What the ratings add, by activity and by day (`rebuildStrainBook`).
+    @Published private(set) var strainBook: StrainBook = .empty
+
+    /// Today's in-progress Strain as Home last worked it out (`noteLiveDayStrain`).
+    @Published private(set) var liveDayStrain: LiveDayStrain?
+
+    /// Bumped whenever `strainBook` or `liveDayStrain` changes, for caches of resolved Strain that are
+    /// otherwise keyed on `refreshSeq` (a rating changes no stored row).
+    private(set) var strainRevision = 0
+
+    /// Lets a newer `rebuildStrainBook` win over an older one still reading.
+    private var strainBookGen = 0
+
+    /// The user's rating of an activity, nil when unrated.
+    func activityEffort(_ row: WorkoutRow) -> Int? {
+        activityEffortStore.effort(startTs: row.startTs)
+    }
+
+    /// Rates one of the user's own activities (nil clears the rating) and rebuilds what ratings add.
+    func setActivityEffort(_ effort: Int?, for row: WorkoutRow) async {
+        guard MuscleLoad.isRateable(row) else { return }
+        activityEffortStore.set(effort, startTs: row.startTs)
+        await rebuildStrainBook()
+    }
+
+    /// Drops a deleted activity's rating, and what it added.
+    private func forgetActivityEffort(startTs: Int) async {
+        guard activityEffortStore.effort(startTs: startTs) != nil else { return }
+        activityEffortStore.set(nil, startTs: startTs)
+        await rebuildStrainBook()
+    }
+
+    /// Home's live Strain for `day` (stored 0-100 axis), so every screen resolves that day from one value.
+    func noteLiveDayStrain(day: String, value: Double?) {
+        let next = value.map { LiveDayStrain(day: day, value: $0) }
+        guard next != liveDayStrain else { return }
+        liveDayStrain = next
+        strainRevision &+= 1
+    }
+
+    /// Rebuilds `strainBook` from the user's activities and ratings. Runs after every refresh, so a re-typed,
+    /// moved, deleted or rescored activity lands in it, and after every rating.
+    func rebuildStrainBook() async {
+        strainBookGen &+= 1
+        let gen = strainBookGen
+        let efforts = activityEffortStore.all
+        var book = StrainBook.empty
+        if Self.muscleLoadEnabled, let oldest = efforts.keys.min() {
+            let now = Int(Date().timeIntervalSince1970)
+            let rows = await workoutRows(days: max(MuscleLoad.calibrationWindowDays, (now - oldest) / 86_400) + 2)
+            guard gen == strainBookGen else { return }
+            book = StrainBook.build(rows: rows, efforts: efforts, now: now) {
+                Self.localDayKey(Date(timeIntervalSince1970: TimeInterval($0)))
+            }
+        }
+        guard book != strainBook else { return }
+        strainBook = book
+        strainRevision &+= 1
+    }
+
+    /// A day's Strain on the stored 0-100 axis as every screen shows it: today's live value when it beats
+    /// the stored row, plus the muscle load of the day's rated strength sessions (`StrainBook.dayStrain`).
+    /// Without muscle load it is the stored value, and Home keeps its own live rule (#1001).
+    func dayStrain(day: String, stored: Double?) -> Double? {
+        guard Self.muscleLoadEnabled else { return stored }
+        return strainBook.dayStrain(day: day, stored: stored, live: liveDayStrain)
+    }
+
+    func dayStrain(_ d: DailyMetric) -> Double? {
+        dayStrain(day: d.day, stored: d.strain)
+    }
+
+    /// An activity's Strain on the stored 0-100 axis as every screen shows it.
+    func activityStrain(_ row: WorkoutRow) -> Double? {
+        Self.muscleLoadEnabled ? strainBook.activityStrain(row) : row.strain
+    }
+
+    /// `days` with each day's Strain from `dayStrain`, for the readers that take a whole series. Display
+    /// only: the stored rows never change, so nothing written back can count muscle load twice.
+    var strainDays: [DailyMetric] {
+        guard Self.muscleLoadEnabled else { return days }
+        return strainBook.resolved(days, live: liveDayStrain)
     }
 
     // MARK: - Workout detail (read-only helpers, additive) , #410

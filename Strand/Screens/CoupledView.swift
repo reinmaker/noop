@@ -89,8 +89,9 @@ struct CoupledView: View {
     private var isCarryingRecovery: Bool { day?.recovery == nil && carriedRecoveryDay?.recovery != nil }
 
     /// Effort strain on NOOP's 0–100 axis for the day (stored row; no live recompute here, this is a
-    /// glance screen, not the primary Today hero). nil when the day has no scored Effort.
-    private var strain100: Double? { day?.strain }
+    /// glance screen, not the primary Today hero). nil when the day has no scored Effort. Yoop: through the
+    /// one Strain funnel (`Repository.dayStrain`), so it reads as Home does, effort ratings included.
+    private var strain100: Double? { day.flatMap { repo.dayStrain($0) } }
 
     /// Day strain mapped onto the 0–21 coupled axis via the SHIPPED formatter (UnitFormatter.effortValue),
     /// so the number matches every other Effort read-out's conversion factor exactly.

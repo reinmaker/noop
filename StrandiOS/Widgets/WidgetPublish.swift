@@ -42,7 +42,8 @@ extension WidgetSnapshot {
     @MainActor
     static func publish(from model: AppModel) async {
         await refreshWidgetPresence()
-        let days = model.repo.days
+        // Strain as Home shows it, effort ratings included (`Repository.strainDays`).
+        let days = model.repo.strainDays
         let now = Date()
         // The recovery-derived anchor: today's row when it's scored, else the freshest STRICTLY-PRIOR
         // scored day carried over. Resolved through the SHARED `Repository.widgetAnchor`, the ONE selector
