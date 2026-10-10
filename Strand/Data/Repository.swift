@@ -3438,8 +3438,18 @@ final class Repository: ObservableObject {
         let reconciled = await reconcileAutoActivities()
         var added = false
         var history: [WhoopActivityTyper.Example]?
+        let restoring = !UserDefaults.standard.bool(forKey: Self.restoredReconciledKey)
+        UserDefaults.standard.set(true, forKey: Self.restoredReconciledKey)
         for _ in 0..<5 {
-            guard let found = await autoDetectCandidate() else { break }
+            let next: DetectedWorkout?
+            if restoring {
+                next = Self.selectAutoDetectCandidate(await yoopActivityBouts(daysBack: 2, ignoring: []),
+                                                      autoDismissedTokens: [],
+                                                      detectedDismissedTokens: dismissedDetectedSpans)
+            } else {
+                next = await autoDetectCandidate()
+            }
+            guard let found = next else { break }
             if history == nil { history = await activityTypeHistory() }
             let sport = WhoopActivityTyper.guess(avgBpm: Double(found.avgBpm), maxBpm: Double(found.peakBpm),
                                                  durationMin: Double(found.durationMin),
@@ -3453,6 +3463,12 @@ final class Repository: ObservableObject {
         if added || reconciled { await refresh() }
         return added || reconciled
     }
+
+    /// Set once the one-time restore has run. The 12.2.29 re-check deleted real activities whose end had
+    /// moved a minute or two (a 45-minute lifting session on 2026-10-10), and the exact span recorded when
+    /// each was first added then kept it from being added again. The restore adds back, once, any bout in
+    /// the last two days with nothing saved over it, ignoring those recorded spans.
+    private static let restoredReconciledKey = "yoop.restoredReconciledActivities.v1"
 
     /// Start times of activities Yoop added and typed by itself. Their type is a guess, so they are not
     /// learnt from until the user picks one (`changeActivityType`).
