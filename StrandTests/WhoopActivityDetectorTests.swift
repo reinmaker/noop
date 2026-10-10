@@ -35,4 +35,17 @@ final class WhoopActivityDetectorTests: XCTestCase {
         hr += block(110, from: 30, minutes: 5)
         XCTAssertTrue(WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: []).isEmpty)
     }
+
+    /// A warm-up with exercise-like wrist motion joins the bout; one behind a longer break does not.
+    func testWarmUpWithMotionMovesTheStartBack() {
+        var hr = block(85, from: 0, minutes: 6)          // warm-up below the active bar, minutes 0-5
+        hr += block(130, from: 6, minutes: 20)           // the game, minutes 6-25
+        let base = 1_800_000_000 / 60
+        var motion: [Int: Double] = [:]
+        for m in 0..<26 { motion[base + m] = 0.8 }
+        let found = WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: [], motion: motion)
+        XCTAssertEqual(found.first?.startSec, 1_800_000_000)
+        let still = WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: [])
+        XCTAssertEqual(still.first?.startSec, 1_800_000_000 + 6 * 60)
+    }
 }

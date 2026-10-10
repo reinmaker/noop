@@ -39,6 +39,18 @@ final class WhoopActivityTyperTests: XCTestCase {
                                                 startHour: ride.hour, history: learnt), "Cycling")
     }
 
+    /// A type the user set in Yoop outvotes older look-alike history: two basketball corrections beat six
+    /// tennis sessions with nearly the same heart rate.
+    func testUserCorrectionsOutweighOldHistory() {
+        let tennis = examples("Tennis", avg: 138, max: 180, minutes: 100, hour: 19.5)
+        let corrected = (0..<2).map { _ in
+            WhoopActivityTyper.Example(sport: "Basketball", avgBpm: 140, maxBpm: 182, durationMin: 98, startHour: 19.6,
+                                       weight: WhoopActivityTyper.userLabelWeight)
+        }
+        XCTAssertEqual(WhoopActivityTyper.guess(avgBpm: 139, maxBpm: 181, durationMin: 99, startHour: 19.6,
+                                                history: tennis + corrected), "Basketball")
+    }
+
     /// Too little history, or a split vote, leaves the activity unnamed; unnamed rows teach nothing.
     func testStaysUnnamedWhenUnsure() {
         XCTAssertNil(WhoopActivityTyper.guess(avgBpm: 170, maxBpm: 190, durationMin: 38, startHour: 20,

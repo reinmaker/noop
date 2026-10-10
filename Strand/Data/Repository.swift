@@ -3316,16 +3316,7 @@ final class Repository: ObservableObject {
             }
             candidates = results
         } else if PuffinExperiment.whoopScoresEnabled {
-            // Yoop: WHOOP-style detection that keeps a bout through set breaks, against the median
-            // resting HR of the last two weeks (one low night cannot move it), never over a sleep.
-            let recent = days.suffix(14).compactMap(\.restingHr).sorted()
-            let reference = recent.isEmpty ? (restingBpm ?? AutoWorkoutDetector.defaultRestingHR) : recent[recent.count / 2]
-            let excluded = saved.map { $0.startTs...max($0.startTs, $0.endTs) }
-                + sleeps.map { $0.effectiveStartTs...max($0.effectiveStartTs, $0.endTs) }
-            // Only bouts that have ended (no raised minute in the last five): one still going is added once
-            // it finishes, with its full length, rather than cut at the moment it was first seen.
-            candidates = WhoopActivityDetector.detect(hr: hr, restingBpm: reference, excluded: excluded)
-                .filter { $0.endSec <= now - 5 * 60 }
+            candidates = await yoopActivityBouts(daysBack: daysBack, ignoring: [])
         } else {
             candidates = AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
                                                     motion: nil, savedSpans: savedSpans,
@@ -3335,6 +3326,58 @@ final class Repository: ObservableObject {
             candidates,
             autoDismissedTokens: autoDetectDismissedSpans,
             detectedDismissedTokens: dismissedDetectedSpans)
+    }
+
+    /// Yoop: the activity bouts in the last `daysBack` days by `WhoopActivityDetector`, which keeps a bout
+    /// through set breaks, against the median resting HR of the last two weeks (one low night cannot move
+    /// it), with the wrist's motion to place the warm-up, never over a sleep or a saved workout other than
+    /// those whose start time is in `ignoring`. Only bouts that have ended (no raised minute in the last
+    /// five): one still going is added once it finishes, with its full length.
+    private func yoopActivityBouts(daysBack: Int, ignoring: Set<Int>) async -> [DetectedWorkout] {
+        let now = Int(Date().timeIntervalSince1970)
+        let from = now - daysBack * 86_400
+        let samples = await hrSamples(from: from, to: now, limit: 200_000)
+        guard samples.count >= 2 else { return [] }
+        let hr = samples.map { (ts: $0.ts, bpm: $0.bpm) }
+        let recent = days.suffix(14).compactMap(\.restingHr).sorted()
+        let latest = days.last(where: { $0.restingHr != nil })?.restingHr
+        let reference = recent.isEmpty ? (latest ?? AutoWorkoutDetector.defaultRestingHR) : recent[recent.count / 2]
+        let saved = await workoutRows().filter { !ignoring.contains($0.startTs) }
+        let excluded = saved.map { $0.startTs...max($0.startTs, $0.endTs) }
+            + sleeps.map { $0.effectiveStartTs...max($0.effectiveStartTs, $0.endTs) }
+        var motionSums: [Int: (total: Double, count: Int)] = [:]
+        for g in await gravitySamplesUnion(from: from, to: now) {
+            guard let d = g.dynAccel else { continue }
+            let e = motionSums[g.ts / 60] ?? (0, 0)
+            motionSums[g.ts / 60] = (e.total + d, e.count + 1)
+        }
+        let motion = motionSums.mapValues { $0.total / Double($0.count) }
+        return WhoopActivityDetector.detect(hr: hr, restingBpm: reference, excluded: excluded, motion: motion)
+            .filter { $0.endSec <= now - 5 * 60 }
+    }
+
+    /// Yoop: re-check the activities Yoop added by itself (not ones the user typed or logged) against the
+    /// current rules, so one an older, looser rule added over the wrong span is replaced and one that no
+    /// longer counts is removed. The first rule merged an evening of walking into a basketball game
+    /// (18:05 for a 19:31 start) and logged everyday walks as activities.
+    private func reconcileAutoActivities(daysBack: Int = 2) async -> Bool {
+        let from = Int(Date().timeIntervalSince1970) - daysBack * 86_400
+        let auto = Set(autoTypedStarts)
+        let rows = await workoutRows(days: daysBack + 1).filter {
+            WorkoutSource.classify($0.source) == .manual && $0.startTs >= from
+                && (auto.contains($0.startTs) || $0.sport == "Activity")
+        }
+        guard !rows.isEmpty else { return false }
+        let bouts = await yoopActivityBouts(daysBack: daysBack, ignoring: Set(rows.map(\.startTs)))
+        var changed = false
+        for row in rows where !bouts.contains(where: {
+            abs($0.startSec - row.startTs) <= 120 && abs($0.endSec - row.endTs) <= 120
+        }) {
+            await deleteWorkout(row)
+            autoTypedStarts.removeAll { $0 == row.startTs }
+            changed = true
+        }
+        return changed
     }
 
     /// SAVE a suggested window as a manual-style "Workout" (generic sport , we don't claim a sport we
@@ -3359,6 +3402,7 @@ final class Repository: ObservableObject {
     @discardableResult
     func addDetectedActivities() async -> Bool {
         guard PuffinExperiment.whoopScoresEnabled, PuffinExperiment.autoDetectWorkoutsEnabled else { return false }
+        let reconciled = await reconcileAutoActivities()
         var added = false
         var history: [WhoopActivityTyper.Example]?
         for _ in 0..<5 {
@@ -3373,8 +3417,8 @@ final class Repository: ObservableObject {
             autoTypedStarts = Array((autoTypedStarts + [found.startSec]).suffix(200))
             added = true
         }
-        if added { await refresh() }
-        return added
+        if added || reconciled { await refresh() }
+        return added || reconciled
     }
 
     /// Start times of activities Yoop added and typed by itself. Their type is a guess, so they are not
@@ -3410,10 +3454,13 @@ final class Repository: ObservableObject {
         return await workoutRows(days: 365).compactMap { r -> WhoopActivityTyper.Example? in
             guard !guesses.contains(r.startTs), !WhoopActivityTyper.isUnnamed(r.sport),
                   let avg = r.avgHr, let peak = r.maxHr, r.endTs > r.startTs else { return nil }
+            // A type the user set or logged in Yoop says more about how they train now than an old import.
             return WhoopActivityTyper.Example(sport: WorkoutSource.displaySport(r.sport), avgBpm: Double(avg),
                                               maxBpm: Double(peak),
                                               durationMin: Double(r.endTs - r.startTs) / 60,
-                                              startHour: Self.localHour(r.startTs))
+                                              startHour: Self.localHour(r.startTs),
+                                              weight: WorkoutSource.classify(r.source) == .manual
+                                                  ? WhoopActivityTyper.userLabelWeight : 1)
         }
     }
 

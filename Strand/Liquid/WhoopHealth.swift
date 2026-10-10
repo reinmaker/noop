@@ -264,9 +264,23 @@ struct WhoopHealthMonitorScreen: View {
             .padding(.horizontal, NoopMetrics.space2)
             .padding(.vertical, NoopMetrics.space1)
             .background(Capsule().fill(WhoopStyle.ringTrack))
+            // A value carried from an earlier day (a missed night, or a reading this strap does not take,
+            // such as blood oxygen from a WHOOP import) says which day it is from.
+            if let day = reading?.day, day != Repository.logicalDayKey(Date()), let date = Self.dayParser.date(from: day) {
+                Text(String(localized: "From \(date.formatted(.dateTime.day().month(.abbreviated)))"))
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
         }
         .padding(WhoopStyle.cardPadding)
         .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
         .whoopCard()
     }
+
+    private static let dayParser: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 }
