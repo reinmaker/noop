@@ -326,7 +326,9 @@ struct CoupledView: View {
                         // heroStat renders `Text(title.uppercased())`, so `title` is a plain String and
                         // a bare literal would NOT localize — pass the resolved localized value (the
                         // catalog already carries Calories/Workouts) so German shows KALORIEN, not CALORIES.
-                        heroStat(String(localized: "Calories"),
+                        // Yoop stores ACTIVE energy (`Calories.yoopEnergyEnabled`), so it says so.
+                        heroStat(PuffinExperiment.whoopScoresEnabled
+                                     ? String(localized: "Active calories") : String(localized: "Calories"),
                                  caloriesText,
                                  tint: StrandPalette.metricAmber)
                         heroStat(String(localized: "Workouts"),

@@ -46,9 +46,10 @@ public struct SleepSession: Equatable, Sendable {
     /// asleep / in-bed in [0, 1] (AASM TST/TIB; asleep = in-bed − wake).
     public let efficiency: Double
     public let stages: [StageSegment]
-    /// Lowest 5-min rolling-mean HR during the session (bpm), or nil.
+    /// Lowest 5-min rolling-mean HR during the session (bpm), or nil. Yoop (`SleepStager.asleepVitalsEnabled`):
+    /// the mean HR over the asleep spans instead.
     public let restingHR: Int?
-    /// Mean RMSSD over 5-min windows across the session (ms), or nil.
+    /// Mean RMSSD over 5-min windows across the session (ms), or nil. Yoop: over the asleep windows only.
     public let avgHRV: Double?
     /// Staged WITHOUT a motion spine, from heart rate alone (#1801).
     ///
@@ -697,8 +698,14 @@ public enum SleepStager {
             out.append(SleepSession(start: p.start, end: p.end,
                                     efficiency: efficiency(start: p.start, end: p.end, stages: stages),
                                     stages: stages,
-                                    restingHR: sessionRestingHR(start: p.start, end: p.end, hr: hrS),
-                                    avgHRV: sessionAvgHRV(start: p.start, end: p.end, rr: rrS),
+                                    restingHR: asleepVitalsEnabled
+                                        ? (asleepRestingHR(start: p.start, end: p.end, hr: hrS, stages: stages)
+                                            ?? sessionRestingHR(start: p.start, end: p.end, hr: hrS))
+                                        : sessionRestingHR(start: p.start, end: p.end, hr: hrS),
+                                    avgHRV: asleepVitalsEnabled
+                                        ? (asleepAvgHRV(start: p.start, end: p.end, rr: rrS, stages: stages)
+                                            ?? sessionAvgHRV(start: p.start, end: p.end, rr: rrS))
+                                        : sessionAvgHRV(start: p.start, end: p.end, rr: rrS),
                                     hrOnly: true))
         }
         traceSink?(GateTrace.hrOnlyLine(
@@ -1264,6 +1271,214 @@ public enum SleepStager {
         return out
     }
 
+    // MARK: - Vitals over the asleep spans (Yoop)
+
+    /// Yoop: a night's resting HR, HRV, respiratory rate and skin temperature come from the time the
+    /// hypnogram scores asleep, not from the whole in-bed span. On 9 and 10 Oct 2026 the in-bed span held
+    /// 75 min awake before sleep (61.9 bpm) and 63 min up after it (55.9 bpm): the in-bed mean read 51 and
+    /// 50 against 48.6 and 49.2 asleep, while the session row kept a 5-min floor of 42 and 43. Set by the
+    /// app; off by default, so NOOP's output is unchanged.
+    public static var asleepVitalsEnabled: Bool = false
+
+    /// The asleep spans of a hypnogram: its light, deep and REM segments (the stages `hypnogramMetrics`
+    /// counts as sleep) clipped to [start, end] and merged where they touch, oldest first. The one
+    /// definition of "asleep" the Yoop vitals share. Pure.
+    static func asleepSpans(_ stages: [StageSegment], start: Int, end: Int) -> [(start: Int, end: Int)] {
+        var spans: [(start: Int, end: Int)] = []
+        for seg in stages.sorted(by: { $0.start < $1.start })
+        where seg.stage == "light" || seg.stage == "deep" || seg.stage == "rem" {
+            let a = max(seg.start, start), b = min(seg.end, end)
+            if b <= a { continue }
+            if let last = spans.last, a <= last.end {
+                spans[spans.count - 1].end = max(last.end, b)
+            } else {
+                spans.append((start: a, end: b))
+            }
+        }
+        return spans
+    }
+
+    /// Yoop resting HR: the rounded mean of the valid HR samples (`PrimarySessionRestingHR.defaultValidBpm`)
+    /// inside the asleep spans, or nil with fewer than `PrimarySessionRestingHR.defaultMinValidSamples` of
+    /// them. The standard sleeping-heart-rate definition, and the one value the app shows, scores Strain and
+    /// calories against, and folds into the resting-HR baseline. Pure.
+    static func asleepRestingHR(start: Int, end: Int, hr: [HRSample], stages: [StageSegment]) -> Int? {
+        let spans = asleepSpans(stages, start: start, end: end)
+        var sum = 0, n = 0, k = 0
+        for s in hr.filter({ $0.ts >= start && $0.ts <= end }).sorted(by: { $0.ts < $1.ts }) {
+            while k < spans.count && spans[k].end <= s.ts { k += 1 }
+            if k == spans.count { break }
+            if s.ts >= spans[k].start && PrimarySessionRestingHR.defaultValidBpm.contains(s.bpm) {
+                sum += s.bpm
+                n += 1
+            }
+        }
+        guard n >= PrimarySessionRestingHR.defaultMinValidSamples else { return nil }
+        return Int((Double(sum) / Double(n)).rounded())
+    }
+
+    /// Yoop HRV: the mean RMSSD of the 5-min windows (`sessionHrvWindows`) whose centre lies in an asleep
+    /// span, refused by the same #1118 over-count gate as `sessionAvgHRV`, or nil. `rr` must be ts-sorted.
+    static func asleepAvgHRV(start: Int, end: Int, rr: [RRInterval], stages: [StageSegment]) -> Double? {
+        let spans = asleepSpans(stages, start: start, end: end)
+        // 150 s is the window centre `sessionHrvWindows` tags its stage at.
+        let vals = sessionHrvWindows(start: start, end: end, rr: rr, stages: []).filter { w in
+            spans.contains { w.startTs + 150 >= $0.start && w.startTs + 150 < $0.end }
+        }.compactMap { $0.rmssd }
+        if vals.isEmpty { return nil }
+        guard !sessionHrvOverCounted(start: start, end: end, rr: rr) else { return nil }
+        return vals.reduce(0, +) / Double(vals.count)
+    }
+
+    /// Yoop respiratory rate (breaths/min) from respiratory sinus arrhythmia in the asleep R-R, or nil.
+    ///
+    /// `respRateFromRR` takes 60 over a median peak-to-peak interval on the 4 Hz grid, so it can only
+    /// return 60 / (k / 4): 15.0, 14.12, 13.33 and so on. Both of this user's nights stored exactly
+    /// 14.117647, and the same code returned 14.1 to 15.0 on shuffled R-R and on white noise. This
+    /// estimate is continuous, and it refuses a night whose R-R carries no breathing rhythm:
+    ///   1. R-R rows in [start, end], range-filtered and stably sorted, behind the banked-stream gate
+    ///      `respRateFromRR` applies.
+    ///   2. A beat counts inside an asleep span and within 20 % of its local median (the Malik rule of
+    ///      `HRVAnalyzer.cleanRRGapAware`). A run breaks at any other beat, and where the wall clock
+    ///      outruns a beat by more than `rsaGapToleranceS`.
+    ///   3. Each run's tachogram is resampled at `rsaResampleHz` and cut into 2-min windows every 60 s;
+    ///      a window is linearly detrended, Hann-tapered, and its power evaluated across 0.15 to 0.40 Hz
+    ///      (9 to 24 breaths/min) at half-bin spacing.
+    ///   4. The peak is placed between bins by a parabola through the log power around it. A peak on a
+    ///      band edge is dropped, since the true one lies outside the band.
+    ///   5. Control: the window's own R-R values are shuffled three times with a fixed seed, which keeps
+    ///      their spread and removes their order. The window counts only when its peak is at least twice
+    ///      the highest peak of the shuffles.
+    ///   6. The night is the median of the counted windows; nil when fewer than 10 count, when fewer than
+    ///      10 % of the eligible windows count, or outside `respPlausibleRangeBpm`.
+    /// On 9 and 10 Oct 2026 an independent spectral check found 14.31 and 14.56, and a peak count
+    /// (Schafer and Kratky 2008) 13.79 and 13.39. Deterministic and pure.
+    static func asleepRespRate(_ rr: [RRInterval], start: Int, end: Int, stages: [StageSegment]) -> Double? {
+        let spans = asleepSpans(stages, start: start, end: end)
+        if spans.isEmpty { return nil }
+        let rows = rr.filter { $0.ts >= start && $0.ts <= end }
+            .sortedByTsStable()
+            .filter { Double($0.rrMs) >= HRVAnalyzer.rrMinMs && Double($0.rrMs) <= HRVAnalyzer.rrMaxMs }
+        if rows.count < 30 { return nil }
+        let values = rows.map { Double($0.rrMs) }
+        let accurate = HRVAnalyzer.beatAccurateFraction(tsSec: rows.map { $0.ts }, rrMs: values)
+        guard HRVAnalyzer.beatValuesAreTrustworthy(beatAccurateFraction: accurate) else { return nil }
+
+        let n = values.count
+        let radius = HRVAnalyzer.ectopicWindowRadius
+        var keep = [Bool](repeating: false, count: n)
+        var span = 0
+        for i in 0..<n {
+            let t = rows[i].ts
+            while span < spans.count && spans[span].end <= t { span += 1 }
+            if span == spans.count { break }
+            if t < spans[span].start { continue }
+            var neighbours: [Double] = []
+            for j in max(0, i - radius)...min(n - 1, i + radius) where j != i { neighbours.append(values[j]) }
+            let med = neighbours.count >= 2 ? HRVAnalyzer.median(neighbours) : 0
+            keep[i] = med <= 0 || abs(values[i] - med) / med <= HRVAnalyzer.ectopicThreshold
+        }
+
+        let fs = rsaResampleHz
+        let windowS = 120.0, stepS = 60.0
+        let controls = 3, margin = 2.0
+        let nw = Int(windowS * fs)
+        let df = 1.0 / (2.0 * windowS)
+        let bins = Array(Int((0.15 / df).rounded(.up))...Int((0.40 / df).rounded(.down)))
+        let hann = (0..<nw).map { 0.5 - 0.5 * cos(2.0 * Double.pi * Double($0) / Double(nw - 1)) }
+        var cosTable = [Double](repeating: 0, count: bins.count * nw)
+        var sinTable = cosTable
+        for (b, bin) in bins.enumerated() {
+            for g in 0..<nw {
+                let phase = 2.0 * Double.pi * Double(bin) * df * Double(g) / fs
+                cosTable[b * nw + g] = cos(phase)
+                sinTable[b * nw + g] = sin(phase)
+            }
+        }
+        let cosT = cosTable, sinT = sinTable
+        let xMean = Double(nw - 1) / 2.0
+        let sxx = (0..<nw).reduce(0.0) { $0 + (Double($1) - xMean) * (Double($1) - xMean) }
+        // Band power of the window [w0, w0 + windowS) of a tachogram: beat times `bt` (s), values `v`.
+        let power: ([Double], [Double], Double) -> [Double] = { bt, v, w0 in
+            var y = [Double](repeating: 0, count: nw)
+            var seg = 0
+            for g in 0..<nw {
+                let t = w0 + Double(g) / fs
+                while seg < bt.count - 2 && bt[seg + 1] < t { seg += 1 }
+                let t0 = bt[seg], t1 = bt[seg + 1]
+                y[g] = t1 <= t0 ? v[seg] : v[seg] + min(max((t - t0) / (t1 - t0), 0), 1) * (v[seg + 1] - v[seg])
+            }
+            let yMean = y.reduce(0, +) / Double(nw)
+            var sxy = 0.0
+            for g in 0..<nw { sxy += (Double(g) - xMean) * (y[g] - yMean) }
+            let slope = sxy / sxx
+            for g in 0..<nw { y[g] = (y[g] - yMean - slope * (Double(g) - xMean)) * hann[g] }
+            return (0..<bins.count).map { b in
+                var re = 0.0, im = 0.0
+                for g in 0..<nw {
+                    re += y[g] * cosT[b * nw + g]
+                    im += y[g] * sinT[b * nw + g]
+                }
+                return re * re + im * im
+            }
+        }
+        // SplitMix64 from a fixed seed, so the shuffled control, and with it the result, is reproducible.
+        var state: UInt64 = 0x5EED_2026_1010_0001
+        let nextRandom: () -> UInt64 = {
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
+
+        var rates: [Double] = []
+        var eligible = 0
+        var i = 0
+        while i < n {
+            if !keep[i] { i += 1; continue }
+            var j = i
+            while j + 1 < n && keep[j + 1]
+                && Double(rows[j + 1].ts - rows[j].ts) - values[j + 1] / 1000.0 <= rsaGapToleranceS { j += 1 }
+            let v = Array(values[i...j])
+            var bt = [Double](repeating: 0, count: v.count)
+            for m in 1..<max(1, v.count) { bt[m] = bt[m - 1] + v[m] / 1000.0 }
+            var w0 = 0.0
+            while w0 + windowS <= bt[bt.count - 1] {
+                eligible += 1
+                let p = power(bt, v, w0)
+                let peak = p.indices.max { p[$0] < p[$1] } ?? 0
+                if peak > 0 && peak < p.count - 1 {
+                    // The beats the window covers, plus one either side for the interpolation.
+                    let a = max(0, (bt.firstIndex { $0 > w0 } ?? 1) - 1)
+                    let b = min(v.count - 1, bt.firstIndex { $0 >= w0 + windowS } ?? v.count - 1)
+                    var controlPeak = 0.0
+                    // A window already beaten by one shuffle cannot pass, so the rest are skipped.
+                    for _ in 0..<controls where p[peak] >= margin * controlPeak {
+                        var sv = Array(v[a...b])
+                        for m in stride(from: sv.count - 1, to: 0, by: -1) {
+                            sv.swapAt(m, Int(nextRandom() % UInt64(m + 1)))
+                        }
+                        var sbt = [Double](repeating: bt[a], count: sv.count)
+                        for m in 1..<max(1, sv.count) { sbt[m] = sbt[m - 1] + sv[m] / 1000.0 }
+                        controlPeak = max(controlPeak, power(sbt, sv, w0).max() ?? 0)
+                    }
+                    if p[peak] >= margin * controlPeak && p[peak - 1] > 0 && p[peak + 1] > 0 {
+                        let l0 = log(p[peak - 1]), l1 = log(p[peak]), l2 = log(p[peak + 1])
+                        let curve = l0 - 2.0 * l1 + l2
+                        let shift = curve < 0 ? min(max(0.5 * (l0 - l2) / curve, -0.5), 0.5) : 0
+                        rates.append((Double(bins[peak]) + shift) * df * 60.0)
+                    }
+                }
+                w0 += stepS
+            }
+            i = j + 1
+        }
+        guard rates.count >= 10, Double(rates.count) >= 0.1 * Double(eligible) else { return nil }
+        let median = HRVAnalyzer.median(rates)
+        return respPlausibleRangeBpm.contains(median) ? median : nil
+    }
+
     /// Off-wrist HR-gap spans (#500). The contiguous HR-coverage gaps of at least `offWristHRGapMin`
     /// minutes WITHIN [p.start, p.end], as concrete `[start, end)` sub-intervals — a strong wrist-OFF
     /// proxy. Worn, the strap streams ~1 Hz HR (or PPG-derived HR on a 5/MG), so a real night yields no
@@ -1409,7 +1624,8 @@ public enum SleepStager {
             sleepHRBaseline: sleepHRBaseline,
             bounds: bandStateBoundsEnabled,
             bars: [SleepStagerV2.remLogShift, SleepStagerV2.deepLogShift,
-                   SleepStagerV2.respWeightOverride ?? SleepStagerV2.respWeight])
+                   SleepStagerV2.respWeightOverride ?? SleepStagerV2.respWeight,
+                   asleepVitalsEnabled ? 1 : 0])
         return detectSleepCache.value(key) {
             detectSleepUncached(hr: hr, rr: rr, resp: resp, gravity: gravity,
                                 tzOffsetSeconds: tzOffsetSeconds, wristOff: wristOff,
@@ -1645,9 +1861,17 @@ public enum SleepStager {
             // Yoop: the band's own asleep span bounds the night (`bandStateBoundsEnabled`).
             let stages = applyBandStateBounds(vetoed, start: p.start, end: p.end, bandSleepState: bandSleepState)
             let eff = efficiency(start: p.start, end: p.end, stages: stages)
-            let avgHrv = sessionAvgHRV(start: p.start, end: p.end, rr: rrS)
+            // Yoop (`asleepVitalsEnabled`): resting HR and HRV over the asleep spans; the in-bed values
+            // stand in only where those spans hold too little data.
+            let avgHrv = asleepVitalsEnabled
+                ? (asleepAvgHRV(start: p.start, end: p.end, rr: rrS, stages: stages)
+                    ?? sessionAvgHRV(start: p.start, end: p.end, rr: rrS))
+                : sessionAvgHRV(start: p.start, end: p.end, rr: rrS)
+            let sessionRHR = asleepVitalsEnabled
+                ? (asleepRestingHR(start: p.start, end: p.end, hr: hrS, stages: stages) ?? resting)
+                : resting
             sessions.append(SleepSession(start: p.start, end: p.end, efficiency: eff,
-                                         stages: stages, restingHR: resting, avgHRV: avgHrv))
+                                         stages: stages, restingHR: sessionRHR, avgHRV: avgHrv))
             traceSink?(GateTrace.runLine(index: runIndex, startTs: p.start, endTs: p.end,
                 verdict: .kept, gate: "accepted",
                 detail: "spanMin=\(spanMin) eff=\(round2(eff)) restingHR=\(resting ?? -1) daytime=\(isDaytime)"))

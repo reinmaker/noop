@@ -1051,6 +1051,16 @@ final class IntelligenceEngine: ObservableObject {
         // PSG data cannot check and which put this user's REM at 34-37 % (lab-validated recipe: 22-28 %).
         SleepStagerV2.respWeightOverride = PuffinExperiment.whoopScoresEnabled ? 0 : nil
         let respWeightGlobal = SleepStagerV2.respWeightOverride.map { "\($0)" } ?? "default"
+        // Yoop: resting HR, HRV, breathing rate and skin temperature over the time asleep, not the whole
+        // time in bed, and one resting HR for the display, Strain, calories and the baseline.
+        SleepStager.asleepVitalsEnabled = PuffinExperiment.whoopScoresEnabled
+        let asleepVitalsGlobal = SleepStager.asleepVitalsEnabled
+        // Yoop: count steps as the strap's pedometer releases them, and store ACTIVE energy priced from heart
+        // rate and steps, with resting energy added where a total is shown.
+        StepsCounter.yoopCountingEnabled = PuffinExperiment.whoopScoresEnabled
+        Calories.yoopEnergyEnabled = PuffinExperiment.whoopScoresEnabled
+        let yoopStepsGlobal = StepsCounter.yoopCountingEnabled
+        let yoopEnergyGlobal = Calories.yoopEnergyEnabled
         let dayCycleMode = DayCycleMode.persisted(UserDefaults.standard.string(forKey: DayCycleMode.storageKey))
 
         // Zero the per-day probe counters so the line emitted after the steps phase describes THIS pass
@@ -1118,6 +1128,9 @@ final class IntelligenceEngine: ObservableObject {
             "\(mainNightMinGlobal)",
             "\(bandBoundsGlobal)",
             "\(respWeightGlobal)",
+            "\(asleepVitalsGlobal)",
+            "\(yoopStepsGlobal)",
+            "\(yoopEnergyGlobal)",
         ].joined(separator: "|")
         // Drop the whole cache on a config change, then snapshot it into a Sendable `let` for the detached
         // loop (the engine is @MainActor; the loop can't touch `self`). The loop returns the updated cache
@@ -1771,7 +1784,9 @@ final class IntelligenceEngine: ObservableObject {
                 // `diagnosticSink` in the SAME per-day order , the sink is a MainActor-bound closure.
                 var rhrLine: String?
                 var rhrBinLine: String?
-                if let floor = res.daily.restingHr {
+                // Yoop: with `asleepVitalsGlobal` the stored value is the asleep mean, not a floor, so both
+                // floor lines would mislabel it; they stay silent.
+                if !asleepVitalsGlobal, let floor = res.daily.restingHr {
                     let inBedBpms = hr.filter { s in
                         res.cachedSleep.contains { s.ts >= $0.startTs && s.ts < $0.endTs }
                     }.map { $0.bpm }
@@ -2042,8 +2057,14 @@ final class IntelligenceEngine: ObservableObject {
         let respHistory = ChargeBaselines.history(imported: importedNights { $0.respRateBpm }, own: ownNights(nightlyRespByDay),
                                                   anchorDay: newestDay, cfg: respCfg, baselineEpoch: respEpoch)
         // Skin temperature has no imported counterpart (imported rows carry skinTempDevC, not the raw mean),
-        // so its history is the own nights alone.
-        let skinHistory = ChargeBaselines.history(imported: [], own: ownNights(nightlySkinByDay),
+        // so its history is the own nights alone. Yoop: a WHOOP export's skinTempDevC IS the absolute nightly
+        // °C (`WhoopImporter`), from the same strap, so those nights seed the baseline; values outside the
+        // metric's absolute range (a true deviation) are left out. The offset between WHOOP's and this
+        // app's absolute reading is not verified.
+        let importedSkin: [(day: String, value: Double?)] = !asleepVitalsGlobal ? [] : importedNights {
+            $0.skinTempDevC.flatMap { $0 >= skinCfg.minVal && $0 <= skinCfg.maxVal ? $0 : nil }
+        }
+        let skinHistory = ChargeBaselines.history(imported: importedSkin, own: ownNights(nightlySkinByDay),
                                                   anchorDay: newestDay, cfg: skinCfg, baselineEpoch: recoveryEpoch)
         // Resp baseline gated on `usable`: RecoveryScorer includes the resp term whenever a
         // baseline object is present , a CALIBRATING (<4-night) baseline would let one noisy
@@ -2165,6 +2186,8 @@ final class IntelligenceEngine: ObservableObject {
             profile: up,
             maxHROverride: maxHR,
             effortMethod: effortMethodGlobal,
+            // Yoop: the HR-flex point sits above the resting rate Yoop shows, the main sleep's mean.
+            energyRestingHRByDay: Calories.yoopEnergyEnabled ? primarySessionRHRByDay : [:],
             trace: stepsTraceActive ? { self.diagnosticSink?($0, .steps) } : nil)
         // #299: `editsByStart` is now built PER DAY inside the scoring loop (scoped to the day each edit
         // belongs to), NOT window-wide here. sleepEditedDaily folds any edited row that isn't a twin of THIS
@@ -2219,7 +2242,8 @@ final class IntelligenceEngine: ObservableObject {
             var byDay: [String: WhoopScores.Inputs] = [:]
             for d in scoredNights.map({ $0.daily }) {
                 byDay[d.day] = WhoopScores.Inputs(day: d.day, hrv: d.avgHrv,
-                                                  rhr: primarySessionRHRByDay[d.day] ?? d.restingHr.map(Double.init),
+                                                  rhr: (asleepVitalsGlobal ? nil : primarySessionRHRByDay[d.day])
+                                                      ?? d.restingHr.map(Double.init),
                                                   resp: d.respRateBpm)
             }
             for d in hist {
@@ -2248,8 +2272,10 @@ final class IntelligenceEngine: ObservableObject {
                                          habitualMidsleepSec: habitualMidsleepSec)
             daily = DayCycleIntelligenceIntegration.applying(physiologicalSteps, to: daily)
             // Yoop: resting HR is the main sleep's mean heart rate, which tracked official WHOOP RHR within
-            // about 1-2 bpm in #1169's test where the five-minute floor read 6-7 bpm low.
-            if whoopScores, let mean = primarySessionRHRByDay[daily.day] {
+            // about 1-2 bpm in #1169's test where the five-minute floor read 6-7 bpm low. With
+            // `asleepVitalsGlobal` the day already carries the asleep mean, which Strain, calories and the
+            // baseline used too, so it is not replaced by the in-bed mean here.
+            if whoopScores, !asleepVitalsGlobal, let mean = primarySessionRHRByDay[daily.day] {
                 daily = daily.with(restingHr: Int(mean.rounded()))
             }
             daily = Self.recomputeRecoveryDaily(daily, nightlySkinTempC: night.nightlySkin,

@@ -1361,6 +1361,8 @@ final class Repository: ObservableObject {
     /// offloaded the window yet. The caller applies `stepTicksPerStep` and reconciles with the phone pedometer.
     func strapStepTicks(from: Int, to: Int) async -> Int? {
         guard let store = await ensureStore() else { return nil }
+        // Yoop: the same counting rules the daily total uses.
+        StepsCounter.yoopCountingEnabled = PuffinExperiment.whoopScoresEnabled
         for id in importedReadIds {   // active strap FIRST
             let samples = (try? await store.stepSamples(deviceId: id, from: from, to: to, limit: 200_000)) ?? []
             if let ticks = StepsCounter.stepsInWindow(samples) { return ticks }

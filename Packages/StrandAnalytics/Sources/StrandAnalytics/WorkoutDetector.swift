@@ -654,6 +654,13 @@ public enum Calories {
     static let dayMaxObservedSpanS: Double = 86_400.0
     static let workoutDivisor = 251.04  // 60 s/min × 4.184 kJ/kcal
 
+    /// Yoop: the day stores ACTIVE energy only (`estimateYoopDayEnergy`); resting energy is added where a
+    /// total is shown, as `mifflinStJeorKcalPerDay` over the day's window. Set by the app; off keeps the
+    /// NOOP whole-day total in `DailyMetric.activeKcalEst`.
+    public static var yoopEnergyEnabled = false
+    /// Yoop: the HR-flex point, in bpm above resting heart rate (see `estimateYoopDayEnergy`).
+    public static var yoopFlexAboveRestingBPM = 40.0
+
     static func resolveCoeffs(_ sex: String) -> Coeffs {
         switch sex.lowercased() {
         case "male": return male
@@ -852,5 +859,110 @@ public enum Calories {
                                            restingHR: Double?) -> Double {
         estimateDayEnergy(hrSamples, profile: profile, hrmax: hrmax,
                           restingHR: restingHR).totalKcal
+    }
+
+    /// Yoop: basal metabolic rate in kcal per day, by Mifflin-St Jeor (Mifflin et al. 1990, Am J Clin Nutr
+    /// 51:241): 10 x weight kg + 6.25 x height cm - 5 x age, plus 5 for men or minus 161 for women;
+    /// nonbinary takes the midpoint, minus 78, as the coefficient sets above do. Of the common equations it
+    /// predicts measured resting energy within 10 % for the most people (Frankenfield et al. 2005, J Am
+    /// Diet Assoc 105:775), ahead of the revised Harris-Benedict the NOOP path uses.
+    public static func mifflinStJeorKcalPerDay(_ profile: UserProfile) -> Double {
+        let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
+        let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
+        let age = profile.age > 0 ? profile.age : 30.0
+        let sexTerm: Double
+        switch profile.sex.lowercased() {
+        case "male": sexTerm = 5
+        case "female": sexTerm = -161
+        default: sexTerm = -78
+        }
+        return max(0, 10 * weightKg + 6.25 * heightCm - 5 * age + sexTerm)
+    }
+
+    /// Yoop: a day's energy split into resting and active. `activeKcal` is what the day stores.
+    ///
+    /// Resting is the Mifflin-St Jeor BMR over `windowSeconds`, the whole day window: metabolism does not
+    /// stop between heart-rate samples or across a dropout.
+    ///
+    /// Active is priced minute by minute (`ts / 60`), each minute once:
+    /// - A minute with steps is priced by their walking cost, the ACSM walking equation's horizontal term
+    ///   (0.1 mL O2 per kg per metre above rest) over a step of 0.415 x height for men, 0.413 for women,
+    ///   at 5 kcal per litre of O2: 0.0005 x weight kg x step length m kcal per step, 0.031 kcal for 82 kg
+    ///   and 183 cm. Heart rate is not used for these minutes because Keytel overstates walking: at 95 bpm
+    ///   it gives that profile 7.1 kcal a minute where the equation prices 120 steps a minute at 5.2.
+    /// - If the minute's mean heart rate reached half the heart-rate reserve (`dayActiveHRRFraction`), as
+    ///   in running, hills, stairs or carrying a load, the heart-rate price below wins when it is higher.
+    /// - A minute without steps is priced by heart rate, HR-flex style (Spurr et al. 1988, Am J Clin Nutr
+    ///   48:552): each second at or above the flex point carries the Keytel 2005 energy above BMR (the
+    ///   fitness-adjusted form when `restingHR` gives an Uth VO2max), and a second below it carries none,
+    ///   since resting energy already covers it. The flex point is `restingHR` +
+    ///   `yoopFlexAboveRestingBPM`. The classic flex point, the mean of the highest resting and the lowest
+    ///   exercise heart rate, needs a calibration Yoop does not have; on this strap awake still and walking
+    ///   heart rates overlap (still 90th percentile 82 bpm, walking 10th percentile 72 bpm on 9 Oct 2026).
+    ///
+    /// `stepsByMinute` holds steps, already divided by `stepTicksPerStep`. Heart-rate samples carry time
+    /// to the next sample capped at the inferred cadence, as `estimateDayEnergy` does. APPROXIMATE: an
+    /// estimate from heart rate and steps, not calorimetry, not medical advice.
+    public static func estimateYoopDayEnergy(_ hrSamples: [HRSample], stepsByMinute: [Int: Double],
+                                             windowSeconds: Int, profile: UserProfile, hrmax: Double?,
+                                             restingHR: Double?) -> DayEnergyEstimate {
+        let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
+        let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
+        let age = profile.age > 0 ? profile.age : 30.0
+        let coeffs = resolveCoeffs(profile.sex)
+        let effHRmax = hrmax ?? 220.0
+        let effResting = restingHR ?? 60.0
+        let flex = effResting + yoopFlexAboveRestingBPM
+        let vigorous = effResting + dayActiveHRRFraction * (effHRmax - effResting)
+        let bmrPerS = mifflinStJeorKcalPerDay(profile) / 86_400.0
+        let vo2max = vo2maxFor(hrmax: effHRmax, restingHR: restingHR)
+        let stepLengthRatio: Double
+        switch profile.sex.lowercased() {
+        case "male": stepLengthRatio = 0.415
+        case "female": stepLengthRatio = 0.413
+        default: stepLengthRatio = 0.414
+        }
+        let kcalPerStep = 0.0005 * weightKg * stepLengthRatio * heightCm / 100.0
+
+        let ordered = hrSamples.sorted { $0.ts != $1.ts ? $0.ts < $1.ts : $0.bpm > $1.bpm }
+        let positiveGaps = zip(ordered, ordered.dropFirst())
+            .map { pair in Double(pair.1.ts - pair.0.ts) }
+            .filter { $0 > 0 }
+            .sorted()
+        var nominalSampleS = 1.0
+        if !positiveGaps.isEmpty {
+            let mid = positiveGaps.count / 2
+            let median = positiveGaps.count.isMultiple(of: 2)
+                ? (positiveGaps[mid - 1] + positiveGaps[mid]) / 2.0 : positiveGaps[mid]
+            nominalSampleS = min(median, dayMaxObservedGapS)
+        }
+        var heartKcal: [Int: Double] = [:]
+        var bpmSum: [Int: Double] = [:], bpmCount: [Int: Double] = [:]
+        for i in ordered.indices {
+            let durationS: Double
+            if i < ordered.count - 1 {
+                let gap = Double(ordered[i + 1].ts - ordered[i].ts)
+                durationS = gap > 0 ? min(gap, nominalSampleS) : 0.0
+            } else {
+                durationS = nominalSampleS
+            }
+            let minute = ordered[i].ts / 60
+            let bpm = Double(ordered[i].bpm)
+            bpmSum[minute, default: 0] += bpm
+            bpmCount[minute, default: 0] += 1
+            guard bpm >= flex else { continue }
+            let gross = activeKcalPerS(coeffs, hr: bpm, hrmax: effHRmax, weightKg: weightKg, age: age,
+                                       vo2max: vo2max)
+            heartKcal[minute, default: 0] += max(0.0, gross - bmrPerS) * durationS
+        }
+        var activeKcal = 0.0
+        for minute in Set(heartKcal.keys).union(stepsByMinute.keys).sorted() {
+            let walking = max(0.0, stepsByMinute[minute] ?? 0) * kcalPerStep
+            let heart = heartKcal[minute] ?? 0
+            let meanBpm = (bpmSum[minute] ?? 0) / max(bpmCount[minute] ?? 0, 1)
+            activeKcal += walking > 0 && meanBpm < vigorous ? walking : max(walking, heart)
+        }
+        let window = Double(max(0, windowSeconds))
+        return DayEnergyEstimate(restingKcal: bmrPerS * window, activeKcal: activeKcal, observedSeconds: window)
     }
 }

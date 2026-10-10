@@ -538,8 +538,15 @@ public enum AnalyticsEngine {
                 // that measured a resting HR but no HRV (no R-R banked) would take the short-circuit and
                 // skip the fill every other session gets. The rule is uniform: fill what is missing.
                 guard s.restingHR == nil || s.avgHRV == nil else { return s }
-                let rhr = s.restingHR ?? SleepStager.sessionRestingHR(start: s.start, end: s.end, hr: hr)
-                let hrv = s.avgHRV ?? SleepStager.sessionAvgHRV(start: s.start, end: s.end, rr: rrSorted)
+                // Yoop (`SleepStager.asleepVitalsEnabled`): over the session's asleep spans first, as
+                // `detectSleep` fills its own sessions.
+                let asleep = SleepStager.asleepVitalsEnabled
+                let rhr = s.restingHR
+                    ?? (asleep ? SleepStager.asleepRestingHR(start: s.start, end: s.end, hr: hr, stages: s.stages) : nil)
+                    ?? SleepStager.sessionRestingHR(start: s.start, end: s.end, hr: hr)
+                let hrv = s.avgHRV
+                    ?? (asleep ? SleepStager.asleepAvgHRV(start: s.start, end: s.end, rr: rrSorted, stages: s.stages) : nil)
+                    ?? SleepStager.sessionAvgHRV(start: s.start, end: s.end, rr: rrSorted)
                 // `hrOnly` carried explicitly: unlike Kotlin's `copy`, this rebuilds the struct field by
                 // field, so a new flag is dropped by DEFAULT unless named here. #1884 removed the guard
                 // that used to keep HR-only nights away from this line, so this is now the only thing
@@ -723,6 +730,7 @@ public enum AnalyticsEngine {
         // #2522: use the gated lowest five-minute bin from the primary session, not its whole-session
         // mean. Choosing the session first preserves #2358's nap protection; a shorter nap must not
         // supply the daily RHR when the main night has no HR. #804's device-provided value still wins.
+        // Yoop (`SleepStager.asleepVitalsEnabled`): the session value is its asleep mean, and so is this.
         let primarySession = physiologySessions.max(by: { ($0.end - $0.start) < ($1.end - $1.start) })
         let providedPrimaryRHR = primarySession
             .flatMap { p in providedSleep.first(where: { $0.start == p.start && $0.end == p.end })?.restingHR }
@@ -856,8 +864,12 @@ public enum AnalyticsEngine {
                                                    sessions: matched.map { (start: $0.start, end: $0.end) }) {
                 return vendor
             }
+            // Yoop (`SleepStager.asleepVitalsEnabled`): the spectral estimate over the asleep spans, which
+            // returns nil rather than a number when the R-R carries no breathing rhythm.
             let perSession = matched
-                .map { SleepStager.respRateFromRR(rr, start: $0.start, end: $0.end) }
+                .map { s in SleepStager.asleepVitalsEnabled
+                    ? (SleepStager.asleepRespRate(rr, start: s.start, end: s.end, stages: s.stages) ?? .nan)
+                    : SleepStager.respRateFromRR(rr, start: s.start, end: s.end) }
                 .filter { $0.isFinite }
             return perSession.isEmpty ? nil : HRVAnalyzer.median(perSession)
         }()
@@ -871,9 +883,21 @@ public enum AnalyticsEngine {
         // personal baseline. In pass 1 baselines.skinTemp is nil so the deviation is nil
         // and the mean is harvested; IntelligenceEngine seeds the baseline from those means
         // and re-derives the deviation in pass 2 (mirrors avgHrv→recovery). APPROXIMATE.
-        let nightlySkinTempC = wornNightlySkinTempC(matched, hr: hr, skinTemp: skinTemp,
-                                                    family: skinTempFamily, anchorRaw: skinTempAnchorRaw,
-                                                    wornToleranceSec: skinTempWornToleranceSec)
+        // Yoop (`SleepStager.asleepVitalsEnabled`): the mean over the asleep spans; the in-bed mean stands
+        // in only when they hold too few worn samples.
+        let asleepSkinSessions: [SleepSession] = !SleepStager.asleepVitalsEnabled ? [] : matched.flatMap { s in
+            SleepStager.asleepSpans(s.stages, start: s.start, end: s.end).map {
+                SleepSession(start: $0.start, end: $0.end, efficiency: s.efficiency, stages: [],
+                             restingHR: nil, avgHRV: nil)
+            }
+        }
+        let nightlySkinTempC = (asleepSkinSessions.isEmpty ? nil
+            : wornNightlySkinTempC(asleepSkinSessions, hr: hr, skinTemp: skinTemp,
+                                   family: skinTempFamily, anchorRaw: skinTempAnchorRaw,
+                                   wornToleranceSec: skinTempWornToleranceSec))
+            ?? wornNightlySkinTempC(matched, hr: hr, skinTemp: skinTemp,
+                                    family: skinTempFamily, anchorRaw: skinTempAnchorRaw,
+                                    wornToleranceSec: skinTempWornToleranceSec)
         let skinTempDevC: Double? = nightlySkinTempC.flatMap { (v: Double) -> Double? in
             guard let b = baselines.skinTemp, b.usable else { return nil }
             return round2(Baselines.deviation(v, state: b).delta)
@@ -1025,9 +1049,26 @@ public enum AnalyticsEngine {
         // night-window hr for pure-function callers that don't supply dayHr. Strain keeps the full
         // window (bounded log).
         let dayHrFiltered = (dayHr ?? hr).filter { tsInDay($0.ts) }
-        let activeKcalEst: Double? = dayHrFiltered.isEmpty ? nil : Calories.estimateDayCalories(
-            dayHrFiltered, profile: profile, hrmax: effMaxHR,
-            restingHR: restingHRDaily.map(Double.init))
+        let activeKcalEst: Double?
+        if Calories.yoopEnergyEnabled, let first = dayHrFiltered.map(\.ts).min(),
+           let last = dayHrFiltered.map(\.ts).max() {
+            // Yoop: ACTIVE energy only, steps pricing the walking minutes (`estimateYoopDayEnergy`). This
+            // calendar-day value stands only where no sleep-onset cycle replaces it, so it takes the night's
+            // resting HR as given here rather than the main-sleep mean the app's cycle path uses.
+            let inDay = (daySteps ?? steps).filter { tsInDay($0.ts) }.sorted { $0.ts < $1.ts }
+            let counter = SleepAwareStepCounter.Accumulator(
+                sleepSessions: [], hasActivityClasses: StepsCounter.hasActivityClasses(inDay), recordsMinutes: true)
+            _ = counter.acceptPage(inDay).finish()
+            let ticksPerStep = max(profile.stepTicksPerStep, 0.5)
+            activeKcalEst = Calories.estimateYoopDayEnergy(
+                dayHrFiltered, stepsByMinute: counter.acceptedTicksByMinute.mapValues { Double($0) / ticksPerStep },
+                windowSeconds: last - first + 1, profile: profile, hrmax: effMaxHR,
+                restingHR: restingHRDaily.map(Double.init)).activeKcal
+        } else {
+            activeKcalEst = dayHrFiltered.isEmpty ? nil : Calories.estimateDayCalories(
+                dayHrFiltered, profile: profile, hrmax: effMaxHR,
+                restingHR: restingHRDaily.map(Double.init))
+        }
 
         // ── Assemble DailyMetric ──────────────────────────────────────────────
         let daily = DailyMetric(

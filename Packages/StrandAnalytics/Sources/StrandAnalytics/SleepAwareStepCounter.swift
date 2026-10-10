@@ -48,10 +48,19 @@ public enum SleepAwareStepCounter {
         private var gravityAvailable = 0, auxAvailable = 0
         private var pending: [(ts: Int, ticks: Int)] = []
         private var finished = false
+        /// Yoop rules (`StepsCounter.yoopCountingEnabled`), captured once so a window is counted one way.
+        private let yoop = StepsCounter.yoopCountingEnabled
+        private let recordsMinutes: Bool
+        private var lastLocomotionTs: Int?
+        private var heldReleases: [(ts: Int, ticks: Int)] = []
+        /// Accepted ticks by minute (`ts / 60`), filled only when built with `recordsMinutes`; complete
+        /// after `finish()`, which settles the last sleep bout.
+        public private(set) var acceptedTicksByMinute: [Int: Int] = [:]
 
-        public init(sleepSessions: [SleepSession], hasActivityClasses: Bool) {
+        public init(sleepSessions: [SleepSession], hasActivityClasses: Bool, recordsMinutes: Bool = false) {
             sessions = sleepSessions.sorted { $0.start < $1.start }
             hasClasses = hasActivityClasses
+            self.recordsMinutes = recordsMinutes
         }
 
         /// Kotlin twin: `SleepAwareStepCounter.Accumulator.acceptPage`.
@@ -62,6 +71,58 @@ public enum SleepAwareStepCounter {
                 guard current.ts > prior.ts else { continue }
                 previous = current
                 let delta = (current.counter - prior.counter) & 0xffff
+                if yoop {
+                    // Yoop: a walk or run label counts as in NOOP. A still-labelled batch of 5 to 9 ticks
+                    // in one or two seconds is the pedometer releasing the steps it held while confirming a
+                    // walk, and counts when a walk or run second lies within `yoopReleaseWindowSeconds` of it,
+                    // before or after, so it is held until the window has passed. A dropout's ticks count
+                    // whatever the closing label, which describes one second, not the gap. Plausibility is
+                    // a release plus at most `yoopMaxStepsPerSecond` per elapsed second; only a raw
+                    // decrease can be a reset, and one counts as a wrap only under the old 512 guard.
+                    let elapsed = current.ts - prior.ts
+                    let window = StepsCounter.yoopReleaseWindowSeconds
+                    let locomotion = hasClasses && StepsCounter.shouldCountDelta(
+                        activityClass: current.activityClass, hasActivityClasses: true)
+                    var accepted: [(ts: Int, ticks: Int)] = []
+                    var stillHeld: [(ts: Int, ticks: Int)] = []
+                    for held in heldReleases {
+                        if locomotion && current.ts - held.ts <= window { accepted.append(held) }
+                        else if current.ts - held.ts > window { rejectedClass += held.ticks }
+                        else { stillHeld.append(held) }
+                    }
+                    heldReleases = stillHeld
+                    if locomotion { lastLocomotionTs = current.ts }
+                    if delta > 0 {
+                        let allowance = StepsCounter.yoopReleaseTicks.upperBound
+                            + Int(StepsCounter.yoopMaxStepsPerSecond * Double(elapsed))
+                        let cap = current.counter < prior.counter
+                            ? min(allowance, StepsCounter.maxStepDelta - 1) : allowance
+                        if delta > cap {
+                            rejectedImplausible += delta
+                        } else if !hasClasses || locomotion || elapsed > StepsCounter.yoopDropoutSeconds {
+                            accepted.append((current.ts, delta))
+                        } else if StepsCounter.yoopReleaseTicks.contains(delta) {
+                            if let last = lastLocomotionTs, current.ts - last <= window {
+                                accepted.append((current.ts, delta))
+                            } else {
+                                heldReleases.append((current.ts, delta))
+                            }
+                        } else {
+                            rejectedClass += delta
+                        }
+                    }
+                    for item in accepted {
+                        switch SleepAwareStepCounter.context(item.ts, sessions: sessions) {
+                        case 0: flush(); outside += item.ticks
+                        case 1: flush(); awake += item.ticks
+                        default:
+                            if let last = pending.last, item.ts - last.ts > maxSecondsBetweenGaitDeltas { flush() }
+                            pending.append(item); continue
+                        }
+                        if recordsMinutes { acceptedTicksByMinute[item.ts / 60, default: 0] += item.ticks }
+                    }
+                    continue
+                }
                 guard StepsCounter.shouldCountDelta(activityClass: current.activityClass,
                                                      hasActivityClasses: hasClasses) else {
                     rejectedClass += delta; continue
@@ -75,8 +136,9 @@ public enum SleepAwareStepCounter {
                 case 1: flush(); awake += delta
                 default:
                     if let last = pending.last, current.ts - last.ts > maxSecondsBetweenGaitDeltas { flush() }
-                    pending.append((current.ts, delta))
+                    pending.append((current.ts, delta)); continue
                 }
+                if recordsMinutes { acceptedTicksByMinute[current.ts / 60, default: 0] += delta }
             }
             return self
         }
@@ -91,7 +153,12 @@ public enum SleepAwareStepCounter {
 
         /// Kotlin twin: `SleepAwareStepCounter.Accumulator.finish`.
         public func finish() -> Count {
-            if !finished { flush(); finished = true }
+            if !finished {
+                // Yoop: a release still held at the end of the window met no walk or run second.
+                rejectedClass += heldReleases.reduce(0) { $0 + $1.ticks }
+                heldReleases.removeAll()
+                flush(); finished = true
+            }
             return Count(totalTicks: outside + awake + sleep, acceptedOutsideSleepTicks: outside,
                          acceptedAwakeGapTicks: awake, acceptedSleepBoutTicks: sleep,
                          rejectedIsolatedSleepTicks: rejectedSleep,
@@ -109,6 +176,9 @@ public enum SleepAwareStepCounter {
             let coherent = pending.count >= minGaitBoutActiveSamples
                 && duration >= minGaitBoutDurationSeconds && ticks >= minGaitBoutTicks
             if coherent { sleep += ticks } else { rejectedSleep += ticks }
+            if coherent && recordsMinutes {
+                for item in pending { acceptedTicksByMinute[item.ts / 60, default: 0] += item.ticks }
+            }
             pending.removeAll(keepingCapacity: true)
         }
     }

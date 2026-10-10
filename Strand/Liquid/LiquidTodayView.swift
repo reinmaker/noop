@@ -69,6 +69,7 @@ struct LiquidTodayView: View {
     @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (leads in Yoop)
     @State private var appleStepsByDay: [String: Double] = [:]   // Apple Health steps per day, for averages
     @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
+    @State private var dayWindowSeconds: Int?      // Yoop: the shown day's window, onset to its end or now
     @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     /// Line identity for [hrValues], from the bucket timestamps this used to discard (#2082).
@@ -760,6 +761,7 @@ struct LiquidTodayView: View {
             WhoopPlanCard()
             WhoopDashboardSection(today: displayDay, days: repo.days, steps: stepCount,
                                   calories: caloriesCount, vo2max: vo2max, appleStepsByDay: appleStepsByDay,
+                                  totalCalories: totalCaloriesCount, basalKcalPerDay: basalKcalPerDay,
                                   onCustomize: { customizationDestination = .today })
             WhoopStressChartCard(currentStress: stress)
             WhoopStrainRecoveryCard(days: repo.days)
@@ -775,6 +777,7 @@ struct LiquidTodayView: View {
                                 workouts: workouts)
             WhoopDashboardSection(today: displayDay, days: daysToShown, steps: stepCount,
                                   calories: caloriesCount, vo2max: vo2max, appleStepsByDay: appleStepsByDay,
+                                  totalCalories: totalCaloriesCount, basalKcalPerDay: basalKcalPerDay,
                                   onCustomize: { customizationDestination = .today })
             WhoopStrainRecoveryCard(days: daysToShown)
         }
@@ -1525,7 +1528,8 @@ struct LiquidTodayView: View {
         case .calories:
             // #616: imported-first value (imported ?: activeKcalEst) + route the tap to the matching
             // detail source, so the number, its sparkline and the chart it opens all agree.
-            ktile(String(localized: "Calories"), icon: keyMetricIcon(metric), intText(caloriesCount), "kcal", StrandPalette.metricAmber,
+            ktile(PuffinExperiment.whoopScoresEnabled ? String(localized: "Active calories") : String(localized: "Calories"),
+                  icon: keyMetricIcon(metric), intText(caloriesCount), "kcal", StrandPalette.metricAmber,
                   fracOver(caloriesCount, 800), key: "energy_kcal", detailMetric: caloriesDetailMetric)
         case .skinTemp:
             // Added 2026-08-24 (queue 11c follow-up): first Key Metrics appearance for Skin Temp — was
@@ -1776,6 +1780,7 @@ struct LiquidTodayView: View {
         let from = cycleMarkers.last(where: { $0.day == selectedDayKey }).map { Int($0.value) } ?? calendarFrom
         let toExclusive = cycleMarkers.last(where: { $0.day == nextDayKey }).map { Int($0.value) } ?? calendarTo
         let to = max(from, toExclusive - 1)
+        dayWindowSeconds = max(0, toExclusive - from)
         // #1001: in-progress Effort for TODAY, over the SAME window resolved just above (the day-cycle
         // onset when that mode is on, else calendar midnight → now) with the identical params the daily
         // pass uses, so the live number matches what the engine will eventually persist. Below
@@ -1873,6 +1878,8 @@ struct LiquidTodayView: View {
         }
         var winOnDeviceKcal: [String: Double] = [:]
         for r in sparkRows { if let k = r.activeKcalEst { winOnDeviceKcal[r.day] = k } }
+        // Yoop: one source, its own active energy; Apple's figure is not swapped in on the days it exists.
+        if PuffinExperiment.whoopScoresEnabled { winImportedKcal = [:] }
         let energyKcalSpark: [(String, Double)] = Set(winImportedKcal.keys).union(winOnDeviceKcal.keys).sorted()
             .compactMap { day in (winImportedKcal[day] ?? winOnDeviceKcal[day]).map { (day, $0) } }
         kSparks = [
@@ -2087,16 +2094,17 @@ struct LiquidTodayView: View {
             : String(localized: "Good evening")
     }
 
-    // Yoop: the iPhone's Apple Health count ?: measured strap count ?: motion estimate. The phone's
-    // count leads because the strap's step counter reads low. The detail routing follows the same order,
-    // so the tapped-through source always matches the number shown (#377).
+    // Yoop: measured strap count ?: the iPhone's Apple Health count ?: motion estimate. The strap leads now
+    // that it counts the steps its pedometer releases (`StepsCounter.yoopCountingEnabled`): it is worn all
+    // day, the phone only when carried. The detail routing follows the same order, so the tapped-through
+    // source always matches the number shown (#377).
     private var stepCount: Double? {
-        importedStepsDay.map(Double.init) ?? displayDay?.steps.map(Double.init) ?? stepsEst
+        displayDay?.steps.map(Double.init) ?? importedStepsDay.map(Double.init) ?? stepsEst
     }
 
     private var stepsDetailMetric: MetricDescriptor? {
-        MetricCatalog.todayStepsMetric(hasMeasuredSteps: importedStepsDay == nil && displayDay?.steps != nil,
-                                       hasImportedSteps: importedStepsDay != nil)
+        MetricCatalog.todayStepsMetric(hasMeasuredSteps: displayDay?.steps != nil,
+                                       hasImportedSteps: displayDay?.steps == nil && importedStepsDay != nil)
     }
 
     private var stepsDetailKey: String { stepsDetailMetric?.key ?? "steps_est" }
@@ -2105,13 +2113,32 @@ struct LiquidTodayView: View {
     // #616: calories resolved IMPORTED-FIRST (the day's imported Apple active energy — the figure these
     // surfaces already showed — else NOOP's on-device HR estimate `activeKcalEst`) — one number across the
     // tile, card and the detail it taps to. Mirrors the steps precedence above.
+    //
+    // Yoop: Yoop's own ACTIVE energy on every day, never Apple's on the days that have it, so the number
+    // keeps one meaning across days (`Calories.yoopEnergyEnabled` makes `activeKcalEst` active only).
     private var caloriesCount: Double? {
-        importedActiveKcalDay ?? displayDay?.activeKcalEst
+        if PuffinExperiment.whoopScoresEnabled { return displayDay?.activeKcalEst }
+        return importedActiveKcalDay ?? displayDay?.activeKcalEst
     }
 
     private var caloriesDetailMetric: MetricDescriptor? {
-        MetricCatalog.todayCaloriesMetric(hasImportedKcal: importedActiveKcalDay != nil,
-                                          hasOnDeviceKcal: displayDay?.activeKcalEst != nil)
+        MetricCatalog.todayCaloriesMetric(
+            hasImportedKcal: !PuffinExperiment.whoopScoresEnabled && importedActiveKcalDay != nil,
+            hasOnDeviceKcal: displayDay?.activeKcalEst != nil)
+    }
+
+    /// Yoop: basal energy for one day, Mifflin-St Jeor from the profile.
+    private var basalKcalPerDay: Double {
+        Calories.mifflinStJeorKcalPerDay(UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
+                                                     age: Double(profile.age), sex: profile.sex))
+    }
+
+    /// Yoop: the shown day's TOTAL energy, its basal energy over the day's window (sleep onset to the next
+    /// onset, or to now today) plus its active energy. Nil when the day has no active estimate.
+    private var totalCaloriesCount: Double? {
+        guard PuffinExperiment.whoopScoresEnabled, let active = displayDay?.activeKcalEst else { return nil }
+        let windowSeconds = Double(dayWindowSeconds ?? 86_400)
+        return basalKcalPerDay * windowSeconds / 86_400 + active
     }
 
     private var caloriesDetailKey: String { caloriesDetailMetric?.key ?? "energy_kcal" }
