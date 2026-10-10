@@ -1214,6 +1214,56 @@ public enum SleepStager {
         return out
     }
 
+    // MARK: - Band sleep_state night bounds (Yoop)
+
+    /// Yoop: start and end the night where WHOOP's own band says the wearer was asleep. The band's
+    /// "asleep" code (`bandStateAsleep`) is the strap firmware's call, and the WHOOP app times a night from
+    /// it: on 9 Oct 2026 its sleep began at 02:40, the minute the band went to 2, while this stager had
+    /// called sleep from 01:24 through a 35-minute stretch the band scored awake (HR 80 to 90). On 10 Oct it
+    /// kept a still, awake-in-bed 10:09 to 10:25 (HR 62 to 66 against 46 asleep) as REM. Set by the app;
+    /// off by default, so NOOP's output is unchanged.
+    public static var bandStateBoundsEnabled: Bool = false
+
+    /// Relabel as wake every sleep epoch before the band's first "asleep" epoch and after its last one, so
+    /// only the onset and the final wake move; interior epochs are untouched. Empty band state, the flag
+    /// off, or a night the band never scored asleep → `stages` unchanged. Pure + deterministic.
+    static func applyBandStateBounds(_ stages: [StageSegment], start: Int, end: Int,
+                                     bandSleepState: [(ts: Int, state: Int)],
+                                     enabled: Bool = bandStateBoundsEnabled) -> [StageSegment] {
+        guard enabled, !bandSleepState.isEmpty, !stages.isEmpty, end > start else { return stages }
+        let states = sessionEpochSleepState(start: start, end: end, sleepState: bandSleepState)
+        guard let first = states.firstIndex(of: bandStateAsleep),
+              let last = states.lastIndex(of: bandStateAsleep) else { return stages }
+        let n = states.count
+        let epochStart = { (i: Int) -> Int in start + Int(Double(i) * epochS) }
+        var labels = [String](repeating: "wake", count: n)
+        for i in 0..<n {
+            let t = epochStart(i)
+            if let seg = stages.first(where: { $0.start <= t && t < $0.end })
+                ?? stages.first(where: { $0.start <= t && t <= $0.end }) {
+                labels[i] = seg.stage
+            }
+        }
+        var changed = false
+        for i in 0..<n where (i < first || i > last) && !SleepStageVocabulary.isWake(labels[i]) {
+            labels[i] = "wake"
+            changed = true
+        }
+        if !changed { return stages }
+        var out: [StageSegment] = []
+        for i in 0..<n {
+            let segStart = epochStart(i)
+            let segEnd = (i == n - 1) ? end : epochStart(i + 1)
+            if let lastSeg = out.last, lastSeg.stage == labels[i] {
+                out[out.count - 1].end = segEnd
+            } else {
+                out.append(StageSegment(start: segStart, end: segEnd, stage: labels[i]))
+            }
+        }
+        if !out.isEmpty { out[out.count - 1].end = end }
+        return out
+    }
+
     /// Off-wrist HR-gap spans (#500). The contiguous HR-coverage gaps of at least `offWristHRGapMin`
     /// minutes WITHIN [p.start, p.end], as concrete `[start, end)` sub-intervals — a strong wrist-OFF
     /// proxy. Worn, the strap streams ~1 Hz HR (or PPG-derived HR on a 5/MG), so a real night yields no
@@ -1356,7 +1406,8 @@ public enum SleepStager {
             wristOff: StreamFingerprint.of(wristOff, ts: { $0.start }, quant: { $0.end }),
             band: StreamFingerprint.of(bandSleepState, ts: { $0.ts }, quant: { $0.state }),
             v2: useSleepStagerV2,
-            sleepHRBaseline: sleepHRBaseline)
+            sleepHRBaseline: sleepHRBaseline,
+            bounds: bandStateBoundsEnabled)
         return detectSleepCache.value(key) {
             detectSleepUncached(hr: hr, rr: rr, resp: resp, gravity: gravity,
                                 tzOffsetSeconds: tzOffsetSeconds, wristOff: wristOff,
@@ -1372,6 +1423,7 @@ public enum SleepStager {
         let wristOff: StreamFingerprint; let band: StreamFingerprint
         let v2: Bool
         let sleepHRBaseline: Double?
+        let bounds: Bool
     }
     /// ≈ the number of distinct days in a scoring window; FIFO-evicted, holds only small session arrays.
     private static let detectSleepCache = AnalyticsMemoCache<DetectKey, [SleepSession]>(capacity: 40)
@@ -1585,8 +1637,10 @@ public enum SleepStager {
             // (`bandSleepState`) scored "asleep". No-op when the band is absent (WHOOP 4.0) or the flag is
             // off; stager-agnostic (corrects whichever hypnogram V1/V2 produced). Efficiency below is then
             // computed on the corrected stages, so a night NOOP over-called wake on reports true efficiency.
-            let stages = applyBandStateWakeVeto(rawStages, start: p.start, end: p.end,
+            let vetoed = applyBandStateWakeVeto(rawStages, start: p.start, end: p.end,
                                                 bandSleepState: bandSleepState)
+            // Yoop: the band's own asleep span bounds the night (`bandStateBoundsEnabled`).
+            let stages = applyBandStateBounds(vetoed, start: p.start, end: p.end, bandSleepState: bandSleepState)
             let eff = efficiency(start: p.start, end: p.end, stages: stages)
             let avgHrv = sessionAvgHRV(start: p.start, end: p.end, rr: rrS)
             sessions.append(SleepSession(start: p.start, end: p.end, efficiency: eff,

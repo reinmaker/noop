@@ -308,6 +308,14 @@
       "identity_sha256": "aa32ea8154e6f45e97790e54b9e5e3ca2dc26a3dc1991e50604b34118d0c213a",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: analyzeDay gains minMainNightSeconds (default 0, byte-identical) so a sleep under three hours in bed is a nap rather than the day's night. The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::applyBandStateBounds/5#1",
+      "identity_sha256": "509b6af47419cb4b4740379375446c2d4bfc20b0fb0105ec4fe5d65b8c79b1ad",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the night is bounded by the band's own asleep span (bandStateBoundsEnabled, default off, byte-identical when off), as the WHOOP app times a night. The fork ships no Android build, so the Kotlin twin is unchanged."
     }
   ]
 }
