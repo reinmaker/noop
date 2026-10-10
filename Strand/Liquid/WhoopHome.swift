@@ -164,10 +164,24 @@ struct WhoopInsightCard: View {
         .task(id: fingerprint) { await load() }
     }
 
+    /// Ask the Coach for more on the card. A Coach-written card goes into the chat as the Coach's message
+    /// first, so the answer builds on it rather than writing the same analysis again; if it cannot be
+    /// added, the question quotes it instead.
     private func openCoach() {
         guard coach.isConfigured else { router.openCoach(); return }
         let title = insight?.title ?? fallbackTitle
-        coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\": what's behind it and what should I do today?"
+        if let insight {
+            if coach.seedInsight(insight) {
+                coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\": go deeper than what you "
+                    + "just said rather than repeating it. What's behind it in my data, and what should I do today?"
+            } else {
+                coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\", which said: \"\(insight.body)\" "
+                    + "Go deeper than that rather than repeating it. What's behind it in my data, and what should I "
+                    + "do today?"
+            }
+        } else {
+            coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\": what's behind it and what should I do today?"
+        }
         router.openCoach()
     }
 
@@ -479,44 +493,66 @@ struct DayInReviewSheet: View {
 
 // MARK: - Sleep contributors
 
-/// WHOOP-style rows under the Sleep Performance ring: Hours vs. Needed, Sleep Consistency, Sleep
-/// Efficiency and Restorative Sleep, each with a Poor / Sufficient / Optimal three-segment bar. Values
-/// come straight from `SleepModel` (NOOP's own on-device sleep scoring; imported WHOOP figures win when
-/// present, exactly as the Sleep tiles do).
+/// WHOOP-style rows under the Sleep Performance ring, WHOOP's four: Hours vs. Needed, Sleep
+/// Consistency, Sleep Efficiency and High Sleep Stress, each with a Poor / Sufficient / Optimal
+/// three-segment bar. Values come straight from `SleepModel` (NOOP's own on-device sleep scoring;
+/// imported WHOOP figures win when present, exactly as the Sleep tiles do); High Sleep Stress comes from
+/// the shown night's stress curve (`SleepStressNight`). Restorative sleep stays in Last Night's Sleep.
 struct WhoopSleepContributors: View {
     let model: SleepModel
     /// The shown night's efficiency (actual sleep over time in bed), so this row matches the Sleep
     /// Efficiency card below. Falls back to the model's figure.
     var efficiency: Double? = nil
+    /// Percent of the shown night's sleep spent in high stress (`SleepStressNight.highPercent`), the same
+    /// curve as the Sleep Stress card below. Nil (a dash) when WHOOP-style stress is off or the night has
+    /// no heart rate.
+    var highSleepStress: Double? = nil
 
-    enum Band: Int { case poor = 0, sufficient = 1, optimal = 2 }
+    enum Band: Int {
+        case poor = 0, sufficient = 1, optimal = 2
+
+        /// The band for a contributor value. Higher is better unless `lowerIsBetter`, where the two
+        /// thresholds are ceilings rather than floors: at or under `optimal` is optimal, at or under
+        /// `sufficient` sufficient, anything above poor.
+        static func classify(_ value: Double, sufficient: Double, optimal: Double,
+                             lowerIsBetter: Bool = false) -> Band {
+            if lowerIsBetter {
+                if value <= optimal { return .optimal }
+                if value <= sufficient { return .sufficient }
+                return .poor
+            }
+            if value >= optimal { return .optimal }
+            if value >= sufficient { return .sufficient }
+            return .poor
+        }
+    }
 
     private struct Row: Identifiable {
         let id: String
         let label: String
         let icon: String
         let value: Double?
-        let sufficientFrom: Double
-        let optimalFrom: Double
+        /// Where Sufficient and Optimal start: floors, or ceilings when `lowerIsBetter`.
+        let sufficient: Double
+        let optimal: Double
+        var lowerIsBetter = false
 
         var band: Band? {
-            guard let value else { return nil }
-            if value >= optimalFrom { return .optimal }
-            if value >= sufficientFrom { return .sufficient }
-            return .poor
+            value.map { Band.classify($0, sufficient: sufficient, optimal: optimal, lowerIsBetter: lowerIsBetter) }
         }
     }
 
     private var rows: [Row] {
         [
             Row(id: "hours", label: String(localized: "HOURS VS. NEEDED"), icon: "moon.zzz",
-                value: model.hoursVsNeeded.latest, sufficientFrom: 70, optimalFrom: 85),
+                value: model.hoursVsNeeded.latest, sufficient: 70, optimal: 85),
             Row(id: "consistency", label: String(localized: "SLEEP CONSISTENCY"), icon: "calendar",
-                value: model.consistency.latest, sufficientFrom: 70, optimalFrom: 80),
+                value: model.consistency.latest, sufficient: 70, optimal: 80),
             Row(id: "efficiency", label: String(localized: "SLEEP EFFICIENCY"), icon: "bed.double",
-                value: efficiency ?? model.efficiency.latest, sufficientFrom: 85, optimalFrom: 90),
-            Row(id: "restorative", label: String(localized: "RESTORATIVE SLEEP"), icon: "sparkles",
-                value: model.restorative.latest, sufficientFrom: 30, optimalFrom: 40),
+                value: efficiency ?? model.efficiency.latest, sufficient: 85, optimal: 90),
+            Row(id: "stress", label: String(localized: "HIGH SLEEP STRESS"), icon: "waveform.path.ecg",
+                value: highSleepStress, sufficient: SleepStressNight.sufficientMaxPercent,
+                optimal: SleepStressNight.optimalMaxPercent, lowerIsBetter: true),
         ]
     }
 

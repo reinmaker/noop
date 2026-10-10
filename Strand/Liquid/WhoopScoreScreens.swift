@@ -9,7 +9,8 @@ import WhoopStore
 // MARK: - Coach pill
 
 /// The pill at the bottom of a score screen: the Coach's one-line headline for that screen, cached for
-/// the day. Tapping it opens the Coach, which then speaks first about this screen.
+/// the day. Tapping it opens the Coach with that headline as its first message, so the screen is not
+/// analysed a second time; only a pill with no headline yet leaves the Coach to write its own opener.
 struct WhoopCoachPill: View {
     let screen: AICoachEngine.CoachScreen
 
@@ -33,7 +34,7 @@ struct WhoopCoachPill: View {
     }
 
     var body: some View {
-        Button { router.openCoach() } label: {
+        Button(action: openCoach) {
             HStack(spacing: NoopMetrics.space3) {
                 BrandMark(size: 34)
                 Text(Self.inlineMarkdown(text ?? (loading ? String(localized: "Analyzing…")
@@ -58,6 +59,15 @@ struct WhoopCoachPill: View {
         .padding(.horizontal, NoopMetrics.space4)
         .padding(.bottom, NoopMetrics.space2)
         .task(id: cacheKey) { await load() }
+    }
+
+    /// Hand the shown headline to the Coach as its opener (`AICoachEngine.Opener.screenSummary`), then
+    /// open it. With no headline yet the Coach writes its own opener about this screen.
+    private func openCoach() {
+        if let text, CoachBriefScheduler.coachMasterEnabled, coach.isConfigured {
+            coach.nextOpener = .screenSummary(text, screen)
+        }
+        router.openCoach()
     }
 
     /// The reply's bold and italic marks rendered, not shown as asterisks.
@@ -301,6 +311,9 @@ private enum WhoopDays {
 
 struct WhoopRecoveryScreen: View {
     @EnvironmentObject private var repo: Repository
+    /// The stored `sleep_performance` series by day, the read Home's SLEEP ring makes, so this screen's
+    /// SLEEP PERFORMANCE row states the same number.
+    @State private var storedSleep: [String: Double] = [:]
 
     var body: some View {
         let shown = WhoopSelectedDay.split(repo.days)
@@ -308,7 +321,7 @@ struct WhoopRecoveryScreen: View {
         let today = shown.day
         let prior = shown.prior
         let sleepPerf = SleepModel.performanceSeries(days: days, importedSleep: repo.importedSleep,
-                                                     sleeps: repo.sleeps)
+                                                     sleeps: repo.sleeps, stored: storedSleep)
         let rows = [
             WhoopContributorMath.make(id: "hrv", label: String(localized: "HEART RATE VARIABILITY"),
                                       icon: "waveform.path.ecg", today: today?.avgHrv,
@@ -362,6 +375,10 @@ struct WhoopRecoveryScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .safeAreaInset(edge: .bottom, spacing: 0) { WhoopCoachPill(screen: .recovery) }
+        .task(id: repo.refreshSeq) {
+            let series = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
+            storedSleep = Dictionary(series.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
+        }
     }
 }
 

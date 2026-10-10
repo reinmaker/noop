@@ -1917,6 +1917,11 @@ struct LiquidTodayView: View {
         // #616: same-day imported active energy — the calorie fallback when the strap banked no on-device
         // HR estimate for the day, so the tile/card/detail agree (imported-first, mirrors steps).
         importedActiveKcalDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.activeKcal }.max()
+        // The Coach quotes today's Strain and steps as this screen shows them (`AICoachEngine.homeToday`).
+        if selectedDayOffset == 0 {
+            AICoachEngine.homeToday = AICoachEngine.HomeTodayReadout(
+                day: selectedDayKey, strain: effortStrain(displayDay), steps: stepCount)
+        }
 
         // Weight for the SELECTED day: prefers a real Apple-Health reading (today's daily, else the
         // "weight" series' newest point so a sparse-but-recent value still renders). Falls back to the
@@ -1966,13 +1971,16 @@ struct LiquidTodayView: View {
             let hostedSessions = await repo.allSleepSessions()
             let hostedHabitual = await repo.habitualMidsleepSec()
             let hostedMotion = await repo.sessionMotions(sessions: hostedSessions)
+            // The stored Rest series already read above, as the Sleep tab reads it, so the hosted Rest tile
+            // states the same score.
             hostedSleepModel = SleepModel.build(SleepModelInputs(
                 days: repo.days,
                 sleeps: repo.sleeps,
                 allSessions: hostedSessions,
                 importedSleep: repo.importedSleep,
                 habitualMidsleepSec: hostedHabitual,
-                motionByStart: hostedMotion))
+                motionByStart: hostedMotion,
+                storedPerformance: restByDay))
         } else {
             hostedSleepModel = nil
         }

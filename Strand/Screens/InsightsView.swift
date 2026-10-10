@@ -45,10 +45,19 @@ struct InsightsLoadCache {
     let controls: [String: Set<String>]
     let importedQuestions: [String]
     let dayAnswers: [String: Bool]
-    /// The journal day offset the `dayAnswers` were read for (0 = today, 1 = yesterday, -1 = tomorrow). The
-    /// restore guards on it so a re-mount, which resets `journalDayOffset` to 0, only reuses the cache when
-    /// the cached answers match that reset day, otherwise it falls through to a fresh read (#833).
+    /// The `JournalDays` offset the `dayAnswers` were read for (0 = today, 1 = yesterday). The restore
+    /// guards on it so a re-mount, which opens on the day WHOOP would ask about, only reuses the cache when
+    /// the cached answers are for that day, otherwise it falls through to a fresh read (#833).
     let journalDayOffset: Int
+    /// The stored day key `dayAnswers` were read for (`JournalDays.storageKey` of `journalDayOffset`).
+    let journalDayKey: String
+    /// That day's imported WHOOP answers by `JournalDays.questionKey`, shown where no in-app answer exists.
+    let importedDayAnswers: [String: Bool]
+    /// The most recent earlier journal's rows, for "Use previous answers".
+    let previousDayAnswers: [JournalEntry]
+    /// Stored day keys with any journal answer, so a re-mount resolves the day WHOOP would ask about
+    /// without re-reading the journal. Current by construction: every journal write drops this cache.
+    let journalAnsweredDays: Set<String>
     let outcomeByKey: [String: [String: Double]]
     let seriesByKey: [String: [(day: String, value: Double)]]
     let activityCosts: [ActivityCost]
@@ -196,17 +205,26 @@ struct InsightsView: View {
     @State private var dayAnswers: [String: Bool] = [:]
     /// The selected day's native numeric values (question → value), drives the numeric fields (#322).
     @State private var dayNumeric: [String: Double] = [:]
-    /// -1 = tomorrow (log ahead), 0 = today, 1 = yesterday (late logging).
-    @State private var journalDayOffset = 0
-    /// #860 item 4: today's local calendar-day key, captured on appear and refreshed on foreground. The
-    /// journal day chips ("Today"/"Yesterday"/"Tomorrow") are relative to the CURRENT date, but the
-    /// answers (`dayAnswers`) and the resolved day key are derived from `Date()` only inside `load()`,
-    /// which re-runs on `repo.refreshSeq`. A day can pass with the screen alive and no data refresh (the
-    /// app simply backgrounded overnight), so without re-keying on this the previous day's answers stayed
-    /// pinned under "Today" instead of the new day starting blank. Folding it into the `.task(id:)` key
-    /// re-runs the load the moment the date rolls over, so "Today" always resolves to the live day and
-    /// prior answers move to their real date. Local CALENDAR day (matches the journal's `localDayKey`).
-    @State private var currentDayKey = Repository.localDayKey(Date())
+    /// The selected day's imported WHOOP answers by `JournalDays.questionKey` (picks shown where no
+    /// in-app answer exists).
+    @State private var importedDayAnswers: [String: Bool] = [:]
+    /// The most recent earlier journal's rows, what "Use previous answers" copies onto an empty day.
+    @State private var previousDayAnswers: [JournalEntry] = []
+    /// The stored day key the four journal-day values above were read for.
+    @State private var loadedJournalDayKey = ""
+    /// The journal day shown, as a `JournalDays` offset: 0 = today (log ahead), 1 = yesterday, up to 7.
+    @State private var journalDayOffset = 1
+    /// False until a day is chosen: a deep link, a pill tap, or the first load landing on the day WHOOP
+    /// would ask about (`JournalDays.dueOffset`). Until then `journalDayOffset` is only a placeholder.
+    @State private var journalDayChosen = false
+    /// #860 item 4: today's logical-day key, captured on appear and refreshed on foreground. The journal
+    /// day chips ("Today"/"Yesterday") are relative to the CURRENT day, but the answers (`dayAnswers`)
+    /// and the resolved day key are derived from `Date()` only inside `load()`, which re-runs on
+    /// `repo.refreshSeq`. A day can pass with the screen alive and no data refresh (the app simply
+    /// backgrounded overnight), so without re-keying on this the previous day's answers stayed pinned
+    /// under the old labels. Folding it into the `.task(id:)` key re-runs the load the moment the day
+    /// rolls over. LOGICAL day (04:00 rollover), the same clock `JournalDays` counts journal days from.
+    @State private var currentDayKey = Repository.logicalDayKey(Date())
 
     var body: some View {
         ScreenScaffold(title: "Insights", subtitle: "Interrogate what affects what.",
@@ -230,6 +248,9 @@ struct InsightsView: View {
                     JournalLogCard(importedQuestions: importedQuestions,
                                    answers: dayAnswers,
                                    numericAnswers: dayNumeric,
+                                   importedAnswers: importedDayAnswers,
+                                   previousAnswers: previousDayAnswers,
+                                   loadedDayKey: loadedJournalDayKey,
                                    dayOffset: $journalDayOffset,
                                    onChanged: { Task { await load() } })
                     // Mind, daily mood check-in + mood↔body correlations.
@@ -270,25 +291,32 @@ struct InsightsView: View {
         // advanced this bumps the `.task(id:)` key and the journal reloads for the new logical day (#860).
         .onAppear {
             refreshCurrentDayKey()
-            // #656: honour a day the Today journal widget deep-linked to (tapping a bar opens the journal
-            // at THAT day). Consumed once on arrival, then cleared. Reload explicitly — setting the offset
-            // here doesn't run the pill's onChanged, and the `.task` keys on the day-key, not the offset.
-            if let day = router.pendingJournalDayOffset {
-                journalDayOffset = day
-                router.pendingJournalDayOffset = nil
-                Task { await load() }
-            }
+            consumePendingJournalDay()
         }
+        // A pill tap is a choice too: a slower first load must not move the user off the day they picked.
+        .onChangeCompat(of: journalDayOffset) { _ in journalDayChosen = true }
         .onChangeCompat(of: scenePhase) { phase in
             if phase == .active { refreshCurrentDayKey() }
         }
     }
 
-    /// Re-stamp `currentDayKey` to today's local calendar day. A no-op while the day is unchanged; when the
-    /// date has rolled over it flips the value, which re-keys the journal load so the chips' "Today" and the
+    /// #656: honour a day the Home strip, the Today journal widget or the morning prompt deep-linked to
+    /// (tapping a day opens the journal on THAT day). Consumed once on arrival, then cleared. Reload
+    /// explicitly: setting the offset here doesn't run the pill's onChanged, and the `.task` keys on the
+    /// day-key, not the offset.
+    private func consumePendingJournalDay() {
+        guard let day = router.pendingJournalDayOffset else { return }
+        router.pendingJournalDayOffset = nil
+        journalDayOffset = min(max(day, 0), JournalDays.maxOffset)
+        journalDayChosen = true
+        Task { await load() }
+    }
+
+    /// Re-stamp `currentDayKey` to today's logical day. A no-op while the day is unchanged; when the day
+    /// has rolled over it flips the value, which re-keys the journal load so the chips' "Today" and the
     /// answers behind them snap to the new day (#860 item 4).
     private func refreshCurrentDayKey() {
-        let key = Repository.localDayKey(Date())
+        let key = Repository.logicalDayKey(Date())
         if key != currentDayKey { currentDayKey = key }
     }
 
@@ -342,13 +370,21 @@ struct InsightsView: View {
     private func load(allowCache: Bool = false) async {
         // #833: same-state re-mount → restore from the repo-level cache (no store queries). The dayKey guard
         // mirrors the `.task(id:)` key so a day-rollover still re-loads even at an unchanged seq.
+        // A fresh open (no day chosen yet) lands on the day WHOOP would ask about, resolved from the cached
+        // answered days; the snapshot is only reused when it was read for that same journal day.
         if allowCache,
            repo.insightsLoadedSeq == repo.refreshSeq,
            repo.insightsLoadedDayKey == currentDayKey,
-           let cached = repo.insightsCache,
-           cached.journalDayOffset == journalDayOffset {
-            restoreFromCache(cached)
-            return
+           let cached = repo.insightsCache {
+            let target = journalDayChosen ? journalDayOffset
+                : JournalDays.dueOffset(answered: cached.journalAnsweredDays,
+                                        logicalToday: Repository.logicalDay(Date()))
+            if cached.journalDayOffset == target {
+                journalDayOffset = target
+                journalDayChosen = true
+                restoreFromCache(cached)
+                return
+            }
         }
 
         // Journal → behaviours map (only "yes" answers count as the behaviour occurring).
@@ -378,10 +414,22 @@ struct InsightsView: View {
         // merged list carries no deviceId to filter on.
         let imported = await repo.importedJournalEntries()
         let importedQs = NSOrderedSet(array: imported.map(\.question)).array as? [String] ?? []
-        let selectedDayKey = Repository.localDayKey(
-            Calendar.current.date(byAdding: .day, value: -journalDayOffset, to: Date()) ?? Date())
+        // The journal day: on a fresh open, the day WHOOP would ask about; after that, the day chosen.
+        // Keyed through the one journal day model, the same one the Home strip and morning prompt use.
+        let logicalToday = Repository.logicalDay(Date())
+        let answeredDays = JournalDays.answeredDays(entries)
+        if !journalDayChosen {
+            journalDayOffset = JournalDays.dueOffset(answered: answeredDays, logicalToday: logicalToday)
+            journalDayChosen = true
+        }
+        let dayOffset = journalDayOffset
+        let selectedDayKey = JournalDays.storageKey(offset: dayOffset, logicalToday: logicalToday)
         let nativeAnswers = await repo.nativeJournalAnswers(day: selectedDayKey)
         let nativeNumeric = await repo.nativeJournalNumeric(day: selectedDayKey)
+        // WHOOP picks for the same day (shown where no in-app answer exists), and the most recent earlier
+        // journal for "Use previous answers".
+        let importedAnswers = JournalDays.answersByQuestionKey(imported, day: selectedDayKey)
+        let previousAnswers = JournalDays.previousAnswers(entries, before: selectedDayKey)
 
         // Daily metrics for the strap-only outcome fallback (merged, imported-wins). The view is
         // MainActor-isolated, so reading the published cache here is on the right actor.
@@ -426,8 +474,14 @@ struct InsightsView: View {
             self.behaviours = byBehaviour
             self.controls = controlsByBehaviour
             self.importedQuestions = importedQs
-            self.dayAnswers = nativeAnswers
-            self.dayNumeric = nativeNumeric
+            // A slower load started for another day must not paint its answers under the day now shown.
+            if self.journalDayOffset == dayOffset {
+                self.dayAnswers = nativeAnswers
+                self.dayNumeric = nativeNumeric
+                self.importedDayAnswers = importedAnswers
+                self.previousDayAnswers = previousAnswers
+                self.loadedJournalDayKey = selectedDayKey
+            }
             self.outcomeByKey = byKey
             self.seriesByKey = seriesMap
             self.numericJournalByKey = numericByBehaviour
@@ -445,7 +499,11 @@ struct InsightsView: View {
                 controls: controlsByBehaviour,
                 importedQuestions: importedQs,
                 dayAnswers: nativeAnswers,
-                journalDayOffset: self.journalDayOffset,
+                journalDayOffset: dayOffset,
+                journalDayKey: selectedDayKey,
+                importedDayAnswers: importedAnswers,
+                previousDayAnswers: previousAnswers,
+                journalAnsweredDays: answeredDays,
                 outcomeByKey: byKey,
                 seriesByKey: seriesMap,
                 activityCosts: costs,
@@ -466,9 +524,10 @@ struct InsightsView: View {
         dayAnswers = c.dayAnswers
         // Numeric journal rows are native-only (imported WHOOP rows never carry a numericValue), so the
         // selected day's numeric fields can be derived from the cached per-question series (#322).
-        let selectedDayKey = Repository.localDayKey(
-            Calendar.current.date(byAdding: .day, value: -c.journalDayOffset, to: Date()) ?? Date())
-        dayNumeric = c.numericJournalByKey.compactMapValues { $0[selectedDayKey] }
+        dayNumeric = c.numericJournalByKey.compactMapValues { $0[c.journalDayKey] }
+        importedDayAnswers = c.importedDayAnswers
+        previousDayAnswers = c.previousDayAnswers
+        loadedJournalDayKey = c.journalDayKey
         outcomeByKey = c.outcomeByKey
         seriesByKey = c.seriesByKey
         numericJournalByKey = c.numericJournalByKey

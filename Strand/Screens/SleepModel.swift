@@ -200,6 +200,9 @@ struct SleepModel {
     let isStubNight: Bool
 
     let performance: Metric
+    /// Each day's sleep performance, the figure `performance` is drawn from (`performanceByDay`), so the
+    /// Rest hero can read a navigated night's own score.
+    let performanceByDay: [String: Double]
     let efficiency: Metric
     let consistency: Metric
     let hoursVsNeeded: Metric
@@ -237,6 +240,10 @@ struct SleepModelInputs {
     let habitualMidsleepSec: Int?
     /// Per-epoch motion keyed by detected block start (`SleepView.motionByStart`).
     let motionByStart: [Int: [Double]]
+    /// The stored `sleep_performance` series by day, read exactly as Home's Rest reads it
+    /// (`Repository.exploreSeries`). Wins per day over the figures computed here, so the Sleep screen
+    /// states the score Home shows. Empty for a host that does not load it, which keeps its numbers as before.
+    var storedPerformance: [String: Double] = [:]
 }
 
 // MARK: - Pure derivation pipeline
@@ -417,23 +424,71 @@ extension SleepModel {
         return (fresh?.value, latestDay, mean(series), series)
     }
 
-    /// Sleep performance %: the imported WHOOP figure when the export carried one for that day;
-    /// else the REAL resolved Rest composite for that day. (#614 follow-up)
+    /// Sleep performance %, one value per day from `performanceByDay`. (#614 follow-up)
     static func performanceSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
-                                  sleeps: [CachedSleepSession] = []) -> Metric {
+                                  sleeps: [CachedSleepSession] = [], stored: [String: Double] = [:]) -> Metric {
+        let byDay = performanceByDay(days: days, importedSleep: importedSleep, sleeps: sleeps, stored: stored)
+        return metric(days: days) { byDay[$0.day] }
+    }
+
+    /// Each day's sleep performance %, keyed by day: the stored `sleep_performance` score when `stored`
+    /// has the day (the number Home's Rest shows: the engine's score, an imported WHOOP figure winning);
+    /// else the imported WHOOP figure when the export carried one; else computed here, WHOOP's formula
+    /// (`WhoopScores`) when that experiment is on and the REAL resolved Rest composite otherwise.
+    static func performanceByDay(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
+                                 sleeps: [CachedSleepSession] = [],
+                                 stored: [String: Double] = [:]) -> [String: Double] {
         let imported = importedSleep
         // Yoop: WHOOP's Sleep Performance (hours vs needed, consistency, efficiency; `WhoopScores`).
         let whoop = PuffinExperiment.whoopScoresEnabled
         let consistency = whoop ? consistencyByWakeDay(sleeps) : [:]
         let fallbackNeed = sleepNeedMin(days: days)
-        return metric(days: days) { d in
-            if let p = imported[d.day]?.performancePct { return p }   // export-verbatim
-            if whoop {
-                return WhoopScores.sleepPerformance(daily: d, needMin: imported[d.day]?.needMin ?? fallbackNeed,
-                                                    consistency: consistency[d.day])
+        var out: [String: Double] = [:]
+        for d in days {
+            let value: Double?
+            if let s = stored[d.day] {
+                value = s                                                  // the score Home shows
+            } else if let p = imported[d.day]?.performancePct {
+                value = p                                                  // export-verbatim
+            } else if whoop {
+                value = WhoopScores.sleepPerformance(daily: d, needMin: imported[d.day]?.needMin ?? fallbackNeed,
+                                                     consistency: consistency[d.day])
+            } else {
+                value = AnalyticsEngine.Rest.composite(daily: d)           // real resolved Rest composite
             }
-            return AnalyticsEngine.Rest.composite(daily: d)            // real resolved Rest composite
+            if let value, value.isFinite { out[d.day] = value }
         }
+        return out
+    }
+
+    // MARK: One night's sleep performance (the Rest hero)
+
+    /// The day keys a night's sleep performance is looked up under, in order: the local calendar day it
+    /// ended on (how the engine and the WHOOP import file a night), then the logical day of the wake time
+    /// (rolls at 04:00, the day Home's Today resolves to), which differs only for a wake before 04:00. The
+    /// logical day is left out when a night of its own is banked under it (`totalSleepMin` in `days`), so
+    /// a night that ended before 04:00 never borrows the score of the night before it.
+    static func nightDayKeys(wakeTs: Int, days: [DailyMetric]) -> [String] {
+        let wake = Date(timeIntervalSince1970: TimeInterval(wakeTs))
+        let local = Repository.localDayKey(wake)
+        // `BodyVitalSigns.logicalDayKey`: the same 04:00 boundary as `Repository.logicalDayKey`, without
+        // the @MainActor Repository, so this stays pure.
+        let logical = BodyVitalSigns.logicalDayKey(wake)
+        guard logical != local,
+              !days.contains(where: { $0.day == logical && $0.totalSleepMin != nil }) else { return [local] }
+        return [local, logical]
+    }
+
+    /// One night's sleep performance, resolved so the Sleep screen states the number Home's Rest shows
+    /// for that night: the stored `sleep_performance` series Home reads (`stored`) under the night's day
+    /// keys, and only when it has none of them this screen's own figure (`byDay`, `performanceByDay`).
+    /// Nil when neither has the night.
+    static func nightPerformance(wakeTs: Int, stored: [String: Double], byDay: [String: Double],
+                                 days: [DailyMetric]) -> Double? {
+        let keys = nightDayKeys(wakeTs: wakeTs, days: days)
+        for key in keys { if let v = stored[key] { return v } }
+        for key in keys { if let v = byDay[key] { return v } }
+        return nil
     }
 
     static func efficiencySeries(days: [DailyMetric]) -> Metric {
@@ -632,13 +687,16 @@ extension SleepModel {
         }
 
         let napSleepMinByDay = napSleepMinutesByDay(navDays: dayGroups, habitualMidsleepSec: habitual)
+        // Built once and read twice: the Rest tile's series and the Rest hero's per-night lookup.
+        let perfByDay = performanceByDay(days: inputs.days, importedSleep: inputs.importedSleep,
+                                         sleeps: inputs.sleeps, stored: inputs.storedPerformance)
         return SleepModel(
             night: night,
             intervals: night.intervals,
             isPersistedHypnogram: (night.realSegments?.count ?? 0) >= 2,
             isStubNight: isStub,
-            performance: performanceSeries(days: inputs.days, importedSleep: inputs.importedSleep,
-                                           sleeps: inputs.sleeps),
+            performance: metric(days: inputs.days) { perfByDay[$0.day] },
+            performanceByDay: perfByDay,
             efficiency: efficiencySeries(days: inputs.days),
             consistency: consistencySeries(days: inputs.days, sleeps: inputs.sleeps, importedSleep: inputs.importedSleep),
             hoursVsNeeded: hoursVsNeededSeries(days: inputs.days, importedSleep: inputs.importedSleep),

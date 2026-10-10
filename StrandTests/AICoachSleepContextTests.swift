@@ -32,10 +32,11 @@ final class AICoachSleepContextTests: XCTestCase {
     /// missing stage as a zero.
     func testUnstagedNightReportsDashesNotSilence() {
         let line = engine().dayLine(day())
-        XCTAssertTrue(line.contains("deep —"), line)
-        XCTAssertTrue(line.contains("REM —"), line)
-        XCTAssertTrue(line.contains("light —"), line)
-        XCTAssertTrue(line.contains("eff —"), line)
+        let dash = AICoachEngine.notMeasured
+        XCTAssertTrue(line.contains("deep \(dash),"), line)
+        XCTAssertTrue(line.contains("REM \(dash),"), line)
+        XCTAssertTrue(line.contains("light \(dash),"), line)
+        XCTAssertTrue(line.contains("eff \(dash),"), line)
     }
 
     /// Efficiency arrives as a PERCENTAGE on some import paths, which `SleepView` and `StagesCard`
@@ -44,9 +45,9 @@ final class AICoachSleepContextTests: XCTestCase {
         let e = engine()
         XCTAssertEqual(e.efficiencyPercentOrDash(0.94), "94%")
         XCTAssertEqual(e.efficiencyPercentOrDash(94.0), "94%")
-        XCTAssertEqual(e.efficiencyPercentOrDash(nil), "—")
-        XCTAssertEqual(e.efficiencyPercentOrDash(0), "—")
+        XCTAssertEqual(e.efficiencyPercentOrDash(nil), AICoachEngine.notMeasured)
+        XCTAssertEqual(e.efficiencyPercentOrDash(0), AICoachEngine.notMeasured)
         // Above a fraction but below the percentage split: not a value this can honestly render.
-        XCTAssertEqual(e.efficiencyPercentOrDash(1.2), "—")
+        XCTAssertEqual(e.efficiencyPercentOrDash(1.2), AICoachEngine.notMeasured)
     }
 }
