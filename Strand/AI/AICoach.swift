@@ -292,6 +292,9 @@ final class AICoachEngine: ObservableObject {
     \u{2022} Bold the key numbers and compare them with their normal or the optimal range (for example \
     "**11.7** against an optimal range of **10-14**", "**41 ms** vs your usual **52**").
     \u{2022} Name the single biggest limiter or driver ("the limiter tonight is stress, not effort").
+    \u{2022} Take today's training into account (the TODAY'S TRAINING line): after hard sessions, say what they \
+    cost and what they need (more sleep, an earlier bedtime, fuel and fluids, an easier tomorrow), and never \
+    suggest more Strain once the day is already at or past its optimal range.
     \u{2022} Be concise: three to five short sentences (about 70 words) unless they ask for more detail. A \
     one-line question gets a one-line answer. No filler, no repeating the numbers back, no sign-offs.
     \u{2022} At most one emoji per message. No headings unless asked; lists only for plans or options.
@@ -995,6 +998,7 @@ final class AICoachEngine: ObservableObject {
             ctx += "\n\n" + line
         }
         ctx += "\n\n" + (await recentWorkoutsBlock())
+        if let today = await todayTrainingLine() { ctx += "\n\n" + today }
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
         // way StressView does. Gated here under `dataConsent` (the caller only reaches buildFullContext()
         // with consent on), so it rides the SAME consent + text-only channel as the HRV/RHR summary, a
@@ -1783,6 +1787,30 @@ final class AICoachEngine: ObservableObject {
     /// Append recent workouts to an existing context string. Async (workouts are read from the store),
     /// so callers that want workouts in the context can await this and feed the result to `send`'s
     /// flow via the chat, kept separate so `buildContext()` stays synchronous per the spec.
+    /// Today's activities in one line, so the day's training load is impossible to miss: "TODAY'S TRAINING:
+    /// 2 activities, Weightlifting 12:44-13:29 strain 11.0, Basketball 19:31-21:00 strain 16.9; day Strain
+    /// so far 17.8." Nil when today has none.
+    func todayTrainingLine() async -> String? {
+        let start = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
+        let rows = await repo.workoutRows(days: 2).filter { $0.startTs >= start }.sorted { $0.startTs < $1.startTs }
+        guard !rows.isEmpty else { return nil }
+        let clock = { (ts: Int) -> String in
+            Date(timeIntervalSince1970: TimeInterval(ts)).formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+        }
+        let items = rows.map { w -> String in
+            var s = "\(WorkoutSource.displaySport(w.sport)) \(clock(w.startTs))-\(clock(w.endTs))"
+            if let strain = Self.measured(w.strain) { s += " strain \(String(format: "%.1f", Self.strain21(strain)))" }
+            if let hr = Self.measuredInt(w.avgHr) { s += " avg HR \(Int(hr))" }
+            return s
+        }
+        var line = "TODAY'S TRAINING: \(rows.count) \(rows.count == 1 ? "activity" : "activities"), "
+            + items.joined(separator: ", ")
+        if let strain = Self.homeToday?.strain {
+            line += "; day Strain so far \(String(format: "%.1f", Self.strain21(strain)))"
+        }
+        return line + ". Account for it in every answer about today, tonight's sleep and tomorrow."
+    }
+
     func recentWorkoutsBlock(limit: Int = 6) async -> String {
         let rows = await repo.workoutRows(days: 30) // newest first
         guard !rows.isEmpty else { return "Recent workouts: none recorded in the last 30 days." }
