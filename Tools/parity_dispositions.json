@@ -316,6 +316,38 @@
       "identity_sha256": "509b6af47419cb4b4740379375446c2d4bfc20b0fb0105ec4fe5d65b8c79b1ad",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: the night is bounded by the band's own asleep span (bandStateBoundsEnabled, default off, byte-identical when off), as the WHOOP app times a night. The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::asleepSpans/3#1",
+      "identity_sha256": "4b51131d828d2e7e841eb0ddb14dbba069facc126dfa03153809a8271e4eb3e9",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the light, deep and REM spans of a night's hypnogram, the one definition of asleep the Yoop vitals share (asleepVitalsEnabled, default off, byte-identical when off). The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::asleepRestingHR/4#1",
+      "identity_sha256": "51ed80d11922fb6a8c15df33235360f82a744490057b990fb2f8cc24ce5e9b67",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: resting HR is the mean HR over the asleep spans, one value for display, Strain, calories and the baseline (asleepVitalsEnabled, default off, byte-identical when off). The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::asleepAvgHRV/4#1",
+      "identity_sha256": "c60c0f118723d6d2822073d41df21b68d5c846ee782df13611ad315b6cd72784",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: nightly RMSSD over the 5-min windows centred in the asleep spans (asleepVitalsEnabled, default off, byte-identical when off). The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::asleepRespRate/4#1",
+      "identity_sha256": "aa0e42e73df9a121eb3f098fc24e7ea486819cdb922a7cfbd6041563ee6a8fd7",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: respiratory rate from the spectral RSA peak of the asleep R-R, gated per window against a shuffled control, replacing a quantised peak count (asleepVitalsEnabled, default off, byte-identical when off). The fork ships no Android build, so the Kotlin twin is unchanged."
     }
   ]
 }
