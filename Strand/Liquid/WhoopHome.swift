@@ -164,10 +164,24 @@ struct WhoopInsightCard: View {
         .task(id: fingerprint) { await load() }
     }
 
+    /// Ask the Coach for more on the card. A Coach-written card goes into the chat as the Coach's message
+    /// first, so the answer builds on it rather than writing the same analysis again; if it cannot be
+    /// added, the question quotes it instead.
     private func openCoach() {
         guard coach.isConfigured else { router.openCoach(); return }
         let title = insight?.title ?? fallbackTitle
-        coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\": what's behind it and what should I do today?"
+        if let insight {
+            if coach.seedInsight(insight) {
+                coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\": go deeper than what you "
+                    + "just said rather than repeating it. What's behind it in my data, and what should I do today?"
+            } else {
+                coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\", which said: \"\(insight.body)\" "
+                    + "Go deeper than that rather than repeating it. What's behind it in my data, and what should I "
+                    + "do today?"
+            }
+        } else {
+            coach.pendingPrompt = "Tell me more about today's insight, \"\(title)\": what's behind it and what should I do today?"
+        }
         router.openCoach()
     }
 

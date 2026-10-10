@@ -25,7 +25,24 @@ struct WhoopSleepPlan {
     var optimalEnd: Date? { optimalStart.map { $0.addingTimeInterval(timeInBedMin * 60) } }
 
     /// The plan a screen showed last, so the Coach quotes the same times.
-    @MainActor static var lastShown: WhoopSleepPlan?
+    @MainActor static var lastShown: WhoopSleepPlan? {
+        didSet { lastShownAt = lastShown == nil ? nil : Date() }
+    }
+    /// When `lastShown` was written.
+    @MainActor static var lastShownAt: Date?
+
+    /// `lastShown` when a screen showed it today, else nil: a plan from an earlier day names an earlier
+    /// night's bedtime, so the Coach works tonight's out instead.
+    @MainActor static func shownToday(now: Date = Date()) -> WhoopSleepPlan? {
+        guard let plan = lastShown, let at = lastShownAt, isFromToday(shownAt: at, now: now) else { return nil }
+        return plan
+    }
+
+    /// Whether a plan shown at `shownAt` belongs to the same day as `now`, on the app's logical day (it
+    /// rolls at 04:00, so a plan shown late in the evening still counts after midnight).
+    static func isFromToday(shownAt: Date, now: Date) -> Bool {
+        BodyVitalSigns.logicalDayKey(shownAt) == BodyVitalSigns.logicalDayKey(now)
+    }
 
     private static func median(_ xs: [Double]) -> Double? {
         let s = xs.sorted()
@@ -83,7 +100,8 @@ struct WhoopSleepPlan {
                               optimalStart: optimalStart)
     }
 
-    /// One line for the Coach's context, so its bedtime advice matches the card.
+    /// One line for the Coach's context, so its bedtime advice matches the card. A part of the need that
+    /// is zero (or unknown, which the plan stores as zero) is left out rather than quoted as "0h 0m".
     var coachLine: String {
         func hm(_ m: Double) -> String { "\(Int(m) / 60)h \(Int(m) % 60)m" }
         let bed = WhoopTime.clock(bedtime)
@@ -92,7 +110,15 @@ struct WhoopSleepPlan {
         let percent = Int((efficiency * 100).rounded())
         var parts: [String] = []
         parts.append("Tonight's sleep plan, as the app's Tonight's Sleep card shows it: get in bed by \(bed) to wake at \(up) (\(source));")
-        parts.append("sleep need \(hm(needMin)) = healthy minimum \(hm(baselineMin)) + recent Strain \(hm(strainMin)) + sleep debt \(hm(debtMin));")
+        var extras: [String] = []
+        if strainMin >= 1 { extras.append("recent Strain \(hm(strainMin))") }
+        if debtMin >= 1 { extras.append("sleep debt \(hm(debtMin))") }
+        if extras.isEmpty {
+            parts.append("sleep need \(hm(needMin)), the healthy minimum;")
+        } else {
+            parts.append("sleep need \(hm(needMin)) = healthy minimum \(hm(baselineMin)) + "
+                         + extras.joined(separator: " + ") + ";")
+        }
         parts.append("time in bed \(hm(timeInBedMin)) at \(percent)% sleep efficiency.")
         parts.append("Use exactly these times whenever you suggest a bedtime, lights out or a wake time.")
         return parts.joined(separator: " ")

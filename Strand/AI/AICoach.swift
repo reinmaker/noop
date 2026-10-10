@@ -273,8 +273,10 @@ final class AICoachEngine: ObservableObject {
     You receive the user's data: daily Recovery (0-100%: green 67-100, yellow 34-66, red 0-33), Strain \
     (0-21, logarithmic) with today's optimal Strain range, Sleep (hours against need, stages, efficiency), \
     HRV, resting heart rate, respiratory rate, SpO2, skin temperature, steps, calories, stress (0-3) and \
-    workouts, plus their profile and what you remember about them. A dash means not measured: say so \
-    rather than treating it as zero. Today's row is still in progress.
+    workouts, plus their profile and what you remember about them. A "-" or "no data" means not measured, \
+    and the row marked TODAY is still in progress.
+    Never state a zero or a dash as a measurement: if a value is missing, say it was not measured or not \
+    synced, and lean on what was measured.
     How you talk:
     \u{2022} Use their first name when you know it, now and then, not in every sentence.
     \u{2022} Never stop at a number against their normal. A comparison is only the evidence; the point is \
@@ -977,24 +979,26 @@ final class AICoachEngine: ObservableObject {
     /// Full data context = the metrics summary + recent workouts (+ an OPT-IN on-device-signals summary
     /// when the second consent is on). Used when the user has granted data access.
     func buildFullContext() async -> String {
-        var ctx = buildContext()
+        // Read here because the series is async; `buildContext()` stays synchronous.
+        let sleepPerformance = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
+        var ctx = buildContext(sleepPerformance: sleepPerformance)
         if let patterns = CoachPatterns.block(days: repo.days) { ctx += "\n\n" + patterns }
         if let memory = CoachMemoryStore.shared.contextBlock() {
             ctx = memory + "\n\n" + ctx
         }
+        // Only once the line has something to say: an empty day used to reach the coach as "0 hr 0 min".
         if let stress = await StressDayCurve.today(
-            repo: repo, personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled)?.result {
-            let mins = stress.highStressMinutes
-            ctx += "\n\nToday's stress so far: \(mins / 60) hr \(mins % 60) min in the high stress zone, shown on the "
-                + "Stress Monitor as \(String(format: "%d:%02d", mins / 60, mins % 60)) (0-3 scale, high is 2 and up). "
-                + "Say it in hours and minutes, never as a count of minutes."
+            repo: repo, personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled)?.result,
+           let line = Self.stressContextLine(stress) {
+            ctx += "\n\n" + line
         }
         ctx += "\n\n" + (await recentWorkoutsBlock())
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
         // way StressView does. Gated here under `dataConsent` (the caller only reaches buildFullContext()
         // with consent on), so it rides the SAME consent + text-only channel as the HRV/RHR summary, a
-        // derived number, never raw R-R egress. Omitted when there aren't enough clean beats yet.
-        if let line = await stressIndexLine() { ctx += "\n\n" + line }
+        // derived number, never raw R-R egress. Omitted when there aren't enough clean beats yet, and in
+        // WHOOP stress mode, where no screen shows it.
+        if !PuffinExperiment.whoopStressEnabled, let line = await stressIndexLine() { ctx += "\n\n" + line }
         if includeOnDeviceSignals {
             let block = await onDeviceSignalsBlock()
             if !block.isEmpty { ctx += "\n\n" + block }
@@ -1020,6 +1024,31 @@ final class AICoachEngine: ObservableObject {
     /// One summary number, labelled, with a plain-English note that it's an autonomic-balance proxy.
     static func stressIndexSummary(si: Double) -> String {
         "Stress (SI): \(Int(si.rounded())) (Baevsky Stress Index over today's R-R; higher means more sympathetic / under load; an autonomic-balance proxy, not a clinical figure)."
+    }
+
+    /// Today's stress for the coach, read the way the Stress screen reads it: the current level is the
+    /// line's latest reading (what Home's Stress Monitor shows) and the time in each band is the TOTAL
+    /// DAY card's (`WhoopStressHero.minutesByBand`). Nil under two scored readings, where the screen draws
+    /// no line either, so a day with nothing scored never reaches the coach as "0 hr 0 min".
+    nonisolated static func stressContextLine(_ result: DaytimeStress.Result,
+                                              timeZone: TimeZone = .current) -> String? {
+        let points = WhoopStressHero.scoredSamples(result)
+        guard points.count >= 2, let latest = points.last else { return nil }
+        let bands = WhoopStressHero.minutesByBand(points)
+        func hrMin(_ minutes: Double) -> String { "\(Int(minutes) / 60) hr \(Int(minutes) % 60) min" }
+        let word = latest.level < 1 ? "low" : (latest.level < 2 ? "medium" : "high")
+        let clock = DateFormatter()
+        clock.locale = Locale(identifier: "en_US_POSIX")
+        clock.timeZone = timeZone
+        clock.dateFormat = "HH:mm"
+        let level = String(format: "%.1f", latest.level)
+        let parts = [
+            "Today's stress so far (0-3 scale: low under 1, medium 1-2, high 2 and up), as the Stress screen shows it:",
+            "current level \(level) (\(word)) at \(clock.string(from: latest.time));",
+            "time in low \(hrMin(bands[0])), medium \(hrMin(bands[1])), high \(hrMin(bands[2])).",
+            "Say durations in hours and minutes, never as a count of minutes.",
+        ]
+        return parts.joined(separator: " ")
     }
 
     /// A SUMMARY-ONLY block of the new on-device signals, the user's strongest n-of-1 correlations
@@ -1244,8 +1273,13 @@ final class AICoachEngine: ObservableObject {
         }
     }
 
-    /// A one-shot opener to use instead of the screen opener (Home's "Day In Review" row sets it).
-    enum Opener { case dayReview }
+    /// A one-shot opener to use instead of the screen opener. Home's "Day In Review" row sets `dayReview`;
+    /// a score screen's Coach pill that already shows its headline sets `screenSummary`, so the chat opens
+    /// with that same analysis instead of asking for a second one.
+    enum Opener: Equatable {
+        case dayReview
+        case screenSummary(String, CoachScreen)
+    }
     var nextOpener: Opener?
     /// The last screen opener written and when, so reopening the same screen soon after does not
     /// stack another opener into the chat.
@@ -1280,9 +1314,11 @@ final class AICoachEngine: ObservableObject {
     /// is never shown; only the Coach's message is added to the conversation.
     /// WHOOP-style: the round Coach button reopens the conversation as it was. The Coach writes a new
     /// message only when the conversation is empty, a new part of the day (morning, afternoon, evening)
-    /// has started since its last one, or data access was just switched on. Screen pills still ask
-    /// about their screen through `openWithScreenContext()` directly.
+    /// has started since its last one, or data access was just switched on. Screen pills still go
+    /// through `openWithScreenContext()` directly, handing over their headline when they have one.
     func openFromCoachButton() async {
+        // A pill headline still parked here was never opened, and it does not belong to this button.
+        if case .some(.screenSummary) = nextOpener { nextOpener = nil }
         guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending else { return }
         let key = "coach.lastOpenerMarker"
         let marker = "\(Self.localEpochDay())|\(Self.dayPart(Date()))|\(dataConsent)"
@@ -1299,13 +1335,20 @@ final class AICoachEngine: ObservableObject {
     }
 
     func openWithScreenContext() async {
+        // A pill that already shows its headline hands it over: that text is the opener, with no request.
+        if case .screenSummary(let text, let screen)? = nextOpener {
+            nextOpener = nil
+            openWithExistingSummary(text, screen: screen)
+            return
+        }
         guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending,
               let key = resolvedKey else { return }
         retireStaleConversationIfNeeded()
         // Reopening the same screen within 15 minutes continues the conversation instead.
         // A new opener is written anyway once data access changes, so the Coach can see the numbers.
-        if nextOpener == nil, let last = lastScreenOpener, last.screen == currentScreen,
-           last.withData == dataConsent, Date().timeIntervalSince(last.at) < 15 * 60, !messages.isEmpty {
+        if nextOpener == nil,
+           Self.continuesScreenConversation(last: lastScreenOpener, screen: currentScreen, withData: dataConsent,
+                                            now: Date(), transcriptEmpty: messages.isEmpty) {
             return
         }
         if nextOpener == nil { lastScreenOpener = (currentScreen, Date(), dataConsent) }
@@ -1355,6 +1398,79 @@ final class AICoachEngine: ObservableObject {
             errorText = AICoachError.network(error.localizedDescription).errorDescription
             keyRejected = false
         }
+    }
+
+    /// Open the chat with an analysis the screen already shows (a score screen's Coach pill), as the
+    /// Coach's opening message, with no request. Follows the screen opener's rules: an earlier day's
+    /// conversation is retired first, the same screen reopened within 15 minutes continues the
+    /// conversation, and the transcript is persisted. The same headline tapped twice is added once.
+    func openWithExistingSummary(_ text: String, screen: CoachScreen) {
+        guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending else { return }
+        retireStaleConversationIfNeeded()
+        let now = Date()
+        guard Self.summaryOpenerIsDue(text, lastOpener: lastScreenOpener, screen: screen,
+                                      withData: dataConsent, now: now, transcript: messages) else { return }
+        lastScreenOpener = (screen, now, dataConsent)
+        appendExistingAnalysis(text)
+    }
+
+    /// Put the Home insight card's text in the chat as the Coach's message, so a question about it is
+    /// answered on top of it instead of the Coach writing the card again. Returns whether the card's text
+    /// is now the Coach's latest message; when it is not (a reply was still streaming), the caller quotes
+    /// the card in its question instead.
+    @discardableResult
+    func seedInsight(_ insight: HomeInsight) -> Bool {
+        let text = Self.insightMessage(insight)
+        guard CoachBriefScheduler.coachMasterEnabled, isConfigured, !sending else {
+            return messages.last(where: { $0.role == .assistant })?.text == text
+        }
+        retireStaleConversationIfNeeded()
+        appendExistingAnalysis(text)
+        return messages.last(where: { $0.role == .assistant })?.text == text
+    }
+
+    /// Append text that was already generated (and is already on screen) as the Coach's message, unless
+    /// it is the Coach's latest message already.
+    private func appendExistingAnalysis(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, messages.last(where: { $0.role == .assistant })?.text != clean else { return }
+        conversationDay = Self.localEpochDay()
+        errorText = nil
+        appendMessage(ChatMessage(role: .assistant, text: clean))
+        persistMessages()
+    }
+
+    /// The insight card as one chat message: the bold title, then the body.
+    nonisolated static func insightMessage(_ insight: HomeInsight) -> String {
+        let title = insight.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = insight.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty { return "**\(title)**" }
+        return "**\(title)**\n\n\(body)"
+    }
+
+    /// Whether opening the Coach on `screen` at `now` continues the conversation rather than writing a
+    /// new opener: the same screen opened less than 15 minutes ago, with the same data access, into a
+    /// transcript that is not empty.
+    nonisolated static func continuesScreenConversation(last: (screen: CoachScreen, at: Date, withData: Bool)?,
+                                                        screen: CoachScreen, withData: Bool, now: Date,
+                                                        transcriptEmpty: Bool) -> Bool {
+        guard let last, !transcriptEmpty else { return false }
+        return last.screen == screen && last.withData == withData && now.timeIntervalSince(last.at) < 15 * 60
+    }
+
+    /// Whether a pill's headline should be added as the chat's opener: it has text, the screen opener
+    /// rules do not continue the conversation, and it is not already the Coach's latest message.
+    nonisolated static func summaryOpenerIsDue(_ text: String,
+                                               lastOpener: (screen: CoachScreen, at: Date, withData: Bool)?,
+                                               screen: CoachScreen, withData: Bool, now: Date,
+                                               transcript: [ChatMessage]) -> Bool {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return false }
+        if continuesScreenConversation(last: lastOpener, screen: screen, withData: withData, now: now,
+                                       transcriptEmpty: transcript.isEmpty) {
+            return false
+        }
+        return transcript.last(where: { $0.role == .assistant })?.text != clean
     }
 
     /// A Coach reply split into what is shown and the special lines at its end.
@@ -1539,33 +1655,60 @@ final class AICoachEngine: ObservableObject {
         return parts.isEmpty ? nil : "Profile: " + parts.joined(separator: ", ") + "."
     }
 
-    /// Latest day's HRV / resting HR / sleep against the prior 30 days, the way WHOOP explains Recovery.
-    nonisolated static func todayVsNormalLine(_ days: [DailyMetric]) -> String? {
+    /// The latest day's HRV / resting HR / sleep against the 30 days before it, the way WHOOP explains
+    /// Recovery. A zero is not a measurement: a zero reading is left out, and zeros never enter the normal.
+    nonisolated static func todayVsNormalLine(_ days: [DailyMetric], todayKey: String? = nil) -> String? {
         guard let latest = days.last else { return nil }
         let prior = days.dropLast().suffix(30)
         func avg(_ xs: [Double]) -> Double? { xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count) }
         var parts: [String] = []
-        if let v = latest.avgHrv, let a = avg(prior.compactMap { $0.avgHrv }) {
+        if let v = Self.measured(latest.avgHrv), let a = avg(prior.compactMap { Self.measured($0.avgHrv) }) {
             parts.append("HRV \(Int(v.rounded())) ms vs normal \(Int(a.rounded())) ms")
         }
-        if let v = latest.restingHr, let a = avg(prior.compactMap { $0.restingHr.map(Double.init) }) {
-            parts.append("resting HR \(v) bpm vs normal \(Int(a.rounded())) bpm")
+        if let v = Self.measuredInt(latest.restingHr),
+           let a = avg(prior.compactMap { Self.measuredInt($0.restingHr) }) {
+            parts.append("resting HR \(Int(v)) bpm vs normal \(Int(a.rounded())) bpm")
         }
-        if let v = latest.totalSleepMin, let a = avg(prior.compactMap { $0.totalSleepMin }) {
+        if let v = Self.measured(latest.totalSleepMin),
+           let a = avg(prior.compactMap { Self.measured($0.totalSleepMin) }) {
             parts.append(String(format: "sleep %.1fh vs normal %.1fh", v / 60, a / 60))
         }
-        if prior.count >= 1, let y = prior.last?.strain, let a = avg(prior.dropLast().compactMap { $0.strain }) {
-            parts.append(String(format: "yesterday's Strain %.1f vs normal %.1f", strain21(y), strain21(a)))
+        // The row before the latest, named by its date: it is not always yesterday.
+        if let previous = prior.last, let y = Self.measured(previous.strain),
+           let a = avg(prior.dropLast().compactMap { Self.measured($0.strain) }) {
+            parts.append("Strain on \(previous.day) "
+                         + String(format: "%.1f vs normal %.1f", Self.strain21(y), Self.strain21(a)))
         }
-        return parts.isEmpty ? nil : "Latest (\(latest.day)) vs prior 30-day normal: " + parts.joined(separator: "; ") + "."
+        guard !parts.isEmpty else { return nil }
+        let label = latest.day == todayKey ? "Today (\(latest.day), in progress)" : "Latest day (\(latest.day))"
+        return label + " vs prior 30-day normal: " + parts.joined(separator: "; ") + "."
     }
 
     // MARK: - Context builder
 
-    /// Build a compact plain-text summary of the user's recent data: last ~14 days of
-    /// recovery/strain/sleep-hours/HRV/restingHR where present, plus 30-day averages, plus a few
-    /// recent workouts. Kept well under ~1500 tokens. If there's no data, it says so.
-    func buildContext() -> String {
+    /// Today's Strain and steps as Home last showed them. Home works out a live in-progress Strain from
+    /// the day's heart rate, which the stored row lags behind, and picks steps from three sources, so the
+    /// coach quotes those figures instead of arriving at its own. Written by `LiquidTodayView` each time
+    /// it loads today, and read only while `day` is still today.
+    struct HomeTodayReadout: Equatable {
+        let day: String
+        /// Strain on the stored 0-100 scale, as `StrainScorer.effectiveEffort` resolves it for Home.
+        let strain: Double?
+        let steps: Double?
+    }
+
+    /// The last `HomeTodayReadout` Home wrote, or nil before Home has loaded today.
+    static var homeToday: HomeTodayReadout?
+
+    /// Today's day key as Home resolves it: today's row when there is one (it already carries the 04:00
+    /// rollover and the pre-04:00 local-night carve-out), else the logical day.
+    private var coachTodayKey: String { repo.today?.day ?? Repository.logicalDayKey(Date()) }
+
+    /// Build a compact plain-text summary of the user's recent data: today as the screens show it, the
+    /// last 14 calendar days of recovery/strain/sleep/HRV/resting HR, and the 30-day averages. Kept well
+    /// under ~1500 tokens. If there's no data, it says so. `sleepPerformance` is the stored series Home's
+    /// Sleep ring reads, passed in by `buildFullContext()` because reading it is async.
+    func buildContext(sleepPerformance: [(day: String, value: Double)]? = nil) -> String {
         let days = repo.days // oldest → newest
         var lines: [String] = ["USER BIOMETRIC SUMMARY (the user's own wearable data):"]
 
@@ -1577,55 +1720,60 @@ final class AICoachEngine: ObservableObject {
             """
         }
 
+        let todayKey = coachTodayKey
+        let todayRow = days.last(where: { $0.day == todayKey })
         lines.append(Self.nowLine(Date()))
         if let profileLine = Self.profileLine() { lines.append(profileLine) }
         lines.append("Scales: Recovery 0-100% (green 67-100, yellow 34-66, red 0-33); Strain 0-21 "
                      + "(logarithmic: under 10 light, 10-13 moderate, 14-17 strenuous, 18+ all out); "
-                     + "Sleep in hours. The newest row is today and is IN PROGRESS (its Strain is still rising).")
-        if let normal = Self.todayVsNormalLine(days) { lines.append(normal) }
-        if let band = CoupledView.optimalStrainRange(recovery: days.last?.recovery) {
-            lines.append("Today's optimal Strain range, from today's Recovery: \(band.lowerBound)-\(band.upperBound) of 21.")
+                     + "Sleep in hours. Rows are labelled by date; the row marked TODAY is IN PROGRESS "
+                     + "(its Strain is still rising).")
+        if let normal = Self.todayVsNormalLine(days, todayKey: todayKey) { lines.append(normal) }
+        lines.append(Self.recoveryLine(days: days, todayKey: todayKey))
+        // Today's Strain and steps as Home shows them; the stored row stands in until Home has loaded today.
+        let readout = Self.homeToday?.day == todayKey ? Self.homeToday : nil
+        lines.append(Self.todaySoFarLine(todayKey: todayKey,
+                                         strain: readout?.strain ?? todayRow?.strain,
+                                         steps: readout?.steps ?? todayRow?.steps.map(Double.init)))
+        if let sleepPerformance {
+            lines.append(Self.sleepPerformanceLine(series: sleepPerformance, todayKey: todayKey))
         }
         // The need and percentage the Sleep screen's Hours vs Needed shows, from the same series, so the
-        // Coach never quotes a different figure from the one on screen.
+        // Coach never quotes a different figure from the one on screen. `latestDay` is nil when the figure
+        // is last night's own, and names the night it was carried from otherwise.
         let hoursVsNeeded = SleepModel.hoursVsNeededSeries(days: days, importedSleep: repo.importedSleep)
-        if let pct = hoursVsNeeded.latest, pct > 0,
-           let asleep = days.last(where: { $0.day == hoursVsNeeded.latestDay ?? $0.day })?.totalSleepMin {
-            lines.append(String(format: "Sleep need: about %.1fh a night. Last night's Hours vs Needed: %.0f%% "
-                                + "(quote this percentage as is; it is the figure the Sleep screen shows).",
-                                asleep / (pct / 100) / 60, pct))
+        let nightRow: DailyMetric?
+        if let carried = hoursVsNeeded.latestDay {
+            nightRow = days.last(where: { $0.day == carried })
+        } else {
+            nightRow = days.last
+        }
+        if let pct = hoursVsNeeded.latest, pct > 0, let asleep = Self.measured(nightRow?.totalSleepMin) {
+            lines.append(Self.hoursVsNeededLine(percent: pct, asleepMin: asleep,
+                                                carriedFrom: hoursVsNeeded.latestDay))
         } else {
             lines.append(String(format: "Sleep need: about %.1fh a night.", SleepModel.sleepNeedMin(days: days) / 60))
         }
-        // Tonight's plan exactly as the Tonight's Sleep card and Sleep Planner show it.
-        lines.append((WhoopSleepPlan.lastShown ?? WhoopSleepPlan.tonight(repo: repo, alarm: nil)).coachLine)
+        // Tonight's plan exactly as the Tonight's Sleep card and Sleep Planner show it, when one of them
+        // showed it today; otherwise worked out now.
+        lines.append((WhoopSleepPlan.shownToday() ?? WhoopSleepPlan.tonight(repo: repo, alarm: nil)).coachLine)
 
-        // Last ~14 days, newest first for readability.
-        let recent = Array(days.suffix(14)).reversed()
+        // Every calendar date of the last 14, newest first, so a gap reads as a gap.
         lines.append("")
-        lines.append("Recent days (newest first), columns: recovery(%), strain(0-21), sleep(h), "
-                     + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
-        for d in recent {
-            lines.append("  " + dayLine(d))
+        lines.append("Last 14 calendar days (newest first; every date is listed, and \"no data\" marks a date "
+                     + "with nothing recorded), columns: recovery(%), strain(0-21), sleep(h), deep/REM/light(h), "
+                     + "eff(%), HRV(ms), RHR(bpm). A \"\(Self.notMeasured)\" means NOT MEASURED, not zero:")
+        for line in Self.recentDayLines(days: days, todayKey: todayKey) {
+            lines.append("  " + line)
         }
 
         // 30-day averages.
         // The 30 days before today: the same normal the app's "Today vs. last 30 days" rows show, so the
         // Coach's "usual" matches the screen (today is still in progress and would pull it around).
-        let last30 = Array(days.dropLast().suffix(30))
+        let last30 = Array(days.filter { $0.day < todayKey }.suffix(30))
         lines.append("")
         lines.append("30-day averages (the 30 days before today; quote these as my usual):")
-        lines.append("  recovery: \(avgInt(last30.compactMap { $0.recovery }))%"
-                     + ", strain: \(avgOne(last30.compactMap { $0.strain.map(Self.strain21) }))"
-                     + ", sleep: \(avgSleepHours(last30))h"
-                     + ", HRV: \(avgInt(last30.compactMap { $0.avgHrv })) ms"
-                     + ", RHR: \(avgInt(last30.compactMap { $0.restingHr.map(Double.init) })) bpm")
-        // Additional vitals when present (#124, the coach used to see only recovery/strain/sleep/HRV/RHR).
-        lines.append("  SpO2: \(avgInt(last30.compactMap { $0.spo2Pct }))%"
-                     + ", respiration: \(avgOne(last30.compactMap { $0.respRateBpm }))/min"
-                     + ", skin-temp deviation: \(avgOne(last30.compactMap { $0.skinTempDevC }))°C"
-                     + ", steps: \(avgInt(last30.compactMap { $0.steps.map(Double.init) }))/day"
-                     + ", active energy: \(avgInt(last30.compactMap { $0.activeKcalEst }))kcal/day")
+        lines.append(contentsOf: Self.averageLines(last30))
 
         return lines.joined(separator: "\n")
     }
@@ -1644,11 +1792,12 @@ final class AICoachEngine: ObservableObject {
         var lines = ["Recent workouts (newest first):"]
         for w in rows.prefix(limit) {
             var parts = ["  \(dateString(w.startTs)) \(w.sport)"]
-            if let dur = w.durationS { parts.append("\(Int((dur / 60).rounded())) min") }
-            if let s = w.strain { parts.append("strain \(String(format: "%.1f", Self.strain21(s)))") }
-            if let hr = w.avgHr { parts.append("avg HR \(hr)") }
-            if let kcal = w.energyKcal { parts.append("\(Int(kcal.rounded())) kcal") }
-            if let dist = w.distanceM {
+            // A zero is an empty field, not a reading: no "0 kcal" or "0 m".
+            if let dur = Self.measured(w.durationS) { parts.append("\(Int((dur / 60).rounded())) min") }
+            if let s = Self.measured(w.strain) { parts.append("strain \(String(format: "%.1f", Self.strain21(s)))") }
+            if let hr = Self.measuredInt(w.avgHr) { parts.append("avg HR \(Int(hr))") }
+            if let kcal = Self.measured(w.energyKcal) { parts.append("\(Int(kcal.rounded())) kcal") }
+            if let dist = Self.measured(w.distanceM) {
                 parts.append(UnitFormatter.distanceFromMeters(dist, system: distanceSystem))
             }
             lines.append(parts.joined(separator: ", "))
@@ -1658,38 +1807,60 @@ final class AICoachEngine: ObservableObject {
 
     // MARK: Formatting helpers
 
+    /// The mark for a value that was not measured, in every line the coach reads.
+    nonisolated static let notMeasured = "-"
+
+    /// A stored reading that is a real measurement: present, finite and above zero. Strap and import
+    /// paths store 0 for a night or day with nothing recorded, and the coach used to read those as
+    /// measurements ("sleep 0.0h", "HRV 0ms", "strain 0.0").
+    nonisolated static func measured(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    /// `measured(_:)` for the whole-number columns (resting HR, steps, average HR).
+    nonisolated static func measuredInt(_ value: Int?) -> Double? {
+        Self.measured(value.map { Double($0) })
+    }
+
     /// `internal`, not private, so `AICoachSleepContextTests` can assert the emitted line directly.
     /// Swift's `buildContext()` takes no arguments (it reads the repo), unlike the Kotlin twin which is
     /// handed the day list — so without this the formatter has no seam and the Swift half of a change
     /// with fifteen Kotlin tests would ship untested.
-    func dayLine(_ d: DailyMetric) -> String {
-        var parts: [String] = [d.day + ":"]
-        parts.append("recovery " + (d.recovery.map { "\(Int($0.rounded()))%" } ?? "—"))
-        parts.append("strain " + (d.strain.map { String(format: "%.1f", Self.strain21($0)) } ?? "—"))
-        parts.append("sleep " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
-        // The stage breakdown and efficiency, which the coach could not see at all: a user asked why it
-        // said it had no access to sleep stages, and it was answering honestly — `rest 7.8h` was every
-        // word it got about a night. These four sit on the SAME DailyMetric the line already reads, so
-        // nothing new is plumbed; they were simply never included. (#124 widened this context once
-        // before, for the same reason.)
-        //
-        // Always emitted, "—" when absent, like every other field here. A night with no staging then
-        // says so rather than going quiet, which matters more than line length: the alternative — only
-        // appending stages when present — gives the model a schema that changes shape between days and
-        // invites it to read a missing field as a zero.
-        parts.append("deep " + hoursOrDash(d.deepMin))
-        parts.append("REM " + hoursOrDash(d.remMin))
-        parts.append("light " + hoursOrDash(d.lightMin))
-        parts.append("eff " + efficiencyPercentOrDash(d.efficiency))
-        parts.append("HRV " + (d.avgHrv.map { "\(Int($0.rounded()))ms" } ?? "—"))
-        parts.append("RHR " + (d.restingHr.map { "\($0)bpm" } ?? "—"))
-        return parts.joined(separator: ", ")
+    func dayLine(_ d: DailyMetric) -> String { Self.formatDayLine(d) }
+
+    /// One day's row for the coach. `isToday` marks the row as today's and in progress.
+    ///
+    /// The stage breakdown and efficiency, which the coach once could not see at all: a user asked why it
+    /// said it had no access to sleep stages, and it was answering honestly, since `rest 7.8h` was every
+    /// word it got about a night. Every field is always emitted, marked not measured when absent, so a
+    /// night with no staging says so and the schema never changes shape between days, which would invite
+    /// the model to read a missing field as a zero. Stored zeros for sleep, HRV, resting HR and Strain are
+    /// marked not measured too, and a night with no sleep has no stages or efficiency to report.
+    nonisolated static func formatDayLine(_ d: DailyMetric, isToday: Bool = false) -> String {
+        let dash = Self.notMeasured
+        let sleep = Self.measured(d.totalSleepMin)
+        let night = sleep != nil
+        var parts: [String] = []
+        parts.append("recovery " + (d.recovery.map { "\(Int($0.rounded()))%" } ?? dash))
+        let strain = Self.measured(d.strain).map { String(format: "%.1f", Self.strain21($0)) }
+        parts.append("strain " + (strain ?? dash))
+        parts.append("sleep " + (sleep.map { String(format: "%.1fh", $0 / 60) } ?? dash))
+        parts.append("deep " + Self.stageHours(d.deepMin, nightMeasured: night))
+        parts.append("REM " + Self.stageHours(d.remMin, nightMeasured: night))
+        parts.append("light " + Self.stageHours(d.lightMin, nightMeasured: night))
+        parts.append("eff " + Self.efficiencyPercent(night ? d.efficiency : nil))
+        parts.append("HRV " + (Self.measured(d.avgHrv).map { "\(Int($0.rounded()))ms" } ?? dash))
+        parts.append("RHR " + (Self.measuredInt(d.restingHr).map { "\(Int($0))bpm" } ?? dash))
+        return d.day + (isToday ? " (TODAY, in progress): " : ": ") + parts.joined(separator: ", ")
     }
 
-    /// Minutes as "1.4h", or "—" when the night has no value. Matches the `rest` field's format so a
-    /// stage total and the total it is part of read on the same scale.
-    private func hoursOrDash(_ minutes: Double?) -> String {
-        minutes.map { String(format: "%.1fh", $0 / 60) } ?? "—"
+    /// A sleep stage's minutes as "1.4h", in the `sleep` field's format so a stage and the total it is
+    /// part of read on the same scale. A real night can hold 0 minutes of a stage; a night with no sleep
+    /// measured has no stages at all.
+    nonisolated static func stageHours(_ minutes: Double?, nightMeasured: Bool) -> String {
+        guard nightMeasured, let m = minutes, m.isFinite, m >= 0 else { return Self.notMeasured }
+        return String(format: "%.1fh", m / 60)
     }
 
     /// Efficiency as a percentage, NORMALISING the stored value first.
@@ -1702,27 +1873,138 @@ final class AICoachEngine: ObservableObject {
     /// 1.5 rather than 1.0 because a genuine fraction can exceed 1.0 only by floating-point noise, while
     /// a genuine percentage is 30–100 and nowhere near the threshold. Android's two copies of this guard
     /// split at 1.0 instead, which is a pre-existing divergence and not this change's to settle.
-    func efficiencyPercentOrDash(_ raw: Double?) -> String {
-        guard var e = raw, e > 0 else { return "—" }
+    func efficiencyPercentOrDash(_ raw: Double?) -> String { Self.efficiencyPercent(raw) }
+
+    /// The formatter behind `efficiencyPercentOrDash(_:)`, callable without an engine.
+    nonisolated static func efficiencyPercent(_ raw: Double?) -> String {
+        guard var e = raw, e > 0 else { return Self.notMeasured }
         if e > 1.5 { e /= 100 }
-        guard e > 0, e <= 1 else { return "—" }
+        guard e > 0, e <= 1 else { return Self.notMeasured }
         return "\(Int((e * 100).rounded()))%"
     }
 
-    private func avgOne(_ xs: [Double]) -> String {
-        guard !xs.isEmpty else { return "—" }
-        return String(format: "%.1f", xs.reduce(0, +) / Double(xs.count))
+    /// "yyyy-MM-dd" keys read and written on one fixed UTC calendar, so stepping back a day is plain
+    /// calendar arithmetic with no DST or time zone in it.
+    private nonisolated static let dayKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// The `count` calendar days ending on `todayKey`, newest first. Empty when the key does not parse.
+    nonisolated static func calendarDayKeys(endingAt todayKey: String, count: Int) -> [String] {
+        guard count > 0, let end = Self.dayKeyFormatter.date(from: todayKey) else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
+        return (0..<count).compactMap { offset -> String? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: end) else { return nil }
+            return Self.dayKeyFormatter.string(from: date)
+        }
     }
 
-    private func avgInt(_ xs: [Double]) -> String {
-        guard !xs.isEmpty else { return "—" }
-        return "\(Int((xs.reduce(0, +) / Double(xs.count)).rounded()))"
+    /// One line per calendar day ending today, newest first. A date with no row gets a "no data" line, so
+    /// a day the strap was off reads as a gap instead of the row before it sliding up into its place, and
+    /// only the row for `todayKey` is called today. A today with no row yet says so.
+    nonisolated static func recentDayLines(days: [DailyMetric], todayKey: String, count: Int = 14) -> [String] {
+        let keys = Self.calendarDayKeys(endingAt: todayKey, count: count)
+        guard !keys.isEmpty else { return days.suffix(count).reversed().map { Self.formatDayLine($0) } }
+        let byDay = Dictionary(days.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
+        return keys.map { key -> String in
+            let isToday = key == todayKey
+            if let d = byDay[key] { return Self.formatDayLine(d, isToday: isToday) }
+            return isToday
+                ? "\(key) (TODAY): no data yet; nothing has synced for today so far."
+                : "\(key): no data; nothing was recorded or synced for this date."
+        }
     }
 
-    private func avgSleepHours(_ days: [DailyMetric]) -> String {
-        let mins = days.compactMap { $0.totalSleepMin }
-        guard !mins.isEmpty else { return "—" }
-        return String(format: "%.1f", (mins.reduce(0, +) / Double(mins.count)) / 60)
+    /// The 30-day averages, over the days before today. Zeros are not readings, so they never pull a
+    /// normal down, and skin temperature averages deviations only: WHOOP and Apple imports store an
+    /// absolute wrist temperature in the same column (`VitalBands.isAbsoluteSkinTemp`).
+    nonisolated static func averageLines(_ prior: [DailyMetric]) -> [String] {
+        func mean(_ xs: [Double]) -> Double? { xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count) }
+        func whole(_ xs: [Double], _ unit: String) -> String {
+            mean(xs).map { "\(Int($0.rounded()))\(unit)" } ?? Self.notMeasured
+        }
+        func tenth(_ xs: [Double], _ unit: String) -> String {
+            mean(xs).map { String(format: "%.1f", $0) + unit } ?? Self.notMeasured
+        }
+        let recovery = whole(prior.compactMap { Self.measured($0.recovery) }, "%")
+        let strain = tenth(prior.compactMap { Self.measured($0.strain).map { Self.strain21($0) } }, "")
+        let sleep = tenth(prior.compactMap { Self.measured($0.totalSleepMin).map { $0 / 60 } }, "h")
+        let hrv = whole(prior.compactMap { Self.measured($0.avgHrv) }, " ms")
+        let rhr = whole(prior.compactMap { Self.measuredInt($0.restingHr) }, " bpm")
+        let spo2 = whole(prior.compactMap { Self.measured($0.spo2Pct) }, "%")
+        let respiration = tenth(prior.compactMap { Self.measured($0.respRateBpm) }, "/min")
+        let deviations = prior.compactMap { $0.skinTempDevC }.filter { !VitalBands.isAbsoluteSkinTemp($0) }
+        let skin = tenth(deviations, "°C")
+        let steps = whole(prior.compactMap { Self.measuredInt($0.steps) }, "/day")
+        let energy = whole(prior.compactMap { Self.measured($0.activeKcalEst) }, " kcal/day")
+        return [
+            "  recovery: \(recovery), strain: \(strain), sleep: \(sleep), HRV: \(hrv), RHR: \(rhr)",
+            "  SpO2: \(spo2), respiration: \(respiration), skin-temp deviation: \(skin), steps: \(steps), "
+                + "active energy: \(energy)",
+        ]
+    }
+
+    /// Today's Recovery and the optimal Strain range it sets. Before today is scored, says so and names
+    /// the latest Recovery by its date rather than passing it off as today's.
+    static func recoveryLine(days: [DailyMetric], todayKey: String) -> String {
+        if let recovery = days.last(where: { $0.day == todayKey })?.recovery {
+            var line = "Today's Recovery: \(Int(recovery.rounded()))%."
+            if let band = CoupledView.optimalStrainRange(recovery: recovery) {
+                line += " Today's optimal Strain range, from today's Recovery: "
+                    + "\(band.lowerBound)-\(band.upperBound) of 21."
+            }
+            return line
+        }
+        guard let latest = days.last(where: { $0.day < todayKey && $0.recovery != nil }),
+              let recovery = latest.recovery else {
+            return "Today's Recovery is not scored yet."
+        }
+        var line = "Today's Recovery is not scored yet; the latest is "
+            + "\(Int(recovery.rounded()))% on \(latest.day)."
+        if let band = CoupledView.optimalStrainRange(recovery: recovery) {
+            line += " The optimal Strain range from that Recovery: "
+                + "\(band.lowerBound)-\(band.upperBound) of 21."
+        }
+        return line
+    }
+
+    /// Today's Strain (stored 0-100 scale, shown on 0-21) and steps so far, as Home shows them. Nothing
+    /// recorded yet is said in words, never as a zero.
+    nonisolated static func todaySoFarLine(todayKey: String, strain: Double?, steps: Double?) -> String {
+        let strainText = Self.measured(strain).map { String(format: "Strain %.1f of 21", Self.strain21($0)) }
+            ?? "no Strain recorded yet"
+        let stepsText = Self.measured(steps).map { "\(Int($0.rounded())) steps" }
+            ?? "no steps recorded or synced yet"
+        return "Today so far (\(todayKey), in progress), as the Home screen shows it: "
+            + "\(strainText); \(stepsText)."
+    }
+
+    /// Last night's Sleep Performance from the stored series Home's Sleep ring reads: the value for
+    /// today's key. With none yet, the latest earlier score is given with its date.
+    nonisolated static func sleepPerformanceLine(series: [(day: String, value: Double)], todayKey: String) -> String {
+        if let lastNight = series.last(where: { $0.day == todayKey }), let value = Self.measured(lastNight.value) {
+            return "Last night's Sleep Performance: \(Int(value.rounded()))% (the figure on Home's Sleep ring)."
+        }
+        if let latest = series.last(where: { $0.day < todayKey && $0.value > 0 }) {
+            return "Last night has no Sleep Performance score yet; the latest is \(Int(latest.value.rounded()))% "
+                + "for the night ending \(latest.day)."
+        }
+        return "Last night has no Sleep Performance score yet."
+    }
+
+    /// The Sleep screen's Hours vs Needed and the sleep need behind it. Called last night's only when it
+    /// is (`carriedFrom` nil); a figure carried from an earlier night is named by that night's date.
+    nonisolated static func hoursVsNeededLine(percent: Double, asleepMin: Double, carriedFrom: String?) -> String {
+        let need = String(format: "Sleep need: about %.1fh a night.", asleepMin / (percent / 100) / 60)
+        let which = carriedFrom.map { "Last night has no Hours vs Needed yet; for the night ending \($0) it was" }
+            ?? "Last night's Hours vs Needed:"
+        return need + " " + which + String(format: " %.0f%% ", percent)
+            + "(quote this percentage as is; it is the figure the Sleep screen shows)."
     }
 
     private func dateString(_ ts: Int) -> String {

@@ -9,7 +9,8 @@ import WhoopStore
 // MARK: - Coach pill
 
 /// The pill at the bottom of a score screen: the Coach's one-line headline for that screen, cached for
-/// the day. Tapping it opens the Coach, which then speaks first about this screen.
+/// the day. Tapping it opens the Coach with that headline as its first message, so the screen is not
+/// analysed a second time; only a pill with no headline yet leaves the Coach to write its own opener.
 struct WhoopCoachPill: View {
     let screen: AICoachEngine.CoachScreen
 
@@ -33,7 +34,7 @@ struct WhoopCoachPill: View {
     }
 
     var body: some View {
-        Button { router.openCoach() } label: {
+        Button(action: openCoach) {
             HStack(spacing: NoopMetrics.space3) {
                 BrandMark(size: 34)
                 Text(Self.inlineMarkdown(text ?? (loading ? String(localized: "Analyzing…")
@@ -58,6 +59,15 @@ struct WhoopCoachPill: View {
         .padding(.horizontal, NoopMetrics.space4)
         .padding(.bottom, NoopMetrics.space2)
         .task(id: cacheKey) { await load() }
+    }
+
+    /// Hand the shown headline to the Coach as its opener (`AICoachEngine.Opener.screenSummary`), then
+    /// open it. With no headline yet the Coach writes its own opener about this screen.
+    private func openCoach() {
+        if let text, CoachBriefScheduler.coachMasterEnabled, coach.isConfigured {
+            coach.nextOpener = .screenSummary(text, screen)
+        }
+        router.openCoach()
     }
 
     /// The reply's bold and italic marks rendered, not shown as asterisks.

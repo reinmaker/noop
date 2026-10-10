@@ -20,16 +20,21 @@ struct WhoopStressHero: View {
     /// The time under the reader's finger on the stress line.
     @State private var selection: Date?
 
-    private struct Sample: Identifiable {
+    /// One scored reading on the stress line.
+    struct Sample: Identifiable {
         let ts: Int
         let level: Double
         var time: Date { Date(timeIntervalSince1970: TimeInterval(ts)) }
         var id: Int { ts }
     }
 
-    private var samples: [Sample] {
+    /// The scored readings of a day's stress, earliest first: what the line draws and the cards count.
+    /// `nonisolated` so the Coach's context reads the day through the same steps as this screen.
+    nonisolated static func scoredSamples(_ daytime: DaytimeStress.Result?) -> [Sample] {
         (daytime?.timeline ?? []).compactMap { p in p.level.map { Sample(ts: p.startTs, level: $0) } }
     }
+
+    private var samples: [Sample] { Self.scoredSamples(daytime) }
 
     private static func word(_ level: Double) -> String {
         switch level {
@@ -40,13 +45,14 @@ struct WhoopStressHero: View {
     }
 
     /// The spacing between readings (5 minutes for WHOOP-style stress, longer for the hourly read).
-    private static func step(_ points: [Sample]) -> Int {
+    private nonisolated static func step(_ points: [Sample]) -> Int {
         let gaps = zip(points, points.dropFirst()).map { $1.ts - $0.ts }.filter { $0 > 0 }
         return min(3600, max(300, gaps.min() ?? 300))
     }
 
-    /// Minutes in each band (0 low, 1 medium, 2 high) over the readings `include` keeps.
-    private static func minutesByBand(_ points: [Sample], include: (Int) -> Bool = { _ in true }) -> [Double] {
+    /// Minutes in each band (0 low, 1 medium, 2 high) over the readings `include` keeps. Internal so the
+    /// Coach quotes the TOTAL DAY card's figures rather than a count of its own.
+    nonisolated static func minutesByBand(_ points: [Sample], include: (Int) -> Bool = { _ in true }) -> [Double] {
         let span = Double(step(points)) / 60
         var minutes = [0.0, 0.0, 0.0]
         for p in points where include(p.ts) {
