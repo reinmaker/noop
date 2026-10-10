@@ -1407,7 +1407,8 @@ public enum SleepStager {
             band: StreamFingerprint.of(bandSleepState, ts: { $0.ts }, quant: { $0.state }),
             v2: useSleepStagerV2,
             sleepHRBaseline: sleepHRBaseline,
-            bounds: bandStateBoundsEnabled)
+            bounds: bandStateBoundsEnabled,
+            bars: [SleepStagerV2.remLogShift, SleepStagerV2.deepLogShift])
         return detectSleepCache.value(key) {
             detectSleepUncached(hr: hr, rr: rr, resp: resp, gravity: gravity,
                                 tzOffsetSeconds: tzOffsetSeconds, wristOff: wristOff,
@@ -1424,6 +1425,7 @@ public enum SleepStager {
         let v2: Bool
         let sleepHRBaseline: Double?
         let bounds: Bool
+        let bars: [Double]
     }
     /// ≈ the number of distinct days in a scoring window; FIFO-evicted, holds only small session arrays.
     private static let detectSleepCache = AnalyticsMemoCache<DetectKey, [SleepSession]>(capacity: 40)

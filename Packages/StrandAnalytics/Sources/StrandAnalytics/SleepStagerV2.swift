@@ -86,7 +86,8 @@ public enum SleepStagerV2 {
                 StreamFingerprint.gravityQuant(x: $0.x, y: $0.y, z: $0.z)
             }),
             hr: StreamFingerprint.of(hrW, ts: { $0.ts }, quant: { Int($0.bpm) }),
-            rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }))
+            rr: StreamFingerprint.of(rrW, ts: { $0.ts }, quant: { Int($0.rrMs) }),
+            remShift: remLogShift, deepShift: deepLogShift)
         return stageCache.value(key) {
             stageSessionUncached(start: start, end: end, grav: gravW, hr: hrW, rr: rrW, resp: resp)
         }
@@ -122,6 +123,7 @@ public enum SleepStagerV2 {
     private struct V2Key: Hashable {
         let start: Int; let end: Int
         let grav: StreamFingerprint; let hr: StreamFingerprint; let rr: StreamFingerprint
+        let remShift: Double; let deepShift: Double
     }
 
     /// ≈ a couple of weeks of distinct nights (incl. re-staged edits); FIFO-evicted, result-only.
@@ -169,6 +171,11 @@ public enum SleepStagerV2 {
     /// Kotlin twin: `SleepStagerV2.baseLogPrior`.
     static let baseLogPrior: [String: Double] = [
         "light": log(0.50), "deep": log(0.15), "rem": log(0.22), "awake": log(0.10)]
+
+    /// Yoop: log-prior shifts for REM and deep, fitted by the app to the user's own WHOOP stage history so a
+    /// typical night splits like their WHOOP nights. 0 (NOOP's priors) until the app sets them.
+    public static var remLogShift: Double = 0
+    public static var deepLogShift: Double = 0
 
     /// Deep is eligible only in the night's lowest ~25 % HR-flatness epochs (≈ deep base rate + margin).
     /// Widened 0.20 -> 0.25 by the multi-subject (AAUWSS + sleep-accel LOSO) deep-boundary tune, which
@@ -628,8 +635,8 @@ public enum SleepStagerV2 {
             let awakeCardiac0 = 0.8 * zhvv + 0.4 * zhrv
             let awakeCardiac = motionQuiescent(f) ? min(0.0, awakeCardiac0) : awakeCardiac0
             var em: [String: Double] = [
-                "deep": -1.1 * zhvv - 0.5 * zmvv - gate + baseLogPrior["deep"]!,
-                "rem": 0.6 * zhvv - 0.6 * zmvv + 0.4 * zhrv + baseLogPrior["rem"]!,
+                "deep": -1.1 * zhvv - 0.5 * zmvv - gate + baseLogPrior["deep"]! + deepLogShift,
+                "rem": 0.6 * zhvv - 0.6 * zmvv + 0.4 * zhrv + baseLogPrior["rem"]! + remLogShift,
                 "light": baseLogPrior["light"]!,
                 "awake": 1.0 * zmvv + awakeCardiac + baseLogPrior["awake"]!,
             ]

@@ -511,4 +511,19 @@ if want("priors") {
     }
 }
 
+if a.section == "remshift" {
+    // Yoop: sweep the REM log-prior shift (`SleepStagerV2.remLogShift`) on the shipped stager against PSG.
+    print("REM shift   mean kappa   pooled bias wake deep  rem light   mean|bias| rem   PSG rem%  pred rem%")
+    for shift in [-0.8, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2] {
+        SleepStagerV2.remLogShift = shift
+        let rows = subjects.map { score($0, using: stageShipped) }
+        let ref = rows.flatMap { $0.truth }, pred = rows.flatMap { $0.pred }
+        let b = stageBias(ref: ref, pred: pred)
+        let k = mean(rows.map { confusion(ref: $0.truth, pred: $0.pred).kappa })
+        let remAbs = mean(rows.map { abs(stageBias(ref: $0.truth, pred: $0.pred)["rem"] ?? 0) })
+        print("\(f(shift, 6, 1))   \(f(k, 9, 3))     \(f(b["wake"] ?? .nan, 6, 1))\(f(b["deep"] ?? .nan, 6, 1))\(f(b["rem"] ?? .nan, 6, 1))\(f(b["light"] ?? .nan, 6, 1))   \(f(remAbs, 10, 1))   \(f(stagePercentages(ref)["rem"] ?? .nan, 8, 1))  \(f(stagePercentages(pred)["rem"] ?? .nan, 8, 1))")
+    }
+    SleepStagerV2.remLogShift = 0
+}
+
 print("")
