@@ -3370,23 +3370,35 @@ final class Repository: ObservableObject {
         }
         guard !rows.isEmpty else { return false }
         let bouts = await yoopActivityBouts(daysBack: daysBack, ignoring: Set(rows.map(\.startTs)))
+        // The bars a session must clear by its own heart rate (`WhoopActivityDetector`): a row that clears
+        // them is a real workout and is never deleted here, whatever the detector now makes of its minutes.
+        let recent = days.suffix(14).compactMap(\.restingHr).sorted()
+        let rest = Double(recent.isEmpty ? AutoWorkoutDetector.defaultRestingHR : recent[recent.count / 2])
+        let reserve = max(1, StrainScorer.whoopCurveMaxHR - rest)
         var changed = false
         for row in rows where !bouts.contains(where: {
             abs($0.startSec - row.startTs) <= 120 && abs($0.endSec - row.endTs) <= 120
         }) {
-            if userTyped.contains(row.startTs) {
-                // The type is the user's, the span the detector's: move the span, keep the type. With no
-                // bout over it any more the row stays, since the user said what it was.
-                guard let bout = bouts.first(where: { $0.startSec < row.endTs && row.startTs < $0.endSec }) else {
-                    continue
-                }
+            if let bout = bouts.first(where: { $0.startSec < row.endTs && row.startTs < $0.endSec }) {
+                // The same session over a corrected span: move the span and keep the type (the user's, or
+                // the guess it already had), so a session is never lost in between.
                 await deleteWorkout(row)
                 dismissDetectedSuggestion(bout)
                 guard await saveDetectedWorkout(bout, sport: row.sport) else { continue }
-                userTypedDetectedStarts = userTypedDetectedStarts.filter { $0 != row.startTs } + [bout.startSec]
-            } else {
+                if userTyped.contains(row.startTs) {
+                    userTypedDetectedStarts = userTypedDetectedStarts.filter { $0 != row.startTs } + [bout.startSec]
+                } else {
+                    autoTypedStarts = autoTypedStarts.filter { $0 != row.startTs } + [bout.startSec]
+                }
+            } else if !userTyped.contains(row.startTs),
+                      let avg = row.avgHr, let peak = row.maxHr,
+                      Double(avg) < rest + WhoopActivityDetector.activeReserveShare * reserve
+                        || Double(peak) < rest + WhoopActivityDetector.peakReserveShare * reserve {
+                // Below the bars by its own numbers (everyday walking the first rule logged): remove it.
                 await deleteWorkout(row)
                 autoTypedStarts.removeAll { $0 == row.startTs }
+            } else {
+                continue
             }
             changed = true
         }
@@ -3426,8 +3438,18 @@ final class Repository: ObservableObject {
         let reconciled = await reconcileAutoActivities()
         var added = false
         var history: [WhoopActivityTyper.Example]?
+        let restoring = !UserDefaults.standard.bool(forKey: Self.restoredReconciledKey)
+        UserDefaults.standard.set(true, forKey: Self.restoredReconciledKey)
         for _ in 0..<5 {
-            guard let found = await autoDetectCandidate() else { break }
+            let next: DetectedWorkout?
+            if restoring {
+                next = Self.selectAutoDetectCandidate(await yoopActivityBouts(daysBack: 2, ignoring: []),
+                                                      autoDismissedTokens: [],
+                                                      detectedDismissedTokens: dismissedDetectedSpans)
+            } else {
+                next = await autoDetectCandidate()
+            }
+            guard let found = next else { break }
             if history == nil { history = await activityTypeHistory() }
             let sport = WhoopActivityTyper.guess(avgBpm: Double(found.avgBpm), maxBpm: Double(found.peakBpm),
                                                  durationMin: Double(found.durationMin),
@@ -3441,6 +3463,12 @@ final class Repository: ObservableObject {
         if added || reconciled { await refresh() }
         return added || reconciled
     }
+
+    /// Set once the one-time restore has run. The 12.2.29 re-check deleted real activities whose end had
+    /// moved a minute or two (a 45-minute lifting session on 2026-10-10), and the exact span recorded when
+    /// each was first added then kept it from being added again. The restore adds back, once, any bout in
+    /// the last two days with nothing saved over it, ignoring those recorded spans.
+    private static let restoredReconciledKey = "yoop.restoredReconciledActivities.v1"
 
     /// Start times of activities Yoop added and typed by itself. Their type is a guess, so they are not
     /// learnt from until the user picks one (`changeActivityType`).
