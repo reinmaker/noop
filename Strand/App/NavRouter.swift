@@ -88,14 +88,15 @@ final class NavRouter: ObservableObject {
     /// directly today; this route exists for deep-link parity so a future shell/inbox item can raise it
     /// the same way as every other destination.
     func openLiveSession() { requestedDestination = .liveSession }
-    /// A journal day-offset (daysBack; -1 = Tomorrow) the Today journal widget deep-linked to, so tapping
-    /// a SPECIFIC day's bar opens the journal at THAT day instead of always today (#656). InsightsView
-    /// consumes it on appear and clears it back to nil. nil = open at today (the default).
+    /// A journal day the Home strip, the Today journal widget or the morning prompt deep-linked to, as a
+    /// `JournalDays` offset (behaviour days back: 0 = today, 1 = yesterday), so tapping a SPECIFIC day
+    /// opens the journal on THAT day (#656). InsightsView consumes it and clears it back to nil. nil =
+    /// open on the day WHOOP would ask about (`JournalDays.dueOffset`).
     @Published var pendingJournalDayOffset: Int?
 
     /// Open the journal (hosted in the classic Insights screen). The #627 Today journal widget taps here;
     /// iOS presents InsightsView (the journal quick-action sheet), macOS selects the Insights sidebar row.
-    /// `day` (#656): a specific day-offset to open at (nil = today) — a tapped strip bar passes its day.
+    /// `day` (#656): a specific `JournalDays` offset to open on (nil = the day WHOOP would ask about).
     func openJournal(day offset: Int? = nil) {
         pendingJournalDayOffset = offset
         requestedDestination = .journal

@@ -942,7 +942,7 @@ struct CoachView: View {
         Task {
             await repo.saveJournalAnswer(
                 day: day,
-                question: "Coach advice",
+                question: JournalDays.coachAdviceQuestion,
                 answeredYes: true,
                 notes: text
             )
