@@ -13,8 +13,8 @@ final class WhoopActivityDetectorTests: XCTestCase {
     func testSetBreaksDoNotEndTheBout() {
         var hr: [(ts: Int, bpm: Int)] = []
         for round in 0..<5 {
-            hr += block(110, from: round * 4, minutes: 3)
-            hr += block(80, from: round * 4 + 3, minutes: 1)
+            hr += block(125, from: round * 4, minutes: 3)
+            hr += block(85, from: round * 4 + 3, minutes: 1)
         }
         let found = WhoopActivityDetector.detect(hr: hr, restingBpm: 52, excluded: [])
         XCTAssertEqual(found.count, 1)
@@ -22,10 +22,17 @@ final class WhoopActivityDetectorTests: XCTestCase {
     }
 
     func testShortBurstsAndExcludedSpansAreIgnored() {
-        XCTAssertTrue(WhoopActivityDetector.detect(hr: block(120, from: 0, minutes: 8), restingBpm: 52, excluded: []).isEmpty)
-        let walk = block(105, from: 0, minutes: 20)
+        XCTAssertTrue(WhoopActivityDetector.detect(hr: block(130, from: 0, minutes: 8), restingBpm: 52, excluded: []).isEmpty)
+        let session = block(125, from: 0, minutes: 20)
         let saved = (1_800_000_000 + 5 * 60)...(1_800_000_000 + 10 * 60)
-        XCTAssertTrue(WhoopActivityDetector.detect(hr: walk, restingBpm: 52, excluded: [saved]).isEmpty)
-        XCTAssertEqual(WhoopActivityDetector.detect(hr: walk, restingBpm: 52, excluded: []).count, 1)
+        XCTAssertTrue(WhoopActivityDetector.detect(hr: session, restingBpm: 52, excluded: [saved]).isEmpty)
+        XCTAssertEqual(WhoopActivityDetector.detect(hr: session, restingBpm: 52, excluded: []).count, 1)
+    }
+
+    /// An everyday walk (light intensity, never reaching half the heart-rate reserve) is not an activity.
+    func testEverydayWalkIsNotAnActivity() {
+        var hr = block(95, from: 0, minutes: 30)
+        hr += block(110, from: 30, minutes: 5)
+        XCTAssertTrue(WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: []).isEmpty)
     }
 }

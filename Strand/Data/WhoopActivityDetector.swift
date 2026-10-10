@@ -6,16 +6,19 @@ import StrandAnalytics
 /// between sets still counts. NOOP's detector ended a window at any 90-second dip below its threshold,
 /// which a set break always is, so those sessions were never found.
 ///
-/// Tuned to what WHOOP logged for this user (111 workouts in the export): every activity averaged at
-/// least about 30 bpm over that night's resting HR (walks from +30, weightlifting from +41, running
-/// +100 and up) and lasted at least 12 minutes. Each minute's mean heart rate is "active" at 22 bpm or
-/// more over the resting reference (sets and rests swing around the average). A bout runs from an
-/// active minute through gaps of up to three inactive minutes, lasts at least 12 minutes with at least
-/// 65% of them active, averages at least 30 bpm over resting, and may not overlap a saved workout or a
-/// sleep.
+/// What counts is set by exercise intensity as a share of heart-rate reserve (resting to the 190 bpm
+/// maximum Strain uses), the ACSM bands: light 30-39 %, moderate 40-59 %. A minute is "active" at 30 %
+/// or more; a bout runs from an active minute through gaps of up to three inactive minutes, lasts at
+/// least 12 minutes with at least 65 % of them active, averages at least 30 %, reaches 50 % in at least
+/// one minute, and may not overlap a saved workout or a sleep. The first cut (+22 / +30 bpm over rest)
+/// added 9 activities in 41 hours, 8 of them everyday walking at 80-91 bpm; this keeps only the one real
+/// session (Thursday's weightlifting, peak 124) and on the user's WHOOP history still finds running
+/// 11/11, tennis 21/22 and weightlifting 30/34 while dog walks (0/3) and yoga (0/2) drop out.
 enum WhoopActivityDetector {
-    static let marginBPM = 22
-    static let averageMarginBPM = 30
+    /// Share of heart-rate reserve for an active minute and for the bout's average.
+    static let activeReserveShare = 0.30
+    /// Share of heart-rate reserve at least one minute of the bout must reach.
+    static let peakReserveShare = 0.50
     static let minMinutes = 12
     static let maxGapMinutes = 3
     static let minActiveShare = 0.65
@@ -29,7 +32,9 @@ enum WhoopActivityDetector {
             sums[minute] = (e.total + s.bpm, e.count + 1, max(e.peak, s.bpm))
         }
         let minutes = sums.keys.sorted()
-        let threshold = Double(restingBpm + marginBPM)
+        let rest = Double(restingBpm)
+        let reserve = max(1, StrainScorer.whoopCurveMaxHR - rest)
+        let threshold = rest + activeReserveShare * reserve
         func mean(_ m: Int) -> Double { sums[m].map { Double($0.total) / Double($0.count) } ?? 0 }
 
         var out: [DetectedWorkout] = []
@@ -51,8 +56,9 @@ enum WhoopActivityDetector {
             let span = (first * 60)...(last * 60 + 59)
             let inBout = minutes.filter { $0 >= first && $0 <= last }
             let avg = inBout.map(mean).reduce(0, +) / Double(max(1, inBout.count))
+            let peakMinute = inBout.map(mean).max() ?? 0
             if length >= minMinutes, Double(active) / Double(length) >= minActiveShare,
-               avg >= Double(restingBpm + averageMarginBPM),
+               avg >= threshold, peakMinute >= rest + peakReserveShare * reserve,
                !excluded.contains(where: { $0.overlaps(span) }) {
                 let peak = inBout.compactMap { sums[$0]?.peak }.max() ?? Int(avg)
                 out.append(DetectedWorkout(startSec: span.lowerBound, endSec: span.upperBound,
