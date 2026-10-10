@@ -20,7 +20,7 @@ struct WhoopStressHero: View {
     /// The time under the reader's finger on the stress line.
     @State private var selection: Date?
 
-    /// One scored reading on the stress line.
+    /// One scored reading on the line. Shared with the Sleep screen's stress card (`SleepStressNight`).
     struct Sample: Identifiable {
         let ts: Int
         let level: Double
@@ -31,7 +31,12 @@ struct WhoopStressHero: View {
     /// The scored readings of a day's stress, earliest first: what the line draws and the cards count.
     /// `nonisolated` so the Coach's context reads the day through the same steps as this screen.
     nonisolated static func scoredSamples(_ daytime: DaytimeStress.Result?) -> [Sample] {
-        (daytime?.timeline ?? []).compactMap { p in p.level.map { Sample(ts: p.startTs, level: $0) } }
+        scoredSamples(daytime?.timeline ?? [])
+    }
+
+    /// The scored points of a stress timeline, earliest first; unscored points are left out.
+    nonisolated static func scoredSamples(_ timeline: [DaytimeStress.HourPoint]) -> [Sample] {
+        timeline.compactMap { p in p.level.map { Sample(ts: p.startTs, level: $0) } }
     }
 
     private var samples: [Sample] { Self.scoredSamples(daytime) }
@@ -50,8 +55,8 @@ struct WhoopStressHero: View {
         return min(3600, max(300, gaps.min() ?? 300))
     }
 
-    /// Minutes in each band (0 low, 1 medium, 2 high) over the readings `include` keeps. Internal so the
-    /// Coach quotes the TOTAL DAY card's figures rather than a count of its own.
+    /// Minutes in each band (0 low, 1 medium, 2 high) over the readings `include` keeps. Shared so the
+    /// Coach, the Sleep screen's stress card and its HIGH SLEEP STRESS row count as this screen does.
     nonisolated static func minutesByBand(_ points: [Sample], include: (Int) -> Bool = { _ in true }) -> [Double] {
         let span = Double(step(points)) / 60
         var minutes = [0.0, 0.0, 0.0]

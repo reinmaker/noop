@@ -1971,13 +1971,16 @@ struct LiquidTodayView: View {
             let hostedSessions = await repo.allSleepSessions()
             let hostedHabitual = await repo.habitualMidsleepSec()
             let hostedMotion = await repo.sessionMotions(sessions: hostedSessions)
+            // The stored Rest series already read above, as the Sleep tab reads it, so the hosted Rest tile
+            // states the same score.
             hostedSleepModel = SleepModel.build(SleepModelInputs(
                 days: repo.days,
                 sleeps: repo.sleeps,
                 allSessions: hostedSessions,
                 importedSleep: repo.importedSleep,
                 habitualMidsleepSec: hostedHabitual,
-                motionByStart: hostedMotion))
+                motionByStart: hostedMotion,
+                storedPerformance: restByDay))
         } else {
             hostedSleepModel = nil
         }
