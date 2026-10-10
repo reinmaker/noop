@@ -15,9 +15,9 @@ CATALOGS = [
 ]
 SKIP_CHARGE = re.compile(r"\bCharge (before|it|your)\b")
 SKIP_REST = re.compile(r"\bRest (\(seconds\)|period\b|HR\b|up\b)")
-# Entries whose English text must keep NOOP's word: the low-readiness tip "Rest" (take it easy) has its
-# own key precisely so it is not renamed with the Rest (sleep) score.
-SKIP_KEYS = {"readiness.rest"}
+# Entries whose English text must keep NOOP's word: the low-readiness tip "Rest" (take it easy) and the
+# effort scale's 0 ("Rest") have their own keys precisely so they are not renamed with the Rest (sleep) score.
+SKIP_KEYS = {"readiness.rest", "effort.rest"}
 
 
 def rename(text: str) -> str:

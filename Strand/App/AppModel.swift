@@ -2106,7 +2106,7 @@ final class AppModel: ObservableObject {
         guard let row = repo.today else { return }
         StrainTargetNotifier.onDayUpdate(
             day: row.day,
-            dayStrain21: row.strain.map { UnitFormatter.effortValue($0, scale: .whoop) },
+            dayStrain21: repo.dayStrain(row).map { UnitFormatter.effortValue($0, scale: .whoop) },
             target21: CoupledView.optimalStrainRange(recovery: row.recovery)?.lowerBound,
             enabled: behavior.strainTargetNudge)
     }

@@ -185,6 +185,20 @@ public enum StrainScorer {
         return min(whoopMaxStrain, whoopCurveA * log1p(load / whoopCurveC))
     }
 
+    /// The load one minute adds at `reserve` (0-1 of heart-rate reserve on the `whoopCurveMaxHR`
+    /// yardstick): the per-minute term `whoopLoad` sums, sitting floor included. Lets a load that heart
+    /// rate did not measure (Yoop's rated muscular load) sit on the same curve, in the same unit.
+    public static func whoopMinuteLoad(reserve x: Double) -> Double {
+        max(x * exp(whoopCurveB * x) - whoopCurveFloor * exp(whoopCurveB * whoopCurveFloor), 0.0)
+    }
+
+    /// The load behind a Strain on WHOOP's 0-21 axis: the inverse of `whoopStrain(load:)`. A Strain at the
+    /// 21 cap returns the load at 21, the least the capped value can stand for.
+    public static func whoopInverseLoad(strain: Double) -> Double {
+        guard strain > 0 else { return 0 }
+        return whoopCurveC * expm1(min(strain, whoopMaxStrain) / whoopCurveA)
+    }
+
     // MARK: - HRmax helpers
 
     /// Tanaka (2001): HRmax = 208 − 0.7 × age (gender-independent).

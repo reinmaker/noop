@@ -40,6 +40,8 @@ struct WhoopActivityScreen: View {
     /// The time under the reader's finger on the heart-rate graph.
     @State private var hrSelection: Date?
     @State private var retyping = false
+    /// The user's effort rating, mirrored here so a tap shows at once; `Repository` keeps it.
+    @State private var effort: Int?
 
     init(row: WorkoutRow) {
         _row = State(initialValue: row)
@@ -80,7 +82,8 @@ struct WhoopActivityScreen: View {
     private var end: Date { Date(timeIntervalSince1970: TimeInterval(max(row.endTs, row.startTs))) }
     private var name: String { WorkoutSource.displaySport(row.sport) }
     private var durationSeconds: Double { row.durationS ?? Double(max(0, row.endTs - row.startTs)) }
-    private var strain: Double? { row.strain.map(AICoachEngine.strain21) }
+    /// Activity Strain as every screen shows it: heart rate, plus the muscle load an effort rating adds.
+    private var strain: Double? { repo.activityStrain(row).map(AICoachEngine.strain21) }
     /// Yoop's own activities can be re-typed and deleted; imported history is read-only.
     private var isOwn: Bool { WorkoutSource.classify(row.source) == .manual }
 
@@ -93,6 +96,7 @@ struct WhoopActivityScreen: View {
             VStack(alignment: .leading, spacing: NoopMetrics.space5) {
                 sourceBlock
                 headline
+                if ratesEffort { effortSection }
                 heartRateChart
                 zonesSection
                 keyStatistics
@@ -201,21 +205,133 @@ struct WhoopActivityScreen: View {
     // MARK: Strain and steps
 
     private var headline: some View {
-        HStack(alignment: .top, spacing: NoopMetrics.space6) {
-            bigNumber(value: strain.map { String(format: "%.1f", $0) } ?? Self.missing,
-                      color: StrandPalette.effortColor,
-                      label: String(localized: "ACTIVITY STRAIN"),
-                      typical: typical(strain, figures.typicalStrain, decimals: 1) { String(format: "%.1f", $0) })
-            if let steps = figures.steps {
-                bigNumber(value: steps.formatted(),
-                          color: StrandPalette.textPrimary,
-                          label: String(localized: "ACTIVITY STEPS"),
-                          typical: typical(Double(steps), figures.typicalSteps, decimals: 0) {
-                              Int($0.rounded()).formatted()
-                          })
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            HStack(alignment: .top, spacing: NoopMetrics.space6) {
+                bigNumber(value: strain.map { String(format: "%.1f", $0) } ?? Self.missing,
+                          color: StrandPalette.effortColor,
+                          label: String(localized: "ACTIVITY STRAIN"),
+                          typical: typical(strain, figures.typicalStrain, decimals: 1) { String(format: "%.1f", $0) })
+                if let steps = figures.steps {
+                    bigNumber(value: steps.formatted(),
+                              color: StrandPalette.textPrimary,
+                              label: String(localized: "ACTIVITY STEPS"),
+                              typical: typical(Double(steps), figures.typicalSteps, decimals: 0) {
+                                  Int($0.rounded()).formatted()
+                              })
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            if ratesEffort, let split, split.isStrength {
+                strainSplit(split)
+            }
         }
+    }
+
+    // MARK: Effort
+
+    /// Whether the page offers an effort rating: the user's own activity, with muscle load on.
+    private var ratesEffort: Bool { Repository.muscleLoadEnabled && MuscleLoad.isRateable(row) }
+
+    /// What the rating adds to this activity, once `Repository.strainBook` has it.
+    private var split: MuscleSplit? { repo.strainBook.splits[row.startTs] }
+
+    /// HEART and MUSCLE under a rated strength session's Strain: what heart rate measured, and what the
+    /// rating added on top. The two add up to ACTIVITY STRAIN.
+    private func strainSplit(_ split: MuscleSplit) -> some View {
+        HStack(spacing: NoopMetrics.space4) {
+            splitFigure(label: String(localized: "HEART"), value: String(format: "%.1f", split.heartStrain))
+            splitFigure(label: String(localized: "MUSCLE"), value: "+" + String(format: "%.1f", split.muscleStrain))
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func splitFigure(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space1) {
+            Text(label)
+                .font(WhoopStyle.smallLabel)
+                .foregroundStyle(StrandPalette.textSecondary)
+            Text(value)
+                .font(WhoopStyle.number(16))
+                .monospacedDigit()
+                .foregroundStyle(StrandPalette.textPrimary)
+        }
+    }
+
+    /// SESSION EFFORT: the user's rating of the whole session on Borg's CR-10, the input muscle load is
+    /// worked out from (`MuscleLoad`). A tap on a number rates it; it can be changed or removed later.
+    private var effortSection: some View {
+        let unratedStrength = effort == nil && MuscleLoad.isStrength(row.sport)
+        return VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+            HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
+                Text("SESSION EFFORT")
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                Spacer(minLength: NoopMetrics.space1)
+                Text(effort.map { "\($0) · \(Self.effortWord($0))" } ?? String(localized: "Not rated"))
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(effort == nil ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+            }
+            HStack(spacing: NoopMetrics.spaceHalf) {
+                ForEach(0...10, id: \.self) { effortCell($0) }
+            }
+            Text(unratedStrength
+                 ? String(localized: "Strain from heart rate only. Rate the session so its muscle load counts.")
+                 : String(localized: "How hard was the whole session? Rate it about 30 minutes after it ends."))
+                .font(WhoopStyle.caption)
+                .foregroundStyle(unratedStrength ? StrandPalette.textSecondary : StrandPalette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            if effort != nil {
+                Button { rate(nil) } label: {
+                    Text("Remove rating")
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(WhoopStyle.compactPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .whoopCard()
+    }
+
+    /// One number on the scale, filled up to the rating.
+    private func effortCell(_ value: Int) -> some View {
+        let filled = effort.map { value <= $0 } ?? false
+        return Button { rate(value) } label: {
+            Text(String(value))
+                .font(WhoopStyle.number(13))
+                .monospacedDigit()
+                .foregroundStyle(filled ? WhoopStyle.onGradient : StrandPalette.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(filled ? StrandPalette.effortColor : WhoopStyle.ringTrack))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: "\(value), \(Self.effortWord(value))"))
+        .accessibilityAddTraits(effort == value ? .isSelected : [])
+    }
+
+    /// The CR-10 word for a rating, in the wording of Foster's session-RPE scale. 6 and 8 have no word of
+    /// their own there and read as the one below; 9 sits between very hard and maximal.
+    static func effortWord(_ effort: Int) -> String {
+        switch effort {
+        case ...0: return String(localized: "effort.rest", defaultValue: "Rest")
+        case 1: return String(localized: "Very easy")
+        case 2: return String(localized: "Easy")
+        case 3: return String(localized: "Moderate")
+        case 4: return String(localized: "Somewhat hard")
+        case 5, 6: return String(localized: "Hard")
+        case 7, 8: return String(localized: "Very hard")
+        case 9: return String(localized: "Extremely hard")
+        default: return String(localized: "Maximal")
+        }
+    }
+
+    /// Saves a rating (nil removes it); the page's Strain follows once `Repository` has rebuilt what it adds.
+    private func rate(_ value: Int?) {
+        effort = value
+        let target = row
+        Task { await repo.setActivityEffort(value, for: target) }
     }
 
     private func bigNumber(value: String, color: Color, label: String, typical: Typical?) -> some View {
@@ -618,6 +734,7 @@ struct WhoopActivityScreen: View {
 
     private func load() async {
         let row = self.row
+        effort = repo.activityEffort(row)
         let pad = WhoopActivityZones.chartPadding(seconds: row.endTs - row.startTs)
         let hr = await repo.workoutHrBuckets(from: row.startTs - pad, to: row.endTs + pad, source: row.source)
         let rest = restingHR(for: row)
@@ -646,7 +763,7 @@ struct WhoopActivityScreen: View {
             bandSeconds: seconds,
             typicalShares: WhoopActivityZones.typicalRanges(pastShares),
             steps: steps,
-            typicalStrain: typicalOf { $0.strain.map(AICoachEngine.strain21) },
+            typicalStrain: typicalOf { repo.activityStrain($0).map(AICoachEngine.strain21) },
             typicalSteps: steps == nil ? nil : typicalOf { pastSteps[$0.startTs] ?? $0.steps.map(Double.init) },
             typicalKcal: typicalOf { $0.energyKcal },
             typicalAvgHr: typicalOf { $0.avgHr.map(Double.init) },

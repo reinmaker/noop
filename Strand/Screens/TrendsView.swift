@@ -126,6 +126,8 @@ struct TrendsView: View {
         private struct Key: Equatable {
             let repo: ObjectIdentifier
             let refreshSeq: Int
+            /// What a Strain readout resolves from besides the stored rows (`Repository.strainRevision`).
+            let strainRevision: Int
             let range: Range
             let restRevision: Int
             let day: String
@@ -138,6 +140,7 @@ struct TrendsView: View {
         func get(repo: Repository, range: Range, restRevision: Int, day: String, locale: String,
                  build: () -> ResolvedMetrics) -> ResolvedMetrics {
             let next = Key(repo: ObjectIdentifier(repo), refreshSeq: repo.refreshSeq,
+                           strainRevision: repo.strainRevision,
                            range: range, restRevision: restRevision, day: day, locale: locale)
             if key == next, let value { return value }
             let result = build()
@@ -153,7 +156,7 @@ struct TrendsView: View {
             ResolvedMetrics(recovery: resolve { $0.recovery },
                             hrv: resolve { $0.avgHrv },
                             rhr: resolve { $0.restingHr.map(Double.init) },
-                            strain: resolve { $0.strain },
+                            strain: resolve { repo.dayStrain($0) },
                             rest: resolve { sleepPerfByDay[$0.day] })
         }
     }

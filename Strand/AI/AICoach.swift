@@ -352,9 +352,13 @@ final class AICoachEngine: ObservableObject {
     }
 
     /// Contextual suggestion chips for the composer, derived from today's bands via `CoachSuggestions`.
-    /// Reads only on-device `repo.days`; pure, byte-identical to the Android twin. Returns the stable
-    /// generic fallback when there is no usable data for today.
-    var suggestions: [String] { CoachSuggestions.suggestions(for: repo.days.last, recent: repo.days) }
+    /// Reads only on-device `repo.days` (Strain as the screens resolve it, `Repository.strainDays`); pure,
+    /// byte-identical to the Android twin. Returns the stable generic fallback when there is no usable data
+    /// for today.
+    var suggestions: [String] {
+        let days = repo.strainDays
+        return CoachSuggestions.suggestions(for: days.last, recent: days)
+    }
 
     /// K7: Follow-up suggestion chips shown after each assistant reply. These are generic
     /// conversational follow-ups (not data-derived) so the user can dig deeper without typing.
@@ -987,7 +991,7 @@ final class AICoachEngine: ObservableObject {
         // Read here because the series is async; `buildContext()` stays synchronous.
         let sleepPerformance = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
         var ctx = buildContext(sleepPerformance: sleepPerformance)
-        if let patterns = CoachPatterns.block(days: repo.days) { ctx += "\n\n" + patterns }
+        if let patterns = CoachPatterns.block(days: repo.strainDays) { ctx += "\n\n" + patterns }
         if let memory = CoachMemoryStore.shared.contextBlock() {
             ctx = memory + "\n\n" + ctx
         }
@@ -1715,7 +1719,8 @@ final class AICoachEngine: ObservableObject {
     /// under ~1500 tokens. If there's no data, it says so. `sleepPerformance` is the stored series Home's
     /// Sleep ring reads, passed in by `buildFullContext()` because reading it is async.
     func buildContext(sleepPerformance: [(day: String, value: Double)]? = nil) -> String {
-        let days = repo.days // oldest → newest
+        // oldest → newest, Strain as the screens show it (`Repository.strainDays`)
+        let days = repo.strainDays
         var lines: [String] = ["USER BIOMETRIC SUMMARY (the user's own wearable data):"]
 
         guard !days.isEmpty else {
@@ -1737,9 +1742,13 @@ final class AICoachEngine: ObservableObject {
         if let normal = Self.todayVsNormalLine(days, todayKey: todayKey) { lines.append(normal) }
         lines.append(Self.recoveryLine(days: days, todayKey: todayKey))
         // Today's Strain and steps as Home shows them; the stored row stands in until Home has loaded today.
+        // With muscle load on, Strain comes from the one funnel Home's ring reads, so a rating made since
+        // Home last loaded is counted too.
         let readout = Self.homeToday?.day == todayKey ? Self.homeToday : nil
-        lines.append(Self.todaySoFarLine(todayKey: todayKey,
-                                         strain: readout?.strain ?? todayRow?.strain,
+        let todayStrain = Repository.muscleLoadEnabled
+            ? repo.dayStrain(day: todayKey, stored: repo.days.last(where: { $0.day == todayKey })?.strain)
+            : readout?.strain ?? todayRow?.strain
+        lines.append(Self.todaySoFarLine(todayKey: todayKey, strain: todayStrain,
                                          steps: readout?.steps ?? todayRow?.steps.map(Double.init)))
         if let sleepPerformance {
             lines.append(Self.sleepPerformanceLine(series: sleepPerformance, todayKey: todayKey))
@@ -1788,8 +1797,8 @@ final class AICoachEngine: ObservableObject {
     /// so callers that want workouts in the context can await this and feed the result to `send`'s
     /// flow via the chat, kept separate so `buildContext()` stays synchronous per the spec.
     /// Today's activities in one line, so the day's training load is impossible to miss: "TODAY'S TRAINING:
-    /// 2 activities, Weightlifting 12:44-13:29 strain 11.0, Basketball 19:31-21:00 strain 16.9; day Strain
-    /// so far 17.8." Nil when today has none.
+    /// 2 activities, Weightlifting 12:44-13:29 strain 14.3 (heart 11.0 + muscle 3.3, effort rated 6/10),
+    /// Basketball 19:31-21:00 strain 16.9; day Strain so far 18.4." Nil when today has none.
     func todayTrainingLine() async -> String? {
         let start = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
         let rows = await repo.workoutRows(days: 2).filter { $0.startTs >= start }.sorted { $0.startTs < $1.startTs }
@@ -1797,18 +1806,38 @@ final class AICoachEngine: ObservableObject {
         let clock = { (ts: Int) -> String in
             Date(timeIntervalSince1970: TimeInterval(ts)).formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
         }
+        let muscleLoad = Repository.muscleLoadEnabled
         let items = rows.map { w -> String in
             var s = "\(WorkoutSource.displaySport(w.sport)) \(clock(w.startTs))-\(clock(w.endTs))"
-            if let strain = Self.measured(w.strain) { s += " strain \(String(format: "%.1f", Self.strain21(strain)))" }
+            if let strain = Self.measured(repo.activityStrain(w)) {
+                s += " strain \(String(format: "%.1f", Self.strain21(strain)))"
+            }
+            if muscleLoad { s += Self.effortNote(repo.strainBook.splits[w.startTs], row: w) }
             if let hr = Self.measuredInt(w.avgHr) { s += " avg HR \(Int(hr))" }
             return s
         }
         var line = "TODAY'S TRAINING: \(rows.count) \(rows.count == 1 ? "activity" : "activities"), "
             + items.joined(separator: ", ")
-        if let strain = Self.homeToday?.strain {
+        let dayStrain = muscleLoad
+            ? repo.dayStrain(day: coachTodayKey, stored: repo.days.last(where: { $0.day == coachTodayKey })?.strain)
+            : Self.homeToday?.strain
+        if let strain = dayStrain {
             line += "; day Strain so far \(String(format: "%.1f", Self.strain21(strain)))"
         }
         return line + ". Account for it in every answer about today, tonight's sleep and tomorrow."
+    }
+
+    /// What an activity's effort rating did to its Strain, for the coach: the heart and muscle parts of a
+    /// rated strength session, the rating of any other rated one, and for an unrated strength session that
+    /// its Strain is heart rate only. Empty for an unrated activity that is not strength.
+    nonisolated static func effortNote(_ split: MuscleSplit?, row: WorkoutRow) -> String {
+        guard let split else {
+            return MuscleLoad.isRateable(row) && MuscleLoad.isStrength(row.sport)
+                ? " (heart rate only: effort not rated, so no muscle load counted)" : ""
+        }
+        guard split.isStrength else { return " (effort rated \(split.effort)/10)" }
+        return String(format: " (heart %.1f + muscle %.1f, effort rated %d/10)",
+                      split.heartStrain, split.muscleStrain, split.effort)
     }
 
     func recentWorkoutsBlock(limit: Int = 6) async -> String {
@@ -1824,7 +1853,7 @@ final class AICoachEngine: ObservableObject {
             var parts = ["  \(dateString(w.startTs)) \(w.sport)"]
             // A zero is an empty field, not a reading: no "0 kcal" or "0 m".
             if let dur = Self.measured(w.durationS) { parts.append("\(Int((dur / 60).rounded())) min") }
-            if let s = Self.measured(w.strain) { parts.append("strain \(String(format: "%.1f", Self.strain21(s)))") }
+            if let s = Self.measured(repo.activityStrain(w)) { parts.append("strain \(String(format: "%.1f", Self.strain21(s)))") }
             if let hr = Self.measuredInt(w.avgHr) { parts.append("avg HR \(Int(hr))") }
             if let kcal = Self.measured(w.energyKcal) { parts.append("\(Int(kcal.rounded())) kcal") }
             if let dist = Self.measured(w.distanceM) {

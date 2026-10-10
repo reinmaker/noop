@@ -134,7 +134,7 @@ struct WhoopInsightCard: View {
         let sleep = d.totalSleepMin.map { String(Int($0.rounded())) } ?? "-"
         // The day's Strain in steps of 2 (0-21 scale), so a card that cites Strain is rewritten as the day
         // moves on: on 10 Oct it still said "13.5 Strain" with the ring at 17.8 after an evening game.
-        let strain = d.strain.map { String(Int(AICoachEngine.strain21($0) / 2)) } ?? "-"
+        let strain = repo.dayStrain(d).map { String(Int(AICoachEngine.strain21($0) / 2)) } ?? "-"
         return "v3|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.isConfigured)|\(coach.dataConsent)"
     }
 

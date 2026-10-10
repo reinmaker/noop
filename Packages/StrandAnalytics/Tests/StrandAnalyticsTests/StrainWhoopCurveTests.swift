@@ -42,6 +42,29 @@ final class StrainWhoopCurveTests: XCTestCase {
         XCTAssertEqual(extreme, StrainScorer.maxStrain)
     }
 
+    /// `whoopMinuteLoad` is the term `whoopLoad` sums: an hour held at one rate is sixty of them.
+    func testMinuteLoadIsTheTermTheSeriesSums() {
+        let hr = block(150, minutes: 60, start: 0)
+        let durations = StrainScorer.sampleDurationsMinutes(hr)
+        let series = StrainScorer.whoopLoad(hr, restingHR: 50, durations: durations)
+        let reserve = (150.0 - 50) / (StrainScorer.whoopCurveMaxHR - 50)
+        XCTAssertEqual(series, durations.reduce(0, +) * StrainScorer.whoopMinuteLoad(reserve: reserve),
+                       accuracy: 1e-9)
+        XCTAssertEqual(StrainScorer.whoopMinuteLoad(reserve: 0.1), 0, "below the sitting floor a minute adds nothing")
+    }
+
+    /// `whoopInverseLoad` undoes `whoopStrain(load:)` below the cap, and stops at the load of 21 above it.
+    func testInverseLoadUndoesTheStrainMap() {
+        for load in [1.0, 37.5, 144.0, 1039.0, 2000.0] {
+            let strain = StrainScorer.whoopStrain(load: load)
+            XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: strain), load, accuracy: load * 1e-9)
+        }
+        XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: 0), 0)
+        XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: 25),
+                       StrainScorer.whoopInverseLoad(strain: StrainScorer.whoopMaxStrain))
+        XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: 11.0), 144.0, accuracy: 0.5)
+    }
+
     /// The curve uses its own HRmax yardstick, so a profile max does not move it.
     func testTheProfileMaxDoesNotMoveTheCurve() {
         let hr = block(150, minutes: 40, start: 0)

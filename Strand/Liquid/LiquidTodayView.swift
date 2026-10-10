@@ -764,14 +764,14 @@ struct LiquidTodayView: View {
                                   totalCalories: totalCaloriesCount, basalKcalPerDay: basalKcalPerDay,
                                   onCustomize: { customizationDestination = .today })
             WhoopStressChartCard(currentStress: stress)
-            WhoopStrainRecoveryCard(days: repo.days)
+            WhoopStrainRecoveryCard(days: repo.strainDays)
         }
     }
 
     /// WHOOP-style Home for a past day: that day's activities, dashboard and the week ending on it.
     private var whoopPastDayExtras: some View {
         let shownDay = displayDay?.day
-        let daysToShown = repo.days.filter { d in shownDay.map { d.day <= $0 } ?? true }
+        let daysToShown = repo.strainDays.filter { d in shownDay.map { d.day <= $0 } ?? true }
         return VStack(spacing: WhoopStyle.rowGap) {
             WhoopActivitiesCard(sleepMinutes: displayDay?.totalSleepMin, sleepStart: nil, sleepEnd: nil,
                                 workouts: workouts)
@@ -1420,7 +1420,10 @@ struct LiquidTodayView: View {
     /// A metric's spark values inside the chosen window, oldest → newest.
     private func windowedSpark(_ key: String) -> [Double] {
         let cutoff = sparkWindowCutoffKey
-        return (kSparks[key] ?? []).filter { $0.0 >= cutoff }.map { $0.1 }
+        let points = (kSparks[key] ?? []).filter { $0.0 >= cutoff }
+        // Strain resolves as it is drawn, through the one funnel, so a rating made since the load shows.
+        guard key == "strain", Repository.muscleLoadEnabled else { return points.map { $0.1 } }
+        return points.compactMap { repo.dayStrain(day: $0.0, stored: $0.1) }
     }
 
     /// The Key-Metrics header's trailing label for the chosen detailed-graph window (Android twin).
@@ -1661,11 +1664,12 @@ struct LiquidTodayView: View {
                         Text(workoutSub(w)).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     }
                     Spacer()
-                    (Text(effortText(w.strain)).font(StrandFont.number(15))
+                    (Text(effortText(repo.activityStrain(w))).font(StrandFont.number(15))
                         + Text(" EFFORT").font(StrandFont.overlineScaled(9)))
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                LiquidTube(frac: (w.strain ?? 0) / 100, tint: StrandPalette.effortColor, height: 12, animated: false)
+                LiquidTube(frac: (repo.activityStrain(w) ?? 0) / 100, tint: StrandPalette.effortColor, height: 12,
+                           animated: false)
             }
         }
     }
@@ -1813,6 +1817,7 @@ struct LiquidTodayView: View {
             liveStrainLocal = nil
         }
         liveTodayStrain = liveStrainLocal
+        if selectedDayOffset == 0 { repo.noteLiveDayStrain(day: selectedDayKey, value: liveStrainLocal) }
 
         async let restA = repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
         async let stressA = repo.series(key: "stress", source: "my-whoop")
@@ -2218,8 +2223,13 @@ struct LiquidTodayView: View {
     /// preference and is shared with the Kotlin twin, so the two platforms cannot resolve Effort
     /// differently. `d` for today is always today's row or nil, never a prior day, so the floor cannot
     /// resurrect a stale day — it only stops a read-out dropping below what today has already earned.
+    ///
+    /// Yoop: with muscle load on, the one Strain funnel (`Repository.dayStrain`) resolves it instead, from
+    /// the same live value (`noteLiveDayStrain`) plus what the day's effort ratings add, so Home and every
+    /// other screen show one figure.
     private func effortStrain(_ d: DailyMetric?) -> Double? {
-        StrainScorer.effectiveEffort(live: selectedDayOffset == 0 ? liveTodayStrain : nil, stored: d?.strain)
+        if Repository.muscleLoadEnabled { return repo.dayStrain(day: d?.day ?? selectedDayKey, stored: d?.strain) }
+        return StrainScorer.effectiveEffort(live: selectedDayOffset == 0 ? liveTodayStrain : nil, stored: d?.strain)
     }
 
     private func effortText(_ s: Double?) -> String {

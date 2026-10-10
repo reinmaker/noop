@@ -132,7 +132,8 @@ final class WatchSessionBridge: NSObject, ObservableObject {
         // anchors on today's row (not "the most recent day with any recovery score") so it can't drift
         // around the rollover. When today isn't scored yet it carries over the last STRICTLY-PRIOR scored
         // day for the recovery side.
-        let days = model.repo.days
+        // Strain as Home shows it, effort ratings included (`Repository.strainDays`).
+        let days = model.repo.strainDays
         let now = Date()
         let day = Repository.widgetAnchor(days: days, now: now)
 

@@ -364,6 +364,22 @@
       "identity_sha256": "defe5f6a82d697eba40eeb6e7d793c700ba208bb015bec1d5c9719f6990210b9",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: Mifflin-St Jeor BMR, used by the Yoop energy split and by the app to add resting energy where a total is shown. NOOP's estimators keep the revised Harris-Benedict BMR. The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/StrainScorer.swift::whoopMinuteLoad/1#1",
+      "identity_sha256": "7e9348e3475760cab607c44fbfd0c336634ba5b33799f3493aa5112aef364972",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the per-minute term of the WHOOP-calibrated Strain curve, public so Yoop's rated muscular load sits on the same curve and in the same unit as heart-rate load (whoopLoad is unchanged). The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/StrainScorer.swift::whoopInverseLoad/1#1",
+      "identity_sha256": "027c8d22f52a9a0a806726c21cef4da1d0e5020f3eed8fa893faedc8aeb1c463",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the inverse of whoopStrain(load:), public so Yoop can read the load behind a stored Strain and add muscular load to it (whoopStrain is unchanged). The fork ships no Android build, so the Kotlin twin is unchanged."
     }
   ]
 }
