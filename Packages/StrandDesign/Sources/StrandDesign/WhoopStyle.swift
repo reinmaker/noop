@@ -28,6 +28,10 @@ public enum WhoopStyle {
     public static let reviewGradient = LinearGradient(
         colors: [Color(light: "#5B4AA8", dark: "#3A2F66"), Color(light: "#2C6F7E", dark: "#1F4752")],
         startPoint: .leading, endPoint: .trailing)
+    /// The morning Daily Outlook row: warm, sunrise colours where the evening review is cool.
+    public static let outlookGradient = LinearGradient(
+        colors: [Color(light: "#C2571F", dark: "#7A3A1C"), Color(light: "#B8862B", dark: "#6E5420")],
+        startPoint: .leading, endPoint: .trailing)
     public static let reviewAccent = Color(light: "#3A7BD5", dark: "#7FB2FF")
     /// Text and icons drawn on a coloured gradient (always light, in both appearances).
     public static let onGradient = Color(hex: "#FFFFFF")
