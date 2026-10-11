@@ -382,7 +382,7 @@ extension SleepModel {
     }
 
     /// Mean total sleep duration (minutes) across nights with data — the "typical".
-    static func typicalTotalMin(days: [DailyMetric]) -> Double? {
+    static func typicalTotalMin<Days: Sequence>(days: Days) -> Double? where Days.Element == DailyMetric {
         mean(days.compactMap { $0.totalSleepMin }.filter { $0 > 0 })
     }
 
@@ -393,7 +393,7 @@ extension SleepModel {
 
     /// The personal sleep need (minutes): mean asleep, but never below a 7.5h floor so
     /// debt/performance read sensibly even for a chronically short sleeper.
-    static func sleepNeedMin(days: [DailyMetric]) -> Double {
+    static func sleepNeedMin<Days: Sequence>(days: Days) -> Double where Days.Element == DailyMetric {
         Swift.max(450, typicalTotalMin(days: days) ?? 450)   // 450 min = 7.5h
     }
 
@@ -406,7 +406,7 @@ extension SleepModel {
     /// would only raise it for under-18s. One need across every debt surface, agreeing with the engine.
     /// (#242; need-unification from #464 by @vishk23. The descriptive `sleepNeedMin` still drives the
     /// non-debt "hours vs needed" performance tile.)
-    static func debtNeedMin(days: [DailyMetric]) -> Double {
+    static func debtNeedMin<Days: Sequence>(days: Days) -> Double where Days.Element == DailyMetric {
         AnalyticsEngine.Rest.personalizedNeedHours(
             nightlyHours: days.compactMap { $0.totalSleepMin.map { $0 / 60.0 } },
             age: nil) * 60.0
@@ -641,11 +641,30 @@ extension SleepModel {
     /// Strain ring shows it (`Repository.strainDays`, effort ratings included).
     static func nightNeed(wakeDay: String, days: [DailyMetric],
                           importedSleep: [String: ImportedSleepFigures]) -> NightNeed {
-        let prior = days.filter { $0.day < wakeDay }
+        nightNeed(wakeDay: wakeDay, prior: days.filter { $0.day < wakeDay }.sorted { $0.day < $1.day }[...],
+                  importedSleep: importedSleep)
+    }
+
+    /// `nightNeed` over `prior`, the days before the wake day, oldest first. The debt is the latest value of
+    /// `sleepDebtSeries(days: prior)`, which depends only on the last 14 nights with sleep (its window) and
+    /// the need of the whole history, so it is worked out over that tail alone: a long history costs one
+    /// pass for the need, not one ledger per night.
+    private static func nightNeed(wakeDay: String, prior: ArraySlice<DailyMetric>,
+                                  importedSleep: [String: ImportedSleepFigures]) -> NightNeed {
         let previousDay = WeeklyDigestEngine.addDays(wakeDay, -1)
-        let strain = prior.last { $0.day == previousDay }?.strain
-            .map { UnitFormatter.effortValue($0, scale: .whoop) } ?? 0
-        let debt = sleepDebtSeries(days: prior, importedSleep: importedSleep, napSleepMinByDay: [:]).latest ?? 0
+        var strain = 0.0
+        for d in prior.reversed() {
+            if d.day == previousDay { strain = d.strain.map { UnitFormatter.effortValue($0, scale: .whoop) } ?? 0 }
+            if d.day <= previousDay { break }
+        }
+        var tailStart = prior.endIndex
+        var withSleep = 0
+        while tailStart > prior.startIndex, withSleep < SleepDebt.defaultWindowNights {
+            tailStart -= 1
+            if (prior[tailStart].totalSleepMin ?? 0) > 0 { withSleep += 1 }
+        }
+        let debt = sleepDebtSeries(days: Array(prior[tailStart...]), importedSleep: importedSleep,
+                                   napSleepMinByDay: [:], needMin: debtNeedMin(days: prior)).latest ?? 0
         return NightNeed(baselineMin: sleepNeedMin(days: prior),
                          strainMin: needMinPerStrainPoint * Swift.max(0, strain - needStrainFloor),
                          debtMin: Swift.max(0, debt))
@@ -659,13 +678,17 @@ extension SleepModel {
                            only: Set<String>? = nil) -> (needMin: [String: Double], planned: [String: NightNeed]) {
         let fallbackNeed = sleepNeedMin(days: days)
         let plannerNeeds = PuffinExperiment.whoopScoresEnabled
+        let ordered = days.sorted { $0.day < $1.day }
         var needMin: [String: Double] = [:]
         var planned: [String: NightNeed] = [:]
-        for d in days where (d.totalSleepMin ?? 0) > 0 && (only.map { $0.contains(d.day) } ?? true) {
+        var firstOfDay = 0   // the days before the one being read: ordered[..<firstOfDay]
+        for (i, d) in ordered.enumerated() {
+            if i > 0, ordered[i - 1].day != d.day { firstOfDay = i }
+            guard (d.totalSleepMin ?? 0) > 0, only.map({ $0.contains(d.day) }) ?? true else { continue }
             if let imported = importedSleep[d.day]?.needMin {
                 needMin[d.day] = imported
             } else if plannerNeeds {
-                let need = nightNeed(wakeDay: d.day, days: days, importedSleep: importedSleep)
+                let need = nightNeed(wakeDay: d.day, prior: ordered[..<firstOfDay], importedSleep: importedSleep)
                 needMin[d.day] = need.needMin
                 planned[d.day] = need
             } else {
@@ -691,8 +714,10 @@ extension SleepModel {
     /// Sleep debt (minutes): imported `sleep_debt_min` remains export-verbatim. Otherwise use
     /// the same recency-weighted ledger as the card, including nap credit and its 14-night window.
     static func sleepDebtSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
-                                napSleepMinByDay: [String: Double]) -> Metric {
-        let need = debtNeedMin(days: days)   // #242: normative need, not the self-referential mean
+                                napSleepMinByDay: [String: Double], needMin: Double? = nil) -> Metric {
+        // #242: normative need, not the self-referential mean. `needMin` lets a caller that passes only the
+        // tail of the history (`nightNeed`) keep the need of the whole of it.
+        let need = needMin ?? debtNeedMin(days: days)
         let credited = days.map { d in
             (day: d.day, totalSleepMin: SleepDebt.creditedSleepMin(
                 mainSleepMin: d.totalSleepMin,

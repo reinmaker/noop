@@ -76,6 +76,36 @@ final class NightNeedTests: XCTestCase {
         XCTAssertEqual(need.needMin, 450 + 7.3 * 8 + need.debtMin, accuracy: 1e-9)
     }
 
+    /// The debt is the latest value of the full Sleep Debt series over the days before the night, whatever
+    /// the history holds: gaps, a day with no sleep, an imported debt for the latest day. (The resolver
+    /// reads only the last 14 nights with sleep, to stay linear on a long history.)
+    @MainActor
+    func testTheDebtMatchesTheFullSeriesOnALongAwkwardHistory() {
+        withYoopScores(true) {
+            var rows: [DailyMetric] = []
+            for i in 0..<120 {
+                let key = WeeklyDigestEngine.addDays("2026-06-01", i)
+                if i % 17 == 5 { continue }                                              // a missing day
+                rows.append(day(key, asleep: i % 11 == 3 ? nil : 330 + Double((i * 29) % 170), strain21: Double(i % 21)))
+            }
+            let importedFigures: [[String: ImportedSleepFigures]] = [
+                [:], ["2026-09-12": ImportedSleepFigures(performancePct: nil, consistencyPct: nil, needMin: nil, debtMin: 77)]]
+            for imported in importedFigures {
+                for wakeDay in ["2026-06-20", "2026-08-01", "2026-09-12", "2026-09-13", "2026-09-27"] {
+                    let prior = rows.filter { $0.day < wakeDay }
+                    let full = SleepModel.sleepDebtSeries(days: prior, importedSleep: imported, napSleepMinByDay: [:]).latest
+                    let need = SleepModel.nightNeed(wakeDay: wakeDay, days: rows, importedSleep: imported)
+                    XCTAssertEqual(need.debtMin, max(0, full ?? 0), "debt for \(wakeDay)")
+                    XCTAssertEqual(need.baselineMin, SleepModel.sleepNeedMin(days: prior), "minimum for \(wakeDay)")
+                    let batch = SleepModel.nightNeeds(days: rows, importedSleep: imported, only: [wakeDay])
+                    if rows.contains(where: { $0.day == wakeDay && ($0.totalSleepMin ?? 0) > 0 }) {
+                        XCTAssertEqual(batch.planned[wakeDay], need, "the batch and the single night agree for \(wakeDay)")
+                    }
+                }
+            }
+        }
+    }
+
     /// The night's own sleep, and anything after it, cannot move its need: the morning resolves the
     /// evening's figure.
     func testOnlyTheDaysBeforeTheNightCount() {
