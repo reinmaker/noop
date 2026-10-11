@@ -1072,6 +1072,9 @@ final class IntelligenceEngine: ObservableObject {
         // time in bed, and one resting HR for the display, Strain, calories and the baseline.
         SleepStager.asleepVitalsEnabled = PuffinExperiment.whoopScoresEnabled
         let asleepVitalsGlobal = SleepStager.asleepVitalsEnabled
+        // Yoop: the night starts where the wearer got into bed, after the walk to it, not at the first stillness.
+        SleepStager.bedtimeFromWalkEnabled = PuffinExperiment.whoopScoresEnabled
+        let bedtimeWalkGlobal = SleepStager.bedtimeFromWalkEnabled
         // Yoop: count steps as the strap's pedometer releases them, and store ACTIVE energy priced from heart
         // rate and steps, with resting energy added where a total is shown.
         StepsCounter.yoopCountingEnabled = PuffinExperiment.whoopScoresEnabled
@@ -1148,6 +1151,7 @@ final class IntelligenceEngine: ObservableObject {
             "\(asleepVitalsGlobal)",
             "\(yoopStepsGlobal)",
             "\(yoopEnergyGlobal)",
+            "\(bedtimeWalkGlobal)",
         ].joined(separator: "|")
         // Drop the whole cache on a config change, then snapshot it into a Sendable `let` for the detached
         // loop (the engine is @MainActor; the loop can't touch `self`). The loop returns the updated cache
