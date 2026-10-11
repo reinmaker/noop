@@ -342,7 +342,8 @@ private struct WhoopOverviewCard<Content: View>: View {
 
 // MARK: - My Day
 
-/// "My Day" header + the gradient "Day In Review" row, which opens the Coach-written review.
+/// "My Day" header + the gradient Coach row: the Daily Outlook (the plan for the day) until 17:00, the Day In
+/// Review from then on, as WHOOP switches them. Each opens the Coach writing it.
 struct WhoopMyDaySection: View {
     @EnvironmentObject private var router: NavRouter
     @EnvironmentObject private var coach: AICoachEngine
@@ -368,20 +369,21 @@ struct WhoopMyDaySection: View {
                 .accessibilityLabel(Text("Add"))
             }
             .padding(.top, NoopMetrics.space2)
-            // WHOOP-style: the Day In Review is a Coach conversation. With the Coach set up, open it and
-            // let the Coach write the review as its first message; otherwise show the setup page.
+            // WHOOP-style: the Outlook and the Review are Coach conversations. With the Coach set up, open it
+            // and let the Coach write one as its first message; otherwise show the setup page.
+            let outlook = Self.isOutlookHour(Calendar.current.component(.hour, from: Date()))
             Button {
                 if coach.isConfigured && coach.dataConsent {
-                    coach.nextOpener = .dayReview
+                    coach.nextOpener = outlook ? .dailyOutlook : .dayReview
                     router.openCoach()
                 } else {
                     showReview = true
                 }
             } label: {
                 HStack(spacing: NoopMetrics.space3) {
-                    Image(systemName: "moon")
+                    Image(systemName: outlook ? "sun.max" : "moon")
                         .font(WhoopStyle.iconLarge)
-                    Text("Your Day In Review")
+                    Text(outlook ? Self.outlookTitle(CoachMemoryStore.shared.firstName) : String(localized: "Your Day In Review"))
                         .font(WhoopStyle.headline)
                     Spacer()
                     Image(systemName: "chevron.right")
@@ -391,11 +393,23 @@ struct WhoopMyDaySection: View {
                 .foregroundStyle(WhoopStyle.onGradient)
                 .padding(.horizontal, NoopMetrics.space4)
                 .padding(.vertical, NoopMetrics.space4)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(WhoopStyle.reviewGradient))
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(outlook ? WhoopStyle.outlookGradient : WhoopStyle.reviewGradient))
             }
             .buttonStyle(.plain)
         }
         .sheet(isPresented: $showReview) { DayInReviewSheet() }
+    }
+
+    /// The hour the row turns from the morning's Daily Outlook to the evening's Day In Review.
+    static let reviewFromHour = 17
+
+    static func isOutlookHour(_ hour: Int) -> Bool { hour < reviewFromHour }
+
+    /// "Daniel's Daily Outlook", or "Your Daily Outlook" before the Coach knows the wearer's name.
+    static func outlookTitle(_ firstName: String) -> String {
+        let name = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? String(localized: "Your Daily Outlook") : String(localized: "\(name)'s Daily Outlook")
     }
 }
 

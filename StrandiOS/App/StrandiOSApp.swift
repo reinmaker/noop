@@ -88,9 +88,13 @@ struct StrandiOSApp: App {
         // K5: tapping a scheduled morning-brief notification routes to Coach via the shared NavRouter.
         let router = NavRouter()
         _router = StateObject(wrappedValue: router)
-        NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
+        // The morning brief is the Daily Outlook: its tap opens the Coach writing the Outlook.
+        NotificationPresenter.shared.onCoachBriefTapped = { [weak router, weak coach = model.coach] in
+            coach?.nextOpener = .dailyOutlook
+            router?.openCoach()
+        }
         // Yoop's WHOOP-style notifications: Day In Review opens the Coach writing the review; check-ins
         // and travel tips open the Coach; the stress summary opens the app on Home.
         NotificationPresenter.shared.onYoopRoute = { [weak router, weak coach = model.coach] route in

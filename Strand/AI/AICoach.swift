@@ -1283,11 +1283,13 @@ final class AICoachEngine: ObservableObject {
         }
     }
 
-    /// A one-shot opener to use instead of the screen opener. Home's "Day In Review" row sets `dayReview`;
+    /// A one-shot opener to use instead of the screen opener. Home's "Day In Review" row sets `dayReview`
+    /// and, in the morning, its "Daily Outlook" row sets `dailyOutlook`;
     /// a score screen's Coach pill that already shows its headline sets `screenSummary`, so the chat opens
     /// with that same analysis instead of asking for a second one.
     enum Opener: Equatable {
         case dayReview
+        case dailyOutlook
         case screenSummary(String, CoachScreen)
     }
     var nextOpener: Opener?
@@ -1373,6 +1375,8 @@ final class AICoachEngine: ObservableObject {
         let instruction: String
         if nextOpener == .dayReview {
             instruction = Self.dayReviewInstruction + " Then the special lines."
+        } else if nextOpener == .dailyOutlook {
+            instruction = Self.dailyOutlookInstruction + " Then the special lines."
         } else {
             instruction = Self.screenOpenerInstruction(currentScreen,
                                                        hour: Calendar.current.component(.hour, from: Date()))
@@ -1571,6 +1575,15 @@ final class AICoachEngine: ObservableObject {
     action for tonight with the physiology behind it, and say when to go to bed and how long to sleep. \
     Keep it under 90 words in two short paragraphs, bold key numbers, at most one \
     emoji, no headings. End with one probing question about my day.
+    """
+
+    private static let dailyOutlookInstruction = """
+    Write my Daily Outlook for today, the way the WHOOP coach does in the morning: start with my name if \
+    you know it and today's readiness verdict from my Recovery with its main driver against my normal \
+    (last night's sleep, HRV, resting HR, yesterday's Strain), then what that means for training today and \
+    today's optimal Strain range and why (backed by my own pattern when there is one), two suggested \
+    activities as one-line bullets with one emoji each, and tonight's sleep target with a bedtime. Under 90 \
+    words, bold key numbers, no headings. End by asking which activity I will do.
     """
 
     /// Generate the Home insight card (non-streaming, never touches the chat transcript).
