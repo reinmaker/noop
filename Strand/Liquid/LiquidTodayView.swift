@@ -1986,7 +1986,7 @@ struct LiquidTodayView: View {
             // The stored Rest series already read above, as the Sleep tab reads it, so the hosted Rest tile
             // states the same score.
             hostedSleepModel = SleepModel.build(SleepModelInputs(
-                days: repo.days,
+                days: repo.strainDays,
                 sleeps: repo.sleeps,
                 allSessions: hostedSessions,
                 importedSleep: repo.importedSleep,

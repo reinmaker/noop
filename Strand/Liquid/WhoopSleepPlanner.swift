@@ -5,7 +5,8 @@ import WhoopStore
 
 /// WHOOP's Sleep Planner arithmetic, fitted to the user's WHOOP export (121 nights; RMSE 26 min on sleep
 /// need): sleep need = the healthy minimum (7:30, or more for a long sleeper) + 7.3 min for each point of
-/// today's Strain above 10 + sleep debt; time in bed = need / the usual sleep efficiency; bedtime = wake
+/// today's Strain above 10 + sleep debt (`SleepModel.nightNeed`, the need the next morning's Hours vs
+/// Needed measures the night against); time in bed = need / the usual sleep efficiency; bedtime = wake
 /// time - time in bed. With an 8:30 alarm this gives WHOOP's own 00:29 for 7 Oct 2026. The wake time is
 /// the alarm when one is set, else the usual wake time of recent nights; the optimal window is the time
 /// in bed centred on the usual middle of the night.
@@ -60,11 +61,6 @@ struct WhoopSleepPlan {
     @MainActor
     static func tonight(repo: Repository, alarm: Date?, now: Date = Date()) -> WhoopSleepPlan {
         let days = repo.days
-        let baseline = SleepModel.sleepNeedMin(days: days)
-        // The day's Strain as the Strain ring shows it, effort ratings included (`Repository.dayStrain`).
-        let strain = days.last.flatMap { repo.dayStrain($0) }.map(AICoachEngine.strain21) ?? 0
-        let debt = SleepModel.sleepDebtSeries(days: days, importedSleep: repo.importedSleep,
-                                              napSleepMinByDay: [:]).latest ?? 0
         let efficiencies = days.suffix(14).compactMap(\.efficiency).filter { $0 > 0.5 && $0 <= 1 }
         let efficiency = min(0.98, max(0.8, median(efficiencies) ?? 0.94))
 
@@ -83,8 +79,12 @@ struct WhoopSleepPlan {
             wake = next(clockMinutes: WindDownNudge.wakeMinutes, after: now)
         }
 
-        let need = baseline + 7.3 * max(0, strain - 10) + max(0, debt)
-        let inBed = need / efficiency
+        // The need of the night ending at `wake`, through the resolver Hours vs Needed measures that night
+        // against the next morning, with each day's Strain as the Strain ring shows it, effort ratings
+        // included (`Repository.strainDays`).
+        let need = SleepModel.nightNeed(wakeDay: Repository.localDayKey(wake), days: repo.strainDays,
+                                        importedSleep: repo.importedSleep)
+        let inBed = need.needMin / efficiency
         // The usual middle of the night on a noon-to-noon clock, placed on the night that ends at `wake`.
         let middles = nights.map { n -> Double in
             let start = clock(n.start)
@@ -96,7 +96,7 @@ struct WhoopSleepPlan {
             let nightNoon = wake < wakeNoon ? (cal.date(byAdding: .day, value: -1, to: wakeNoon) ?? wakeNoon) : wakeNoon
             optimalStart = nightNoon.addingTimeInterval((middle - 720 - inBed / 2) * 60)
         }
-        return WhoopSleepPlan(baselineMin: baseline, strainMin: 7.3 * max(0, strain - 10), debtMin: max(0, debt),
+        return WhoopSleepPlan(baselineMin: need.baselineMin, strainMin: need.strainMin, debtMin: need.debtMin,
                               efficiency: efficiency, wake: wake, wakeIsAlarm: alarm != nil,
                               optimalStart: optimalStart)
     }

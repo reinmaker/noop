@@ -4623,7 +4623,7 @@ struct TodayView: View {
         // The stored Rest series, read as the Sleep tab reads it, so the hosted Rest tile states the same score.
         let hostedRest = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
         hostedSleepModel = SleepModel.build(SleepModelInputs(
-            days: repo.days,
+            days: repo.strainDays,
             sleeps: repo.sleeps,
             allSessions: hostedSessions,
             importedSleep: repo.importedSleep,

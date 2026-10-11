@@ -700,6 +700,23 @@ final class IntelligenceEngine: ObservableObject {
         }
     }
 
+    /// Yoop: set once the recent window has been rescored with each night measured against its own need
+    /// (`SleepModel.nightNeed`).
+    static let nightNeedRescoreFlagKey = "yoop.nightNeedRescore.v1.done"
+
+    /// Yoop: rescores the recent window once after the update that measures each night against the need
+    /// the Sleep Planner set for it, so the stored Sleep Performance Home, Trends and the Coach read is the
+    /// corrected one without waiting for new heart rate (the idle tick skips while the raw streams are
+    /// unchanged). Only with Yoop's scores on; the flag is set once the pass has stored its scores.
+    func runNightNeedRescoreIfNeeded() async {
+        guard PuffinExperiment.whoopScoresEnabled,
+              !UserDefaults.standard.bool(forKey: Self.nightNeedRescoreFlagKey),
+              !computing, !Task.isCancelled, !RescoreBackgroundScheduler.isBackgrounded else { return }
+        await analyzeRecent(triggerLabel: "night-need-rescore") {
+            UserDefaults.standard.set(true, forKey: Self.nightNeedRescoreFlagKey)
+        }
+    }
+
     /// UserDefaults flag guarding the one-shot #547 implausible-timestamp DB heal (below). Set once the
     /// heal completes so it never re-runs.
     static let timestampHealFlagKey = "intelligence.timestampHeal.v547.done"
@@ -2237,11 +2254,10 @@ final class IntelligenceEngine: ObservableObject {
         var appliedLegacySnapshots: [String: LegacyScoreSnapshot] = [:]
         // Yoop: Recovery and Sleep Performance the way WHOOP computes them (`WhoopScores`). Recovery reads
         // the 14 days before each day (imported WHOOP days win, as on the dashboard); Sleep Performance
-        // needs each night's consistency.
+        // needs each night's consistency, and each night's own need (after the loop below).
         let whoopScores = PuffinExperiment.whoopScoresEnabled
         var whoopHistory: [WhoopScores.Inputs] = []
         var whoopConsistency: [String: Double] = [:]
-        let whoopNeedMin = SleepModel.sleepNeedMin(days: repo.days)
         if whoopScores {
             var byDay: [String: WhoopScores.Inputs] = [:]
             for d in scoredNights.map({ $0.daily }) {
@@ -2379,11 +2395,9 @@ final class IntelligenceEngine: ObservableObject {
             // same `night.nightlySkin` the line above takes the deviation from — so the two can never
             // describe different nights, and no second derivation exists to drift.
             dailies.append(daily)
-            let sleepPerformance = whoopScores
-                ? WhoopScores.sleepPerformance(daily: daily, needMin: whoopNeedMin,
-                                               consistency: whoopConsistency[daily.day])
-                : AnalyticsEngine.Rest.composite(daily: daily)
-            if let rest = sleepPerformance {
+            // Yoop's Sleep Performance is scored after this loop, once every night of the pass is in: a
+            // night's need reads the days before it.
+            if !whoopScores, let rest = AnalyticsEngine.Rest.composite(daily: daily) {
                 restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: rest))
             }
             if let onset = physiologicalSteps.onsetByWakeDay[daily.day] {
@@ -2474,6 +2488,23 @@ final class IntelligenceEngine: ObservableObject {
                     diagnosticSink?(WorkoutsTrace.detectedBoutLine(
                         verdict: "analyticsOnly", durMin: durMin, avgBpm: avgBpm), .workouts)
                 }
+            }
+        }
+
+        // Yoop: each night against the need the Sleep Planner set for it (`SleepModel.nightNeeds`), read off
+        // the days as the dashboard will show them once this pass is stored, each day's Strain as the Strain
+        // ring shows it. Home's score and the Sleep screen's Hours vs Needed then resolve one need.
+        if whoopScores {
+            let shownAfterPass = repo.resolvingStrain(Self.daysAfterPass(
+                shown: repo.days, scored: dailies, imported: hist,
+                userEditedDays: Repository.userEditedDays(editedRows)))
+            let needMin = SleepModel.nightNeeds(days: shownAfterPass, importedSleep: repo.importedSleep,
+                                                only: Set(dailies.map(\.day))).needMin
+            for daily in dailies {
+                guard let need = needMin[daily.day],
+                      let score = WhoopScores.sleepPerformance(daily: daily, needMin: need,
+                                                               consistency: whoopConsistency[daily.day]) else { continue }
+                restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: score))
             }
         }
 
@@ -3463,6 +3494,18 @@ final class IntelligenceEngine: ObservableObject {
     static func editedRowsForDay(_ editedRows: [CachedSleepSession], day: String,
                                  tzOffsetSeconds: Int) -> [CachedSleepSession] {
         editedRows.filter { AnalyticsEngine.dayString($0.endTs, offsetSec: tzOffsetSeconds) == day }
+    }
+
+    /// The days as `Repository.days` reads them once a pass is stored, for what a night's need reads:
+    /// `shown` with each day the pass scored merged under its import by `Repository.mergeDaily` itself
+    /// (an import wins field by field; a night the user edited keeps its computed sleep). `nonisolated`:
+    /// a pure function of its arguments.
+    nonisolated static func daysAfterPass(shown: [DailyMetric], scored: [DailyMetric], imported: [DailyMetric],
+                                          userEditedDays: Set<String>) -> [DailyMetric] {
+        let scoredDays = Set(scored.map(\.day))
+        let merged = Repository.mergeDaily(imported: imported.filter { scoredDays.contains($0.day) },
+                                           computed: scored, userEditedDays: userEditedDays)
+        return (shown.filter { !scoredDays.contains($0.day) } + merged).sorted { $0.day < $1.day }
     }
 
     private func sleepEditedDaily(_ daily: DailyMetric, detected: [CachedSleepSession],
