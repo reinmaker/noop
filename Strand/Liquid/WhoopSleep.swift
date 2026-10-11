@@ -6,7 +6,7 @@ import WhoopStore
 
 /// WHOOP-style "Last Night's Sleep" on the Sleep screen: hours asleep against the prior 30 nights with
 /// the night's heart-rate line, each stage against its typical range, restorative sleep, and Hours vs.
-/// Needed broken into the personal need and the sleep debt. All values are NOOP's own for that night;
+/// Needed broken into the parts of the night's need. All values are NOOP's own for that night;
 /// "typical" is the middle half (25th to 75th percentile) of the prior 30 nights.
 struct WhoopLastNightCards: View {
     let night: Night
@@ -442,13 +442,19 @@ struct WhoopLastNightCards: View {
 
     private var hoursVsNeededCard: some View {
         let asleep = asleepMinutes
-        // The same percentage the contributor row above shows (both from the day summary's sleep).
-        let pct = model.hoursVsNeeded.latest
-        let needed = pct.map { $0 > 0 ? asleep / ($0 / 100) : asleep } ?? model.sleepDebtLedger.needMin
-        // WHOOP splits Sleep Needed into a healthy minimum plus sleep debt. The debt is the same figure
-        // the Night detail Sleep Debt tile shows, so the two never disagree.
-        let debt = min(needed, max(0, model.sleepDebt.latest ?? 0))
-        let healthyMin = needed - debt
+        // A need the Sleep Planner set for this night comes with its parts (`SleepModel.nightNeeds`): the
+        // healthy minimum, recent Strain and the sleep debt carried into the night, as the planner showed
+        // them. Otherwise WHOOP splits Sleep Needed into a healthy minimum plus sleep debt, the debt being
+        // the figure the Night detail Sleep Debt tile shows, so the two never disagree.
+        let planned = summary.flatMap { model.nightNeeds[$0.day] }
+        // The same percentage the contributor row above shows (both from the day summary's sleep); for a
+        // planned need, this night's own entry in that series.
+        let pct = planned.map { asleep / $0.needMin * 100 } ?? model.hoursVsNeeded.latest
+        let needed = planned?.needMin
+            ?? pct.map { $0 > 0 ? asleep / ($0 / 100) : asleep } ?? model.sleepDebtLedger.needMin
+        let strain = planned?.strainMin ?? 0
+        let debt = planned?.debtMin ?? min(needed, max(0, model.sleepDebt.latest ?? 0))
+        let healthyMin = planned?.baselineMin ?? needed - debt
         let scale = max(asleep, needed, 1)
 
         return VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -471,6 +477,10 @@ struct WhoopLastNightCards: View {
                 HStack(spacing: 2) {
                     RoundedRectangle(cornerRadius: 4).fill(StrandPalette.textTertiary)
                         .frame(width: w * CGFloat(healthyMin / scale))
+                    if strain > 0 {
+                        RoundedRectangle(cornerRadius: 4).fill(StrandPalette.textSecondary)
+                            .frame(width: max(2, w * CGFloat(strain / scale) - 2))
+                    }
                     if debt > 0 {
                         RoundedRectangle(cornerRadius: 4).fill(StrandPalette.textPrimary)
                             .frame(width: max(2, w * CGFloat(debt / scale) - 2))
@@ -479,6 +489,9 @@ struct WhoopLastNightCards: View {
             }
             VStack(spacing: NoopMetrics.space2) {
                 legendRow(StrandPalette.textTertiary, String(localized: "Healthy Minimum"), Self.hm(healthyMin))
+                if planned != nil {
+                    legendRow(StrandPalette.textSecondary, String(localized: "Recent Strain"), "+" + Self.hm(strain))
+                }
                 legendRow(StrandPalette.textPrimary, String(localized: "Sleep Debt"), "+" + Self.hm(debt))
             }
             .padding(NoopMetrics.space3)

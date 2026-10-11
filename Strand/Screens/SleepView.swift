@@ -1962,7 +1962,7 @@ struct SleepView: View {
     /// nil when there is no usable latest night (renders empty state).
     private func buildModel() -> SleepModel? {
         SleepModel.build(SleepModelInputs(
-            days: repo.days,
+            days: repo.strainDays,
             sleeps: repo.sleeps,
             allSessions: allSessions,
             importedSleep: repo.importedSleep,
