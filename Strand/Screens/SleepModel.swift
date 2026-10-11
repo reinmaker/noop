@@ -206,6 +206,9 @@ struct SleepModel {
     let efficiency: Metric
     let consistency: Metric
     let hoursVsNeeded: Metric
+    /// What each night's need is made of, by the day it ends on, for the nights measured against the
+    /// Sleep Planner's need (`nightNeeds`), so a breakdown beside Hours vs Needed adds up to its need.
+    let nightNeeds: [String: NightNeed]
     let restorative: Metric
     let respiratory: Metric
     let sleepDebt: Metric
@@ -226,7 +229,8 @@ struct SleepModel {
 /// The Sleep tab fills these from its `Repository` + loaded session/motion state; another host can
 /// supply the same fields to get a byte-identical model.
 struct SleepModelInputs {
-    /// The cached per-day metric rows (`Repository.days`).
+    /// The cached per-day metric rows, each day's Strain as the Strain ring shows it
+    /// (`Repository.strainDays`), which a night's need reads (`SleepModel.nightNeed`).
     let days: [DailyMetric]
     /// One-per-night sessions (`Repository.sleeps`) — the `navSessions` fallback and the
     /// consistency bedtime-spread series read this directly.
@@ -244,6 +248,19 @@ struct SleepModelInputs {
     /// (`Repository.exploreSeries`). Wins per day over the figures computed here, so the Sleep screen
     /// states the score Home shows. Empty for a host that does not load it, which keeps its numbers as before.
     var storedPerformance: [String: Double] = [:]
+}
+
+/// What one night's sleep need is made of, in minutes, as the Sleep Planner adds it up
+/// (`SleepModel.nightNeed`).
+struct NightNeed: Equatable {
+    /// The healthy minimum: 7:30, or the usual night for a long sleeper (`SleepModel.sleepNeedMin`).
+    let baselineMin: Double
+    /// What the previous day's Strain adds.
+    let strainMin: Double
+    /// The sleep debt carried into the night.
+    let debtMin: Double
+
+    var needMin: Double { baselineMin + strainMin + debtMin }
 }
 
 // MARK: - Pure derivation pipeline
@@ -434,7 +451,8 @@ extension SleepModel {
     /// Each day's sleep performance %, keyed by day: the stored `sleep_performance` score when `stored`
     /// has the day (the number Home's Rest shows: the engine's score, an imported WHOOP figure winning);
     /// else the imported WHOOP figure when the export carried one; else computed here, WHOOP's formula
-    /// (`WhoopScores`) when that experiment is on and the REAL resolved Rest composite otherwise.
+    /// (`WhoopScores`, against the night's own need, `nightNeeds`) when that experiment is on and the REAL
+    /// resolved Rest composite otherwise.
     static func performanceByDay(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
                                  sleeps: [CachedSleepSession] = [],
                                  stored: [String: Double] = [:]) -> [String: Double] {
@@ -442,7 +460,12 @@ extension SleepModel {
         // Yoop: WHOOP's Sleep Performance (hours vs needed, consistency, efficiency; `WhoopScores`).
         let whoop = PuffinExperiment.whoopScoresEnabled
         let consistency = whoop ? consistencyByWakeDay(sleeps) : [:]
-        let fallbackNeed = sleepNeedMin(days: days)
+        // Only the nights scored here need one: no stored score and no imported figure.
+        let needMin = whoop
+            ? nightNeeds(days: days, importedSleep: imported,
+                         only: Set(days.filter { stored[$0.day] == nil && imported[$0.day]?.performancePct == nil }
+                             .map(\.day))).needMin
+            : [:]
         var out: [String: Double] = [:]
         for d in days {
             let value: Double?
@@ -451,8 +474,9 @@ extension SleepModel {
             } else if let p = imported[d.day]?.performancePct {
                 value = p                                                  // export-verbatim
             } else if whoop {
-                value = WhoopScores.sleepPerformance(daily: d, needMin: imported[d.day]?.needMin ?? fallbackNeed,
-                                                     consistency: consistency[d.day])
+                value = needMin[d.day].flatMap {
+                    WhoopScores.sleepPerformance(daily: d, needMin: $0, consistency: consistency[d.day])
+                }
             } else {
                 value = AnalyticsEngine.Rest.composite(daily: d)           // real resolved Rest composite
             }
@@ -587,17 +611,68 @@ extension SleepModel {
         return (s.effectiveStartTs + Int(first), s.effectiveStartTs + Int(lastEnd))
     }
 
-    /// Hours vs needed % = asleep / need. The imported sleep_need_min wins per day; else the
+    /// Hours vs needed % = asleep / the night's need (`nightNeeds`): the imported sleep_need_min wins per
+    /// day; else, with Yoop's scores on, the need the Sleep Planner set for the night; else the
     /// APPROXIMATE personal-mean need.
     static func hoursVsNeededSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures]) -> Metric {
-        let imported = importedSleep
-        let fallbackNeed = sleepNeedMin(days: days)
-        return metric(days: days) { d in
-            guard let asleep = d.totalSleepMin, asleep > 0 else { return nil }
-            let need = imported[d.day]?.needMin ?? fallbackNeed
-            guard need > 0 else { return nil }
+        hoursVsNeededSeries(days: days, needMin: nightNeeds(days: days, importedSleep: importedSleep).needMin)
+    }
+
+    /// Hours vs needed % against `needMin`, each night's need by the day it ends on.
+    static func hoursVsNeededSeries(days: [DailyMetric], needMin: [String: Double]) -> Metric {
+        metric(days: days) { d in
+            guard let asleep = d.totalSleepMin, asleep > 0, let need = needMin[d.day], need > 0 else { return nil }
             return asleep / need * 100
         }
+    }
+
+    // MARK: One night's sleep need
+
+    /// Minutes of need each point of the previous day's Strain above `needStrainFloor` adds.
+    static let needMinPerStrainPoint = 7.3
+    /// The Strain, on WHOOP's 0-21 axis, above which a day adds to the next night's need.
+    static let needStrainFloor = 10.0
+
+    /// The sleep the night ending on `wakeDay` needs: the one figure the Sleep Planner sets for it that
+    /// evening and Hours vs Needed and Sleep Performance measure it against the next morning. The healthy
+    /// minimum (`sleepNeedMin`) + 7.3 min for each point of the previous day's Strain above 10 + the sleep
+    /// debt carried into the night (`sleepDebtSeries`, latest). It reads only the days before `wakeDay`, so
+    /// the night's own sleep, banked by morning, cannot move it. `days` carry each day's Strain as the
+    /// Strain ring shows it (`Repository.strainDays`, effort ratings included).
+    static func nightNeed(wakeDay: String, days: [DailyMetric],
+                          importedSleep: [String: ImportedSleepFigures]) -> NightNeed {
+        let prior = days.filter { $0.day < wakeDay }
+        let previousDay = WeeklyDigestEngine.addDays(wakeDay, -1)
+        let strain = prior.last { $0.day == previousDay }?.strain
+            .map { UnitFormatter.effortValue($0, scale: .whoop) } ?? 0
+        let debt = sleepDebtSeries(days: prior, importedSleep: importedSleep, napSleepMinByDay: [:]).latest ?? 0
+        return NightNeed(baselineMin: sleepNeedMin(days: prior),
+                         strainMin: needMinPerStrainPoint * Swift.max(0, strain - needStrainFloor),
+                         debtMin: Swift.max(0, debt))
+    }
+
+    /// The need each night with sleep in `days` is measured against, by the day it ends on: WHOOP's own
+    /// (`sleep_need_min`) for an imported night; with Yoop's scores on (`WhoopScores`), the Sleep Planner's
+    /// need for it (`nightNeed`), whose parts `planned` keeps; else the personal-mean `sleepNeedMin`, as
+    /// before. `only`, when given, limits the work to those nights.
+    static func nightNeeds(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
+                           only: Set<String>? = nil) -> (needMin: [String: Double], planned: [String: NightNeed]) {
+        let fallbackNeed = sleepNeedMin(days: days)
+        let plannerNeeds = PuffinExperiment.whoopScoresEnabled
+        var needMin: [String: Double] = [:]
+        var planned: [String: NightNeed] = [:]
+        for d in days where (d.totalSleepMin ?? 0) > 0 && (only.map { $0.contains(d.day) } ?? true) {
+            if let imported = importedSleep[d.day]?.needMin {
+                needMin[d.day] = imported
+            } else if plannerNeeds {
+                let need = nightNeed(wakeDay: d.day, days: days, importedSleep: importedSleep)
+                needMin[d.day] = need.needMin
+                planned[d.day] = need
+            } else {
+                needMin[d.day] = fallbackNeed
+            }
+        }
+        return (needMin, planned)
     }
 
     /// Restorative % = (deep + REM) / asleep — the share of the night that does the work.
@@ -690,6 +765,8 @@ extension SleepModel {
         // Built once and read twice: the Rest tile's series and the Rest hero's per-night lookup.
         let perfByDay = performanceByDay(days: inputs.days, importedSleep: inputs.importedSleep,
                                          sleeps: inputs.sleeps, stored: inputs.storedPerformance)
+        // Resolved once and read twice: the Hours vs Needed series and the breakdown of each night's need.
+        let needs = nightNeeds(days: inputs.days, importedSleep: inputs.importedSleep)
         return SleepModel(
             night: night,
             intervals: night.intervals,
@@ -699,7 +776,8 @@ extension SleepModel {
             performanceByDay: perfByDay,
             efficiency: efficiencySeries(days: inputs.days),
             consistency: consistencySeries(days: inputs.days, sleeps: inputs.sleeps, importedSleep: inputs.importedSleep),
-            hoursVsNeeded: hoursVsNeededSeries(days: inputs.days, importedSleep: inputs.importedSleep),
+            hoursVsNeeded: hoursVsNeededSeries(days: inputs.days, needMin: needs.needMin),
+            nightNeeds: needs.planned,
             restorative: restorativeSeries(days: inputs.days),
             respiratory: respiratorySeries(days: inputs.days),
             sleepDebt: sleepDebtSeries(days: inputs.days, importedSleep: inputs.importedSleep, napSleepMinByDay: napSleepMinByDay),

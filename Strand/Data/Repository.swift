@@ -3644,9 +3644,13 @@ final class Repository: ObservableObject {
 
     /// `days` with each day's Strain from `dayStrain`, for the readers that take a whole series. Display
     /// only: the stored rows never change, so nothing written back can count muscle load twice.
-    var strainDays: [DailyMetric] {
-        guard Self.muscleLoadEnabled else { return days }
-        return strainBook.resolved(days, live: liveDayStrain)
+    var strainDays: [DailyMetric] { resolvingStrain(days) }
+
+    /// `rows` with each day's Strain from `dayStrain`, for a reader holding rows `days` does not have yet
+    /// (the engine's, before it stores them). What it returns is never stored, as with `strainDays`.
+    func resolvingStrain(_ rows: [DailyMetric]) -> [DailyMetric] {
+        guard Self.muscleLoadEnabled else { return rows }
+        return strainBook.resolved(rows, live: liveDayStrain)
     }
 
     // MARK: - Workout detail (read-only helpers, additive) , #410

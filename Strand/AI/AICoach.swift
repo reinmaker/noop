@@ -2069,14 +2069,15 @@ final class AICoachEngine: ObservableObject {
         return "Last night has no Sleep Performance score yet."
     }
 
-    /// The Sleep screen's Hours vs Needed and the sleep need behind it. Called last night's only when it
-    /// is (`carriedFrom` nil); a figure carried from an earlier night is named by that night's date.
+    /// The Sleep screen's Hours vs Needed and the sleep need behind it, that night's own (it moves with the
+    /// Strain of the day before and the debt carried in, `SleepModel.nightNeed`). Called last night's only
+    /// when it is (`carriedFrom` nil); a figure carried from an earlier night is named by that night's date.
     nonisolated static func hoursVsNeededLine(percent: Double, asleepMin: Double, carriedFrom: String?) -> String {
-        let need = String(format: "Sleep need: about %.1fh a night.", asleepMin / (percent / 100) / 60)
         let which = carriedFrom.map { "Last night has no Hours vs Needed yet; for the night ending \($0) it was" }
             ?? "Last night's Hours vs Needed:"
-        return need + " " + which + String(format: " %.0f%% ", percent)
-            + "(quote this percentage as is; it is the figure the Sleep screen shows)."
+        return which + String(format: " %.0f%% ", percent)
+            + "(quote this percentage as is; it is the figure the Sleep screen shows). "
+            + String(format: "That night's sleep need was about %.1fh.", asleepMin / (percent / 100) / 60)
     }
 
     private func dateString(_ ts: Int) -> String {

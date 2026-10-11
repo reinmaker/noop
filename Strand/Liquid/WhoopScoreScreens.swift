@@ -316,7 +316,8 @@ struct WhoopRecoveryScreen: View {
     @State private var storedSleep: [String: Double] = [:]
 
     var body: some View {
-        let shown = WhoopSelectedDay.split(repo.days)
+        // Each day's Strain as the Strain ring shows it, which a night's need reads (`SleepModel.nightNeed`).
+        let shown = WhoopSelectedDay.split(repo.strainDays)
         let days = shown.upTo
         let today = shown.day
         let prior = shown.prior

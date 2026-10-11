@@ -163,8 +163,9 @@ final class AICoachContextGapsTests: XCTestCase {
 
     func testHoursVsNeededIsLastNightsOnlyWhenItIs() {
         XCTAssertEqual(AICoachEngine.hoursVsNeededLine(percent: 92, asleepMin: 441.6, carriedFrom: nil),
-                       "Sleep need: about 8.0h a night. Last night's Hours vs Needed: 92% "
-                       + "(quote this percentage as is; it is the figure the Sleep screen shows).")
+                       "Last night's Hours vs Needed: 92% "
+                       + "(quote this percentage as is; it is the figure the Sleep screen shows). "
+                       + "That night's sleep need was about 8.0h.")
         let carried = AICoachEngine.hoursVsNeededLine(percent: 92, asleepMin: 441.6, carriedFrom: "2026-10-08")
         XCTAssertTrue(carried.contains("for the night ending 2026-10-08 it was 92%"), carried)
         XCTAssertFalse(carried.contains("Last night's"), carried)
