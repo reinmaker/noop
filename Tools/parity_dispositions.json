@@ -380,6 +380,110 @@
       "identity_sha256": "027c8d22f52a9a0a806726c21cef4da1d0e5020f3eed8fa893faedc8aeb1c463",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: the inverse of whoopStrain(load:), public so Yoop can read the load behind a stored Strain and add muscular load to it (whoopStrain is unchanged). The fork ships no Android build, so the Kotlin twin is unchanged."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-file",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift",
+      "identity_sha256": "82dc08922ef7c86ced47fda6c7ae6a68522453d898ee8980c96d1e6b0e65c2cf",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeWalkMergeGapS",
+      "identity_sha256": "3749881d6cb2c281c002ee128a11b4ab9693f748804ddc68d6bd478dee561023",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeMinWalkSeconds",
+      "identity_sha256": "2c4282afceed42d1cb43d0a4ab5403273adaecb079816664f5850fd271fe64e1",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeMaxShiftMin",
+      "identity_sha256": "29b3c1aaca8feae2deb8731d028aa9dc12fc63b4a0fc4ecfcbc2ad0addb0b5b5",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeMinShiftS",
+      "identity_sha256": "ae8becec146a2ca4c685b237ea4d5a9a0fa02be8b0e3650779dd761de4ab25fa",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeMaxLatencyMin",
+      "identity_sha256": "8accfc35c90e8becdd24fc6bb8de7a914a22561071d01d1c77f2fffd988a67c4",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeMinNightMin",
+      "identity_sha256": "43adfcdecdb4ab909a0587467e32e71fbe7a0bc711b1e6e4c52f79d4d3f1bce0",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeReturnGuardMin",
+      "identity_sha256": "0a8fee1bc17527fed769ba11e60d4b797123383096ea64a913cec5883a8f9b7b",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimePostureMaxDeg",
+      "identity_sha256": "590df859de60afda053edf62872b9b22448539c1f107ce8ddc2be9492b2a0259",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeStepGapS",
+      "identity_sha256": "fa53da9813d0c9b571b6ab51c59f2056fb2cff4e29c2cee40543f46ec4f45acc",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::walkBursts/2#1",
+      "identity_sha256": "f399c8711943c1aa34f01354461b36638bc770f0a1bf6edf574ab43e3bded435",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::bedtimeDecision/11#1",
+      "identity_sha256": "3408826b032e467a31d1d789aeefabccf3284ab6cb4ddfdfd39f3f90df426dfa",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+Bedtime.swift::refineBedtime/6#1",
+      "identity_sha256": "6aa1bd589e52492f5fc7a434df510640d33b6c4f46b6ce21d36e19381d5cc2f7",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
     }
   ]
 }
