@@ -3395,9 +3395,19 @@ final class Repository: ObservableObject {
                 // The same session over a corrected span: move the span and keep the type (the user's, or
                 // the guess it already had) and the user's effort rating, so a session is never lost in between.
                 let effort = activityEffortStore.effort(startTs: row.startTs)
+                // A guess that was only "Activity" is made again over the corrected span: the typer has the
+                // whole session's heart rate now, not the minute it first saw.
+                var sport = row.sport
+                if !userTyped.contains(row.startTs), WhoopActivityTyper.isUnnamed(row.sport) {
+                    let history = await activityTypeHistory()
+                    sport = WhoopActivityTyper.guess(avgBpm: Double(bout.avgBpm), maxBpm: Double(bout.peakBpm),
+                                                     durationMin: Double(bout.durationMin),
+                                                     startHour: Self.localHour(bout.startSec),
+                                                     history: history) ?? row.sport
+                }
                 await deleteWorkout(row)
                 dismissDetectedSuggestion(bout)
-                guard await saveDetectedWorkout(bout, sport: row.sport) else { continue }
+                guard await saveDetectedWorkout(bout, sport: sport) else { continue }
                 if let effort { activityEffortStore.set(effort, startTs: bout.startSec) }
                 if userTyped.contains(row.startTs) {
                     userTypedDetectedStarts = userTypedDetectedStarts.filter { $0 != row.startTs } + [bout.startSec]

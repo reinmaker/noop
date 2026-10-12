@@ -8,7 +8,7 @@ import StrandAnalytics
 ///
 /// What counts is set by exercise intensity as a share of heart-rate reserve (resting to the 190 bpm
 /// maximum Strain uses), the ACSM bands: light 30-39 %, moderate 40-59 %. A minute is "active" at 30 %
-/// or more; a bout runs from an active minute through gaps of up to three inactive minutes, lasts at
+/// or more; a bout runs from an active minute through gaps of up to five inactive minutes, lasts at
 /// least 12 minutes with at least 65 % of them active, averages at least 30 %, reaches 50 % in at least
 /// one minute, and may not overlap a saved workout or a sleep. The first cut (+22 / +30 bpm over rest)
 /// added 9 activities in 41 hours, 8 of them everyday walking at 80-91 bpm; this keeps only the one real
@@ -26,14 +26,24 @@ enum WhoopActivityDetector {
     /// at 19:31 (the 19:20 shoot-around sat behind a six-minute break, which this does not bridge).
     static let warmUpMotionG = 0.3
     static let warmUpReachMinutes = 5
-    /// A moving sport (median wrist motion over the bout at least `warmUpMotionG`) ends at its last minute
-    /// with both that motion and heart rate at 40 % of the reserve or more. After the 10 Oct game the user
-    /// walked off at 100-128 bpm with the wrist nearly still (0.1-0.15 g, against 0.4-1.8 g on court), and
-    /// heart rate alone ran the session to 21:10; this ends it at 21:00. Lifting moves the wrist little, so
-    /// its median stays under the bar and its end is left to heart rate.
+    /// A moving sport (median wrist motion over the bout at least `warmUpMotionG`, and at least
+    /// `movingSportShare` of its minutes both moving and at 40 % of the reserve or more) ends at its last
+    /// minute with both that motion and heart rate at 40 % of the reserve or more. After the 10 Oct game the
+    /// user walked off at 100-128 bpm with the wrist nearly still (0.1-0.15 g, against 0.4-1.8 g on court),
+    /// and heart rate alone ran the session to 21:10; this ends it at 21:00. Lifting moves the wrist little
+    /// and works at 90-115 bpm, so it fails the share and its end is left to heart rate: on 12 Oct the
+    /// motion median alone (0.3 g) took a 13:30 to 14:20 lifting session for a moving sport, no minute of it
+    /// reached 40 % with motion, and the bout was cut to its first minute.
     static let cooldownReserveShare = 0.40
+    static let movingSportShare = 0.5
+    /// A cool-down cut that would drop more than this share of the bout's minutes is not believed.
+    static let maxCooldownCutShare = 0.5
     static let minMinutes = 12
-    static let maxGapMinutes = 3
+    /// Rest between sets. Three minutes split the 12 Oct lifting (13:30 to 14:20, four minutes at 80-90 bpm
+    /// after the first set) in two, and the second half alone never reached 50 % of the reserve. Five
+    /// bridges it and still not the six-minute break behind the 10 Oct shoot-around; over every day of the
+    /// user's own heart rate (8 to 12 Oct) the same four sessions are found, none added.
+    static let maxGapMinutes = 5
     static let minActiveShare = 0.65
 
     /// `motion` is the mean gravity-removed motion (g) per minute index (`ts / 60`); empty skips the warm-up.
@@ -80,13 +90,16 @@ enum WhoopActivityDetector {
             // at least 3 of the 5 minutes up to it doing the same, so a brisk step on the walk home is not it.
             var end = last
             let coreMotion = inBout.compactMap { motion[$0] }.sorted()
-            if !coreMotion.isEmpty, coreMotion[coreMotion.count / 2] >= warmUpMotionG {
-                let playing = { (m: Int) -> Bool in
-                    (motion[m] ?? 0) >= warmUpMotionG && mean(m) >= rest + cooldownReserveShare * reserve
+            let playing = { (m: Int) -> Bool in
+                (motion[m] ?? 0) >= warmUpMotionG && mean(m) >= rest + cooldownReserveShare * reserve
+            }
+            if !coreMotion.isEmpty, coreMotion[coreMotion.count / 2] >= warmUpMotionG,
+               Double(inBout.filter(playing).count) / Double(inBout.count) >= movingSportShare {
+                var cut = last
+                while cut > first, !(playing(cut) && ((cut - 4)...cut).filter(playing).count >= 3) {
+                    cut -= 1
                 }
-                while end > first, !(playing(end) && ((end - 4)...end).filter(playing).count >= 3) {
-                    end -= 1
-                }
+                if Double(last - cut) <= maxCooldownCutShare * Double(last - first + 1) { end = cut }
             }
             let length = end - start + 1
             let span = (start * 60)...(end * 60 + 59)
