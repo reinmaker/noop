@@ -85,36 +85,39 @@ private struct WhoopTrendCard: View {
 
 // MARK: - VO₂ Max
 
+/// The VO₂ max page. Its headline is the row's own number, `Vo2Choice.used`, the one figure Home, this page and
+/// WHOOP Age state; what stands behind it (which readings there are, which was chosen, the range) is the same card
+/// WHOOP Age shows.
 struct WhoopVo2MaxScreen: View {
     let figures: WhoopRowFigures
 
     @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var profile: ProfileStore
 
     @State private var trend: [(day: String, value: Double)] = []
-    @State private var estimator: Vo2MaxEstimator?
-    @State private var apple: (day: String, value: Double)?
+    @State private var choice: Vo2Choice?
     @State private var loaded = false
+    @State private var showSettings = false
 
     /// The window of the trend, in days.
     private static let trendDays = 90
-
-    private var latest: (day: String, value: Double)? { trend.last }
 
     var body: some View {
         WhoopDayPage(title: whoopPageTitle(day: figures.day, isToday: figures.isToday)) {
             WhoopPageHero(icon: "lungs", label: String(localized: "VO₂ MAX"),
                           value: figures.value.map { Int($0.rounded()).formatted() } ?? "--",
-                          unit: "ml/kg/min", caption: latestLine)
+                          unit: "ml/kg/min", caption: rangeLine)
             WhoopPageSentence(text: String(localized: "VO₂ max is how much oxygen your body can use at full effort. A higher number means a fitter heart and lungs."))
             WhoopTrendCard(title: String(localized: "LAST 90 DAYS"), points: trend, tint: StrandPalette.chargeColor,
-                           hint: String(localized: "Hold and drag to read a day"),
+                           hint: choice?.source == .appleHealth
+                               ? String(localized: "Apple Health's own readings, before the adjustment")
+                               : String(localized: "Hold and drag to read a day"),
                            readout: { day, value in "\(dateText(day)): \(Int(value.rounded()).formatted())" })
-            if let apple {
-                WhoopPageFigureCard(title: String(localized: "APPLE HEALTH READING"),
-                                    value: Int(apple.value.rounded()).formatted(), unit: "ml/kg/min",
-                                    detail: String(localized: "\(dateText(apple.day)). From your Health data, which measures it a different way, so the two can differ."))
+            if let choice {
+                WhoopAgeVo2Card(vo2: choice, onAddWaist: choice.source == .nes || profile.waistCm > 0 ? nil : { showSettings = true })
             }
-            WhoopPageNote(title: String(localized: "HOW YOUR ESTIMATE IS MADE"), lines: methodLines)
+            WhoopPageNote(title: String(localized: "HOW YOUR ESTIMATE IS MADE"),
+                          lines: [String(localized: "It is an estimate, not a lab test, and VO₂ max is shown as the range it could be.")])
             NavigationLink(value: TabRoute.metric("fitness_age")) {
                 WhoopActionButtonLabel(title: String(localized: "SEE FITNESS AGE TREND"),
                                        systemImage: "chart.line.uptrend.xyaxis")
@@ -125,46 +128,35 @@ struct WhoopVo2MaxScreen: View {
             WhoopCoachPill(screen: .vo2max, figure: figures.value.map { String(Int($0.rounded())) } ?? "")
         }
         .task(id: repo.refreshSeq) { await load() }
+        .sheet(isPresented: $showSettings, onDismiss: { Task { await repo.refresh() } }) {
+            NavigationStack { SettingsView() }
+                #if os(macOS)
+                .frame(width: 900, height: 820)
+                #endif
+        }
     }
 
     private func dateText(_ day: String) -> String {
         WhoopDayFigures.date(of: day)?.formatted(.dateTime.month(.abbreviated).day()) ?? day
     }
 
-    /// Which night the row's number is from: the series' newest point, which can be after the shown day.
-    private var latestLine: String? {
-        latest.map { String(localized: "Latest estimate, \(dateText($0.day))") }
-    }
-
-    private var methodLines: [String] {
-        var lines: [String]
-        switch estimator {
-        case .uth:
-            lines = [String(localized: "Yoop estimates it from your heart rate alone: 15.3 times your estimated maximum heart rate, divided by your resting heart rate. It moves with your resting heart rate, so a lower resting heart rate reads as fitter.")]
-        case .nes:
-            lines = [String(localized: "Yoop estimates it from your age, sex, waist, resting heart rate and how active you are. The model it comes from is typically within 5 to 6 ml/kg/min of a lab test.")]
-        case nil:
-            lines = [String(localized: "Yoop estimates it from your heart rate and your profile.")]
-        }
-        lines.append(String(localized: "It is an estimate, not a lab test. A new one is made each week."))
-        return lines
+    /// The range the headline stands in, under the number.
+    private var rangeLine: String? {
+        choice.map { String(localized: "Range \(WhoopAgeText.vo2Range($0))") }
     }
 
     private func load() async {
-        let all = await repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
-        let since = WhoopDayFigures.dayKeys(endingOn: Repository.localDayKey(Date()), count: Self.trendDays).first ?? ""
-        trend = all.filter { $0.day >= since }.map { (day: $0.day, value: $0.value) }
-        if let last = all.last {
-            let resolved = await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")
-            let point = resolved.points.last { $0.day == last.day } ?? resolved.points.last
-            if let point {
-                let tag = await repo.scoreProvenanceTag(resolvedSource: point.source, day: point.day,
-                                                        metricKey: "vo2max_est")
-                estimator = tag.flatMap { Vo2MaxEstimator(rawValue: $0) }
-            }
+        let resolved = await Vo2Resolver.load(repo: repo, sex: profile.sex)
+        choice = resolved
+        let since = WhoopAge.dayKeys(endingOn: Repository.localDayKey(Date()), count: Self.trendDays).first ?? ""
+        // The trend is the chosen source's own series, so the line and the headline come from the same place.
+        if resolved?.source == .appleHealth {
+            let health = await repo.exploreSeries(key: "vo2max", source: Repository.appleHealthSource)
+            trend = health.filter { $0.day >= since }.map { (day: $0.day, value: $0.value) }
+        } else {
+            let all = await repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
+            trend = all.filter { $0.day >= since }.map { (day: $0.day, value: $0.value) }
         }
-        let health = await repo.exploreSeries(key: "vo2max", source: Repository.appleHealthSource)
-        apple = health.last.flatMap { $0.day >= since ? (day: $0.day, value: $0.value) : nil }
         loaded = true
     }
 }

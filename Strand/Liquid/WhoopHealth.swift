@@ -3,133 +3,412 @@ import StrandAnalytics
 import StrandDesign
 import WhoopStore
 
-/// WHOOP-style top of the Health tab: the age bubble (NOOP's Fitness Age against the wearer's real age),
-/// the Health Monitor grid (five vitals against their personal ranges), the Stress Monitor and the Lab
-/// Book card. NOOP's existing Health sections follow underneath.
-struct WhoopHealthHeader: View {
+// WHOOP-style fork: the pieces of the Health tab and the Health Monitor screen that Home's HEALTH MONITOR card
+// opens. Both read one resolver, `HealthMonitorRule`, so the tally Home states, the rows on the tab and the rows
+// on the screen are the same figures judged by the same rule, against the same 30-day normal Home's rows print.
+
+// MARK: - Words
+
+enum WhoopVitalText {
+    static func title(_ status: HealthMonitorRule.Status) -> String {
+        switch status.vital {
+        case .respiratoryRate: return String(localized: "RESPIRATORY RATE")
+        case .bloodOxygen: return String(localized: "BLOOD OXYGEN")
+        case .restingHr: return String(localized: "RESTING HEART RATE")
+        case .hrv: return String(localized: "HEART RATE VARIABILITY")
+        case .skinTemperature:
+            return status.isDeviation ? String(localized: "SKIN TEMP (FROM BASELINE)") : String(localized: "SKIN TEMP")
+        }
+    }
+
+    static func icon(_ vital: HealthMonitorRule.Vital) -> String {
+        switch vital {
+        case .respiratoryRate: return "lungs"
+        case .bloodOxygen: return "drop"
+        case .restingHr: return "heart"
+        case .hrv: return "waveform.path.ecg"
+        case .skinTemperature: return "thermometer.medium"
+        }
+    }
+
+    private static func number(_ v: Double, _ vital: HealthMonitorRule.Vital, isDeviation: Bool, fahrenheit: Bool) -> String {
+        switch vital {
+        case .hrv, .restingHr, .bloodOxygen: return String(Int(v.rounded()))
+        case .respiratoryRate: return String(format: "%.1f", v)
+        case .skinTemperature:
+            return SkinTempDisplay.numberString(v, kind: isDeviation ? .deviation : .absolute, fahrenheit: fahrenheit, decimals: 1)
+        }
+    }
+
+    static func unit(_ status: HealthMonitorRule.Status, fahrenheit: Bool) -> String {
+        switch status.vital {
+        case .hrv: return "ms"
+        case .restingHr: return "bpm"
+        case .respiratoryRate: return "rpm"
+        case .bloodOxygen: return "%"
+        case .skinTemperature:
+            return SkinTempDisplay.unitSymbol(kind: status.isDeviation ? .deviation : .absolute, fahrenheit: fahrenheit)
+        }
+    }
+
+    static func value(_ status: HealthMonitorRule.Status, fahrenheit: Bool) -> String? {
+        status.value.map { number($0, status.vital, isDeviation: status.isDeviation, fahrenheit: fahrenheit) }
+    }
+
+    /// "62-111": the range around the usual value, in the scale the value is shown in.
+    static func range(_ status: HealthMonitorRule.Status, fahrenheit: Bool) -> String? {
+        guard let r = status.interval else { return nil }
+        let low = number(r.low, status.vital, isDeviation: status.isDeviation, fahrenheit: fahrenheit)
+        let high = number(r.high, status.vital, isDeviation: status.isDeviation, fahrenheit: fahrenheit)
+        return status.isDeviation ? String(localized: "\(low) to \(high)") : "\(low)-\(high)"
+    }
+
+    static func chip(_ verdict: HealthMonitorRule.Verdict, isCurrent: Bool) -> String {
+        guard isCurrent else { return String(localized: "NOT COUNTED") }
+        switch verdict {
+        case .within: return String(localized: "WITHIN RANGE")
+        case .above: return String(localized: "ABOVE RANGE")
+        case .below: return String(localized: "BELOW RANGE")
+        case .learning: return String(localized: "LEARNING")
+        case .noData: return String(localized: "NO DATA")
+        }
+    }
+
+    static func headline(_ h: HealthMonitorRule.Headline) -> String {
+        switch h {
+        case .within: return String(localized: "WITHIN RANGE")
+        case .outOfRange: return String(localized: "OUT OF RANGE")
+        case .learning: return String(localized: "LEARNING YOUR RANGE")
+        case .waiting: return String(localized: "WAITING FOR LAST NIGHT")
+        case .noData: return String(localized: "CALIBRATING")
+        }
+    }
+
+    /// The rule, stated once.
+    static var ruleNote: String {
+        String(localized: "Within range means inside your own usual range: the span your last 30 nights say a new night falls in 19 times in 20. It needs 14 nights. A reading that is not from last night is shown with its date and left out of the count.")
+    }
+
+    static var bloodOxygenNote: String {
+        let floor = "\(Int(HealthMonitorRule.bloodOxygenFloor))%"
+        return String(localized: "Blood oxygen is imported, from a WHOOP export or Apple Health. Your strap does not measure it as a percentage, so it is judged against the usual lower limit of \(floor) instead of your own range.")
+    }
+}
+
+// MARK: - Vital rows
+
+/// HEALTH MONITOR as rows: each vital's value, the range around its 30-day normal and where the value sits.
+struct WhoopVitalsCard: View {
+    let statuses: [HealthMonitorRule.Status]
+    var fahrenheit = false
+    /// Where the blood oxygen reading came from, already worded ("Imported from Apple Health").
+    var bloodOxygenSource: String?
+    let today: String
+    var showsRule = true
+
+    private var headline: HealthMonitorRule.Headline { HealthMonitorRule.headline(statuses) }
+    private var summary: HealthMonitorRule.Summary { HealthMonitorRule.summary(statuses) }
+
+    var body: some View {
+        let allGood = headline == .within
+        let tint = allGood ? WhoopStyle.rangeGreen : (headline == .outOfRange ? WhoopStyle.rangeAmber : StrandPalette.textTertiary)
+        WhoopTitledCard(title: String(localized: "HEALTH MONITOR"), showsChevron: false) {
+            HStack(spacing: NoopMetrics.space3) {
+                Image(systemName: allGood ? "checkmark" : (headline == .outOfRange ? "exclamationmark" : "hourglass"))
+                    .font(WhoopStyle.detail)
+                    .foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(tint.opacity(0.18)))
+                VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
+                    Text(WhoopVitalText.headline(headline)).font(WhoopStyle.smallLabel).foregroundStyle(tint)
+                    if summary.counted > 0 {
+                        let tally = "\(summary.within)/\(summary.counted)"
+                        Text(tally + " " + String(localized: "Metrics"))
+                            .font(WhoopStyle.detail)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(statuses.enumerated()), id: \.element.id) { index, status in
+                    row(status)
+                    if index < statuses.count - 1 { Rectangle().fill(WhoopStyle.cardStroke).frame(height: 1) }
+                }
+            }
+            if showsRule {
+                Text(WhoopVitalText.ruleNote)
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if statuses.contains(where: { $0.vital == .bloodOxygen && $0.value != nil }) {
+                    Text(WhoopVitalText.bloodOxygenNote)
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func row(_ status: HealthMonitorRule.Status) -> some View {
+        let value = WhoopVitalText.value(status, fahrenheit: fahrenheit)
+        let tone = tone(status)
+        let content = HStack(alignment: .center, spacing: NoopMetrics.space3) {
+            Image(systemName: WhoopVitalText.icon(status.vital))
+                .font(WhoopStyle.icon)
+                .foregroundStyle(StrandPalette.textSecondary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
+                Text(WhoopVitalText.title(status))
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(caption(status))
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: NoopMetrics.space1)
+            VStack(alignment: .trailing, spacing: NoopMetrics.space1) {
+                if let value {
+                    HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space1) {
+                        Text(value)
+                            .font(WhoopStyle.number(24))
+                            .foregroundStyle(status.isCurrent ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                        Text(WhoopVitalText.unit(status, fahrenheit: fahrenheit))
+                            .font(WhoopStyle.caption)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                    }
+                } else {
+                    Text("--").font(WhoopStyle.number(24)).foregroundStyle(StrandPalette.textTertiary)
+                }
+                chip(status, tone: tone)
+            }
+        }
+        .padding(.vertical, NoopMetrics.space3)
+        .contentShape(Rectangle())
+        if let route = route(status) {
+            NavigationLink(value: route) { content }.buttonStyle(.plain)
+        } else {
+            content
+        }
+    }
+
+    private func tone(_ status: HealthMonitorRule.Status) -> Color {
+        guard status.isCurrent else { return StrandPalette.textTertiary }
+        switch status.verdict {
+        case .within: return WhoopStyle.rangeGreen
+        case .above, .below: return WhoopStyle.rangeAmber
+        case .learning, .noData: return StrandPalette.textTertiary
+        }
+    }
+
+    private func chip(_ status: HealthMonitorRule.Status, tone: Color) -> some View {
+        HStack(spacing: NoopMetrics.space1) {
+            Circle().fill(tone).frame(width: 7, height: 7)
+            Text(WhoopVitalText.chip(status.verdict, isCurrent: status.isCurrent))
+                .font(WhoopStyle.chevron)
+                .foregroundStyle(StrandPalette.textPrimary)
+        }
+        .padding(.horizontal, NoopMetrics.space2)
+        .padding(.vertical, NoopMetrics.space1)
+        .background(Capsule().fill(WhoopStyle.ringTrack))
+        .opacity(status.value == nil ? 0 : 1)
+    }
+
+    /// The line under the name: the usual range, or why there is none, or where an imported figure is from.
+    private func caption(_ status: HealthMonitorRule.Status) -> String {
+        guard status.value != nil, let day = status.day else { return String(localized: "No reading in the last 7 days") }
+        var parts: [String] = []
+        if !status.isCurrent, let date = WhoopDayFigures.date(of: day) {
+            parts.append(String(localized: "From \(date.formatted(.dateTime.day().month(.abbreviated)))"))
+        }
+        switch status.verdict {
+        case .learning(let nights):
+            parts.append(String(localized: "Learning your range, \(nights) of \(HealthMonitorRule.minNights) nights"))
+        case .within, .above, .below, .noData:
+            if status.vital == .bloodOxygen {
+                if let source = bloodOxygenSource { parts.append(source) }
+            } else if let range = WhoopVitalText.range(status, fahrenheit: fahrenheit) {
+                parts.append(String(localized: "Usual \(range)"))
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func route(_ status: HealthMonitorRule.Status) -> TabRoute? {
+        switch status.vital {
+        case .hrv: return .metric("hrv")
+        case .restingHr: return .metric("rhr")
+        case .respiratoryRate: return .metric("resp_rate")
+        case .skinTemperature: return .metric("skin_temp")
+        case .bloodOxygen:
+            guard let day = status.day, let value = status.value else { return nil }
+            return .bloodOxygen(WhoopRowFigures(day: day, isToday: day == today, value: value))
+        }
+    }
+}
+
+/// The vitals card with its inputs resolved from the repository, for the tab and the screen.
+struct WhoopVitalsSection: View {
     @EnvironmentObject private var repo: Repository
-    @EnvironmentObject private var profile: ProfileStore
-    @EnvironmentObject private var router: NavRouter
-    @State private var fitnessAge: Double?
+    @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
+    @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
+    var showsRule = true
+
+    private var fahrenheit: Bool {
+        UnitPrefs.resolveTemperature(system: UnitSystem(rawValue: unitSystemRaw) ?? .metric, override: temperatureRaw) == .fahrenheit
+    }
+
+    /// Worded like the Blood Oxygen page: where the night's reading came from, by the source the merged day took.
+    private func bloodOxygenSource(_ statuses: [HealthMonitorRule.Status]) -> String? {
+        guard let day = statuses.first(where: { $0.vital == .bloodOxygen })?.day else { return nil }
+        let rows = repo.vitalRows.filter { $0.metric.day == day && $0.metric.spo2Pct != nil }
+        guard let source = rows.min(by: { $0.source.vitalPriority < $1.source.vitalPriority })?.source else { return nil }
+        switch source {
+        case .whoopImport: return String(localized: "Imported from your WHOOP export")
+        case .appleHealth: return String(localized: "Imported from Apple Health")
+        case .noopComputed, .localCache: return String(localized: "Saved on this device")
+        }
+    }
+
+    var body: some View {
+        let today = Repository.logicalDayKey(Date())
+        let statuses = HealthMonitorRule.statuses(days: repo.days, todayKey: today)
+        WhoopVitalsCard(statuses: statuses, fahrenheit: fahrenheit, bloodOxygenSource: bloodOxygenSource(statuses),
+                        today: today, showsRule: showsRule)
+    }
+}
+
+// MARK: - Live heart rate
+
+/// The strap's live heart rate: the spike-filtered figure every screen shows (`AppModel.bpm`), and one plain line
+/// on why there is none. It only reads the stream; the Health Monitor screen is what arms it.
+struct WhoopLiveHeartRateCard: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var live: LiveState
+    /// Opens the Health Monitor screen, where the stream is armed.
+    var opensMonitor = false
+
+    var body: some View {
+        WhoopLiveHeartRateView(bpm: model.bpm, connected: live.connected, opensMonitor: opensMonitor)
+    }
+}
+
+/// The card from its three inputs, so it can be rendered without the strap.
+struct WhoopLiveHeartRateView: View {
+    let bpm: Int?
+    let connected: Bool
+    var opensMonitor = false
+
+    private var line: String {
+        if bpm != nil { return String(localized: "Live from your strap") }
+        if connected {
+            return opensMonitor ? String(localized: "Tap to read your heart rate live") : String(localized: "Reading your heart rate…")
+        }
+        return String(localized: "Device disconnected")
+    }
+
+    var body: some View {
+        let card = VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            HStack {
+                Text("HEART RATE")
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Spacer(minLength: NoopMetrics.space1)
+                if opensMonitor {
+                    Image(systemName: "chevron.right")
+                        .font(WhoopStyle.detail)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
+                Image(systemName: "heart.fill")
+                    .font(WhoopStyle.icon)
+                    .foregroundStyle(StrandPalette.statusCritical)
+                Text(bpm.map(String.init) ?? "--")
+                    .font(WhoopStyle.number(44))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text("BPM")
+                    .font(WhoopStyle.smallLabel)
+                    .foregroundStyle(StrandPalette.textSecondary)
+            }
+            Text(line)
+                .font(WhoopStyle.caption)
+                .foregroundStyle(StrandPalette.textSecondary)
+        }
+        .padding(WhoopStyle.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .whoopCard()
+        if opensMonitor {
+            NavigationLink(value: TabRoute.healthMonitor) { card }.buttonStyle(.plain)
+        } else {
+            card
+        }
+    }
+}
+
+// MARK: - Stress
+
+/// The Stress Monitor chart with Home's 0 to 3 score.
+struct WhoopHealthStressSection: View {
+    @EnvironmentObject private var repo: Repository
     @State private var stress: Double?
 
     var body: some View {
-        VStack(spacing: NoopMetrics.space4) {
-            ageBubble
-            healthMonitor
-            WhoopStressChartCard(currentStress: stress)
-            Button { router.openLabBook() } label: {
-                WhoopTitledCard(title: String(localized: "LAB BOOK")) {
-                    Text("Keep your blood tests and lab results next to your strap data.")
-                        .font(WhoopStyle.body)
-                        .foregroundStyle(StrandPalette.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+        WhoopStressChartCard(currentStress: stress)
+            .task(id: repo.refreshSeq) {
+                // The same 0-3 score Home's Stress Monitor shows.
+                let stored = await repo.series(key: "stress", source: "my-whoop")
+                stress = StressModel(days: repo.days, stored: stored)?.score
             }
-            .buttonStyle(.plain)
-        }
-        .task(id: repo.refreshSeq) {
-            fitnessAge = (await repo.exploreSeries(key: "fitness_age", source: "my-whoop")).last?.value
-            // The same 0-3 score Home's Stress Monitor shows.
-            let stored = await repo.series(key: "stress", source: "my-whoop")
-            stress = StressModel(days: repo.days, stored: stored)?.score
-        }
     }
+}
 
-    // MARK: Age bubble
+// MARK: - WHOOP Age on the tab
 
-    private var ageBubble: some View {
-        let realAge = profile.age
-        let difference = fitnessAge.map { Double(realAge) - $0 }
-        return VStack(spacing: NoopMetrics.space2) {
-            ZStack {
-                Circle()
-                    .fill(RadialGradient(colors: [WhoopStyle.rangeGreen.opacity(0.55), WhoopStyle.rangeGreen.opacity(0.08)],
-                                         center: .center, startRadius: 10, endRadius: 120))
-                Circle().strokeBorder(WhoopStyle.rangeGreen.opacity(0.7), lineWidth: 2)
-                VStack(spacing: NoopMetrics.space1) {
-                    Text(fitnessAge.map { String(format: "%.1f", $0) } ?? "—")
-                        .font(WhoopStyle.number(48))
-                        .foregroundStyle(StrandPalette.textPrimary)
-                    Text("FITNESS AGE")
-                        .font(WhoopStyle.smallLabel)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                    if let difference, realAge > 0 {
-                        Text(difference >= 0
-                             ? String(localized: "\(String(format: "%.1f", difference)) years younger")
-                             : String(localized: "\(String(format: "%.1f", -difference)) years older"))
-                            .font(WhoopStyle.detail)
-                            .foregroundStyle(difference >= 0 ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
+/// The Health tab's headline: WHOOP Age against the calendar age, with Pace of Aging, opening the full page.
+struct WhoopAgeHealthCard: View {
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var profile: ProfileStore
+    @State private var snapshot: WhoopAgeSnapshot?
+
+    var body: some View {
+        WhoopAgeHealthCardContent(snapshot: snapshot, calendarAge: profile.age)
+            .task(id: repo.refreshSeq) {
+                snapshot = await WhoopAgeLoader.load(repo: repo, age: Double(profile.age), sex: profile.sex)
+            }
+    }
+}
+
+/// The card from a snapshot alone, so it can be rendered without a repository.
+struct WhoopAgeHealthCardContent: View {
+    let snapshot: WhoopAgeSnapshot?
+    let calendarAge: Int
+
+    var body: some View {
+        NavigationLink(value: TabRoute.whoopAge) {
+            VStack(spacing: NoopMetrics.space3) {
+                WhoopAgeBubble(snapshot: snapshot, diameter: 200)
+                WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge)
+                if let pace = snapshot?.pace, snapshot?.isUnlocked == true {
+                    HStack(spacing: NoopMetrics.space2) {
+                        Text("PACE OF AGING").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textSecondary)
+                        Text(WhoopAgeText.paceNumber(pace)).font(WhoopStyle.number(20)).foregroundStyle(StrandPalette.textPrimary)
+                        Text(WhoopAgeText.paceWord(WhoopAge.paceState(pace)))
+                            .font(WhoopStyle.smallLabel)
+                            .foregroundStyle(WhoopAge.paceState(pace) == .accelerated ? WhoopStyle.rangeAmber : WhoopStyle.rangeGreen)
                     }
                 }
+                WhoopActionButtonLabel(title: String(localized: "SEE WHOOP AGE"), systemImage: "chart.line.uptrend.xyaxis")
             }
-            .frame(width: 230, height: 230)
-            NavigationLink(value: TabRoute.metric("fitness_age")) {
-                WhoopActionButtonLabel(title: String(localized: "SEE FITNESS AGE TREND"), systemImage: "chart.line.uptrend.xyaxis")
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.top, NoopMetrics.space2)
-    }
-
-    // MARK: Health Monitor grid
-
-    private struct VitalCell: Identifiable {
-        let key: String
-        let label: String
-        let icon: String
-        var id: String { key }
-    }
-
-    private static let gridOrder = [
-        VitalCell(key: "resp", label: "RESP", icon: "lungs"), VitalCell(key: "spo2", label: "SPO₂", icon: "drop"),
-        VitalCell(key: "rhr", label: "RHR", icon: "heart"), VitalCell(key: "hrv", label: "HRV", icon: "waveform.path.ecg"),
-        VitalCell(key: "skin", label: "TEMP", icon: "thermometer.medium"),
-    ]
-
-    private var healthMonitor: some View {
-        let readings = BodyVitalSigns.readings(days: repo.days, today: nil, temperatureUnit: .celsius,
-                                               skinTempPreferred: .deviation)
-        let byKey = Dictionary(readings.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        let measured = Self.gridOrder.compactMap { byKey[$0.key] }.filter { $0.banding.band != .noData }
-        let inRange = measured.filter { $0.banding.band == .inRange }.count
-
-        return NavigationLink(value: TabRoute.healthMonitor) {
-            WhoopTitledCard(title: String(localized: "HEALTH MONITOR")) {
-                HStack(spacing: 0) {
-                    ForEach(Self.gridOrder) { item in
-                        let band = byKey[item.key]?.banding.band ?? .noData
-                        VStack(spacing: NoopMetrics.space2) {
-                            Image(systemName: item.icon)
-                                .font(WhoopStyle.icon)
-                                .foregroundStyle(StrandPalette.textSecondary)
-                            Text(item.label)
-                                .font(WhoopStyle.smallLabel)
-                                .foregroundStyle(StrandPalette.textPrimary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                            Image(systemName: band == .inRange ? "checkmark" : (band == .noData ? "minus" : "exclamationmark"))
-                                .font(WhoopStyle.chevron)
-                                .foregroundStyle(band == .inRange ? WhoopStyle.rangeGreen
-                                                 : (band == .noData ? StrandPalette.textTertiary : WhoopStyle.rangeAmber))
-                                .frame(width: 22, height: 22)
-                                .background(RoundedRectangle(cornerRadius: 5).fill(WhoopStyle.ringTrack))
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                HStack(spacing: NoopMetrics.space2) {
-                    Image(systemName: measured.count == inRange && !measured.isEmpty ? "checkmark.square.fill" : "exclamationmark.square.fill")
-                        .foregroundStyle(measured.count == inRange && !measured.isEmpty ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
-                    Text(measured.isEmpty ? String(localized: "Calibrating: wear your strap tonight")
-                         : String(localized: "\(inRange)/\(measured.count) metrics within range"))
-                        .font(WhoopStyle.body)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                    Spacer()
-                }
-                .padding(NoopMetrics.space3)
-                .background(RoundedRectangle(cornerRadius: 10).fill(WhoopStyle.ringTrack.opacity(0.6)))
-            }
+            .frame(maxWidth: .infinity)
+            .padding(WhoopStyle.cardPadding)
+            .whoopCard()
         }
         .buttonStyle(.plain)
     }
@@ -137,51 +416,17 @@ struct WhoopHealthHeader: View {
 
 // MARK: - Health Monitor screen
 
-/// WHOOP's Health Monitor screen: live heart rate from the strap, then the five overnight vitals, each
-/// with last night's value and whether it sits within the user's own range. Skin temperature is shown
-/// from baseline, as WHOOP does.
+/// WHOOP's Health Monitor screen: the strap's live heart rate, then the vitals with last night's value and where it
+/// sits in the wearer's own range. The same rows as the Health tab.
 struct WhoopHealthMonitorScreen: View {
-    @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveState
 
-    private struct Tile: Identifiable {
-        let key: String
-        let title: String
-        let icon: String
-        var id: String { key }
-    }
-
-    private static let tiles: [Tile] = [
-        Tile(key: "resp", title: String(localized: "RESPIRATORY RATE"), icon: "lungs"),
-        Tile(key: "spo2", title: String(localized: "BLOOD OXYGEN (SPO₂)"), icon: "drop"),
-        Tile(key: "rhr", title: String(localized: "RHR"), icon: "heart"),
-        Tile(key: "hrv", title: String(localized: "HRV"), icon: "waveform.path.ecg"),
-        Tile(key: "skin", title: String(localized: "SKIN TEMP (FROM BASELINE)"), icon: "thermometer.medium"),
-    ]
-
-    /// Skin temperature reads "from baseline" only when the value shown IS the deviation; a night that
-    /// has only its absolute temperature says plain "SKIN TEMP".
-    private static func titled(_ tile: Tile, reading: BodyVitalReading?) -> Tile {
-        guard tile.key == "skin", let reading,
-              reading.unit != SkinTempDisplay.unitSymbol(kind: .deviation, fahrenheit: false) else { return tile }
-        return Tile(key: tile.key, title: String(localized: "SKIN TEMP"), icon: tile.icon)
-    }
-
     var body: some View {
-        let readings = BodyVitalSigns.readings(days: repo.days, today: nil, temperatureUnit: .celsius,
-                                               skinTempPreferred: .deviation)
-        let byKey = Dictionary(readings.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         ScrollView {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
-                liveHeartRate
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: NoopMetrics.space3),
-                                    GridItem(.flexible(), spacing: NoopMetrics.space3)],
-                          spacing: NoopMetrics.space3) {
-                    ForEach(Self.tiles) { tile in
-                        vitalTile(Self.titled(tile, reading: byKey[tile.key]), reading: byKey[tile.key])
-                    }
-                }
+                WhoopLiveHeartRateCard()
+                WhoopVitalsSection()
             }
             .padding(.horizontal, NoopMetrics.space4)
             .padding(.vertical, NoopMetrics.space4)
@@ -198,89 +443,4 @@ struct WhoopHealthMonitorScreen: View {
         // A new connection must be re-armed; the count is unchanged.
         .onChangeCompat(of: live.bonded) { _ in model.rearmRealtimeIfWanted() }
     }
-
-    private var liveHeartRate: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-            Text("HEART RATE")
-                .font(WhoopStyle.smallLabel)
-                .foregroundStyle(StrandPalette.textPrimary)
-            HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
-                Image(systemName: "heart.fill")
-                    .font(WhoopStyle.icon)
-                    .foregroundStyle(StrandPalette.statusCritical)
-                Text(model.bpm.map(String.init) ?? "--")
-                    .font(WhoopStyle.number(44))
-                    .foregroundStyle(StrandPalette.textPrimary)
-                Text("BPM")
-                    .font(WhoopStyle.smallLabel)
-                    .foregroundStyle(StrandPalette.textSecondary)
-            }
-            Text(model.bpm != nil ? String(localized: "Live from your strap")
-                 : (live.connected ? String(localized: "Reading your heart rate…") : String(localized: "Device disconnected")))
-                .font(WhoopStyle.caption)
-                .foregroundStyle(StrandPalette.textSecondary)
-        }
-        .padding(WhoopStyle.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .whoopCard()
-    }
-
-    private func vitalTile(_ tile: Tile, reading: BodyVitalReading?) -> some View {
-        let band = reading?.banding.band ?? .noData
-        let status: String
-        let color: Color
-        switch band {
-        case .inRange:
-            status = String(localized: "Within range")
-            color = WhoopStyle.rangeGreen
-        case .outOfRange:
-            status = String(localized: "Out of range")
-            color = WhoopStyle.rangeAmber
-        case .noData:
-            status = String(localized: "No data")
-            color = StrandPalette.textTertiary
-        }
-        return VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            HStack(alignment: .top, spacing: NoopMetrics.space2) {
-                Image(systemName: tile.icon)
-                    .font(WhoopStyle.detail)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                Text(tile.title)
-                    .font(WhoopStyle.smallLabel)
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text(reading?.formattedValue ?? "--")
-                .font(WhoopStyle.number(28))
-                .foregroundStyle(StrandPalette.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            HStack(spacing: NoopMetrics.space1) {
-                Circle().fill(color).frame(width: 7, height: 7)
-                Text(status)
-                    .font(WhoopStyle.caption)
-                    .foregroundStyle(StrandPalette.textPrimary)
-            }
-            .padding(.horizontal, NoopMetrics.space2)
-            .padding(.vertical, NoopMetrics.space1)
-            .background(Capsule().fill(WhoopStyle.ringTrack))
-            // A value carried from an earlier day (a missed night, or a reading this strap does not take,
-            // such as blood oxygen from a WHOOP import) says which day it is from.
-            if let day = reading?.day, day != Repository.logicalDayKey(Date()), let date = Self.dayParser.date(from: day) {
-                Text(String(localized: "From \(date.formatted(.dateTime.day().month(.abbreviated)))"))
-                    .font(WhoopStyle.caption)
-                    .foregroundStyle(StrandPalette.textTertiary)
-            }
-        }
-        .padding(WhoopStyle.cardPadding)
-        .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
-        .whoopCard()
-    }
-
-    private static let dayParser: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 }

@@ -40,6 +40,8 @@ enum TabRoute: Hashable {
     case strain
     /// WHOOP's Health Monitor: live heart rate and the five overnight vitals against their range.
     case healthMonitor
+    /// WHOOP Age and Pace of Aging (Yoop's estimate on WHOOP's published Healthspan method).
+    case whoopAge
     /// WHOOP's Sleep Planner: when to get in bed for tonight's sleep need and the wake time.
     case sleepPlanner
     /// One activity's WHOOP-style page, from Home's ACTIVITIES card.
@@ -92,6 +94,7 @@ extension View {
             case .recovery: WhoopRecoveryScreen()
             case .strain: WhoopStrainScreen()
             case .healthMonitor: WhoopHealthMonitorScreen()
+            case .whoopAge: WhoopAgeScreen()
             case .sleepPlanner: WhoopSleepPlannerScreen()
             case .activity(let route): WhoopActivityScreen(row: route.row)
             case .steps(let figures): WhoopStepsScreen(figures: figures)
