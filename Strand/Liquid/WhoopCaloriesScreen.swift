@@ -275,6 +275,7 @@ struct WhoopCaloriesScreen: View {
             return [String(localized: "This is your strap's heart-rate estimate for the whole day, resting and active energy together. It is not a lab measurement.")]
         }
         var lines = [String(localized: "Active energy is worked out minute by minute from your steps and heart rate. A minute of walking is priced by its steps, and a minute of harder effort by your heart rate.")]
+        lines.append(String(localized: "During a strength session the strap's step counter follows your arm movement, so those minutes are priced by heart rate, never as walking."))
         lines.append(String(localized: "Basal energy is the energy your body uses at rest, estimated from your age, height, weight and sex (Mifflin-St Jeor), over the hours of this day."))
         lines.append(String(localized: "Both are estimates, not lab measurements."))
         return lines
@@ -295,10 +296,12 @@ struct WhoopCaloriesScreen: View {
         guard splitsEnergy, active != nil else { return }
 
         let sleeps = repo.sleeps
+        let logged = await repo.workoutRows(days: 4000)
         let steps = await WhoopDayMinutes.steps(repo: repo, profile: profile, from: from, to: toExclusive)
         guard let energy = await WhoopDayMinutes.activeKcal(repo: repo, profile: profile, day: figures.day,
                                                             from: from, to: toExclusive,
-                                                            stepsByMinute: steps?.perMinute ?? [:]) else {
+                                                            stepsByMinute: steps?.perMinute ?? [:],
+                                                            workouts: logged) else {
             breakdown = nil
             return
         }
@@ -308,7 +311,7 @@ struct WhoopCaloriesScreen: View {
         let counted = Int(byMinute.keys.sorted().reduce(0.0) { $0 + (byMinute[$1] ?? 0) }.rounded())
         let hours = WhoopHourly.split(valueByMinute: byMinute, from: from, toExclusive: toExclusive, total: counted,
                                       asleep: sleeps.map { (start: $0.effectiveStartTs, end: $0.endTs) })
-        let rows = (await repo.workoutRows(days: 4000))
+        let rows = logged
             .filter { $0.startTs >= from && $0.startTs < toExclusive }
             .sorted { $0.startTs < $1.startTs }
         let shares = WhoopHourly.shares(valueByMinute: byMinute,

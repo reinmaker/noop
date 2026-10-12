@@ -283,8 +283,13 @@ import WhoopStore
             // Yoop: the cycle's energy from its heart rate and the minute ticks the step count accepted.
             // Resting covers the whole window, onset to its end (or now for the open cycle).
             let energyRHR = energyRestingHRByDay[day] ?? restingHR
+            // Yoop: the minutes of a logged strength session are priced by heart rate alone, since the strap's
+            // step counter ticks with arm motion in one (`WhoopDayMinutes`, which the pages price by too).
+            let strengthWindows = WhoopDayMinutes.strengthWindows(workouts: workouts, from: window.onset,
+                                                                 to: window.endExclusive)
+            let strengthKey = strengthWindows.map { "\($0.start)-\($0.end)" }.joined(separator: ",")
             let yoopEnergyFor: ([Int: Int], String) async -> Calories.DayEnergyEstimate? = { ticks, stepKey in
-                let energyKey = "\(loadKey)|steps=\(stepKey)|energyRHR=\(energyRHR)"
+                let energyKey = "\(loadKey)|steps=\(stepKey)|energyRHR=\(energyRHR)|strength=\(strengthKey)"
                 if let hit = cache.energies[window.sleepId], hit.key == energyKey, !hrUnread { return hit.energy }
                 let cycleHR: [HRSample]
                 if let readHR { cycleHR = readHR } else { cycleHR = await readCycleHR() }
@@ -293,7 +298,8 @@ import WhoopStore
                 let energy = Calories.estimateYoopDayEnergy(
                     cycleHR, stepsByMinute: ticks.mapValues { Double($0) / perStep },
                     windowSeconds: window.endExclusive - window.onset, profile: profile,
-                    hrmax: effectiveMaxHR, restingHR: energyRHR)
+                    hrmax: effectiveMaxHR, restingHR: energyRHR,
+                    heartPricedMinutes: WhoopDayMinutes.heartPricedMinutes(strengthWindows))
                 cache.energies[window.sleepId] = CachedEnergy(key: energyKey, energy: energy)
                 return energy
             }
@@ -364,7 +370,7 @@ import WhoopStore
                     calories[day] = energy.activeKcal
                     trace?("energyCycle wakeDay=\(day) windowS=\(window.endExclusive - window.onset) "
                         + "restingHR=\(energyRHR) restingKcal=\(Int(energy.restingKcal.rounded())) "
-                        + "activeKcal=\(Int(energy.activeKcal.rounded()))")
+                        + "activeKcal=\(Int(energy.activeKcal.rounded())) strengthWindows=\(strengthWindows.count)")
                 }
             }
             guard let result = cached, result.evaluated else { continue }

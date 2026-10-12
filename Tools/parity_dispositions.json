@@ -328,10 +328,10 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
-      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::estimateYoopDayEnergy/6#1",
-      "identity_sha256": "6b7dcf4e7f277616035c194c765bac84d041647ee7c0e40907cac2a8d2068ddc",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::estimateYoopDayEnergy/7#1",
+      "identity_sha256": "af07b5abdc4eb02b7250487e9abcb7568179e371034eff65b7991ddccc386fc2",
       "platform": "swift",
-      "rationale": "Yoop fork, iOS only: the day's energy split into resting (Mifflin-St Jeor BMR over the whole day window) and active (steps priced by the ACSM walking cost, other minutes by Keytel above an HR-flex point), called only when Calories.yoopEnergyEnabled is set (default off, so NOOP's stored total is unchanged). The fork ships no Android build, so there is no Kotlin twin."
+      "rationale": "Yoop fork, iOS only: the day's energy split into resting (Mifflin-St Jeor BMR over the whole day window) and active (steps priced by the ACSM walking cost, other minutes by Keytel above an HR-flex point), called only when Calories.yoopEnergyEnabled is set (default off, so NOOP's stored total is unchanged); heartPricedMinutes (default empty, byte-identical when empty) prices the minutes of a logged strength session by heart rate alone. The fork ships no Android build, so there is no Kotlin twin."
     },
     {
       "type": "platform_specific",
@@ -488,10 +488,10 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
-      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalByMinute/5#1",
-      "identity_sha256": "8e7065aff23f43cd9698cbb002d5e2afe7646cba8c911b779f04c8dec6db0fe8",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalByMinute/6#1",
+      "identity_sha256": "ed3405f931f325f82d854dcf074927a399be00e3186458c0768e43d8fa44cbe0",
       "platform": "swift",
-      "rationale": "Yoop fork, iOS only: the minute-by-minute active energy that estimateYoopDayEnergy sums, so the Calories page can split the day by hour and by activity and every split adds up to the day's active energy. estimateYoopDayEnergy now sums this function's result in minute order, so its figure is unchanged. The fork ships no Android build, so there is no Kotlin twin."
+      "rationale": "Yoop fork, iOS only: the minute-by-minute active energy that estimateYoopDayEnergy sums, so the Calories page can split the day by hour and by activity and every split adds up to the day's active energy. estimateYoopDayEnergy now sums this function's result in minute order, so its figure is unchanged; heartPricedMinutes (default empty, byte-identical when empty) prices the minutes of a logged strength session by heart rate alone, never as walking. The fork ships no Android build, so there is no Kotlin twin."
     }
   ]
 }

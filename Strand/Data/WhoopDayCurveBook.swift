@@ -79,6 +79,7 @@ final class WhoopDayCurveBook {
                                  uniquingKeysWith: { _, last in last })
         let primary = Dictionary((await repo.exploreSeries(key: "rhr_primary_session", source: "my-whoop"))
             .map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
+        let logged = await repo.workoutRows(days: 4000)
         var changed = false
         for row in rows {
             let window = WhoopDayFigures.window(day: row.day, markers: markers)
@@ -92,7 +93,7 @@ final class WhoopDayCurveBook {
                 energy = await WhoopDayMinutes.activeKcal(repo: repo, profile: profile, day: row.day,
                                                           from: window.from, to: window.to,
                                                           stepsByMinute: steps?.perMinute ?? [:],
-                                                          primaryResting: primary)
+                                                          primaryResting: primary, workouts: logged)
             }
             let recordedFromStart = { (first: Int?) -> Bool in
                 first.map { $0 - window.from <= 3_600 } ?? false
