@@ -76,6 +76,14 @@ enum WhoopActivityDetector {
                 }
                 j += 1
             }
+            // A bout does not end on a lone active minute set apart by two quiet ones: on 12 Oct one minute at
+            // 93 bpm (the bar is 92) three minutes after the last set kept a lifting session running to 14:28
+            // when its last working minute was 14:23.
+            while last > first, mean(last - 1) < threshold, mean(last - 2) < threshold,
+                  let previous = minutes.last(where: { $0 < last && mean($0) >= threshold }) {
+                last = previous
+                active -= 1
+            }
             let inBout = minutes.filter { $0 >= first && $0 <= last }
             // The warm-up: walk back from the first active minute over exercise-like motion.
             var start = first
