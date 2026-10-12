@@ -13,6 +13,9 @@ import WhoopStore
 /// analysed a second time; only a pill with no headline yet leaves the Coach to write its own opener.
 struct WhoopCoachPill: View {
     let screen: AICoachEngine.CoachScreen
+    /// The figure the screen's headline states, so a new figure writes a new headline rather than reusing
+    /// one cached for the old number. Empty for the score screens, whose key already follows their scores.
+    var figure: String = ""
 
     @EnvironmentObject private var coach: AICoachEngine
     @EnvironmentObject private var repo: Repository
@@ -30,6 +33,7 @@ struct WhoopCoachPill: View {
         parts.append(recovery.map { String(Int($0)) } ?? "")
         parts.append(sleep.map { String(Int($0)) } ?? "")
         parts.append(strain.map { String(Int($0)) } ?? "")
+        if !figure.isEmpty { parts.append(figure) }
         return "whoopStyle.pill2." + screen.rawValue + "." + parts.joined(separator: "|")
     }
 

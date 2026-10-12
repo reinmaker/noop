@@ -70,6 +70,7 @@ struct LiquidTodayView: View {
     @State private var appleStepsByDay: [String: Double] = [:]   // Apple Health steps per day, for averages
     @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
     @State private var dayWindowSeconds: Int?      // Yoop: the shown day's window, onset to its end or now
+    @State private var dayWindowFrom: Int?         // Yoop: the shown day's window start (epoch s), handed to the dashboard pages
     @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     /// Line identity for [hrValues], from the bucket timestamps this used to discard (#2082).
@@ -762,6 +763,7 @@ struct LiquidTodayView: View {
             WhoopDashboardSection(today: displayDay, days: repo.days, steps: stepCount,
                                   calories: caloriesCount, vo2max: vo2max, appleStepsByDay: appleStepsByDay,
                                   totalCalories: totalCaloriesCount, basalKcalPerDay: basalKcalPerDay,
+                                  windowFrom: dayWindowFrom, windowSeconds: dayWindowSeconds, isToday: true,
                                   onCustomize: { customizationDestination = .today })
             WhoopStressChartCard(currentStress: stress)
             WhoopStrainRecoveryCard(days: repo.strainDays)
@@ -778,6 +780,7 @@ struct LiquidTodayView: View {
             WhoopDashboardSection(today: displayDay, days: daysToShown, steps: stepCount,
                                   calories: caloriesCount, vo2max: vo2max, appleStepsByDay: appleStepsByDay,
                                   totalCalories: totalCaloriesCount, basalKcalPerDay: basalKcalPerDay,
+                                  windowFrom: dayWindowFrom, windowSeconds: dayWindowSeconds, isToday: false,
                                   onCustomize: { customizationDestination = .today })
             WhoopStrainRecoveryCard(days: daysToShown)
         }
@@ -1785,6 +1788,7 @@ struct LiquidTodayView: View {
         let toExclusive = cycleMarkers.last(where: { $0.day == nextDayKey }).map { Int($0.value) } ?? calendarTo
         let to = max(from, toExclusive - 1)
         dayWindowSeconds = max(0, toExclusive - from)
+        dayWindowFrom = from
         // #1001: in-progress Effort for TODAY, over the SAME window resolved just above (the day-cycle
         // onset when that mode is on, else calendar midnight → now) with the identical params the daily
         // pass uses, so the live number matches what the engine will eventually persist. Below
@@ -2104,7 +2108,7 @@ struct LiquidTodayView: View {
     // day, the phone only when carried. The detail routing follows the same order, so the tapped-through
     // source always matches the number shown (#377).
     private var stepCount: Double? {
-        displayDay?.steps.map(Double.init) ?? importedStepsDay.map(Double.init) ?? stepsEst
+        WhoopDayFigures.steps(strap: displayDay?.steps, phone: importedStepsDay, estimate: stepsEst)?.value
     }
 
     private var stepsDetailMetric: MetricDescriptor? {

@@ -906,6 +906,22 @@ public enum Calories {
     public static func estimateYoopDayEnergy(_ hrSamples: [HRSample], stepsByMinute: [Int: Double],
                                              windowSeconds: Int, profile: UserProfile, hrmax: Double?,
                                              restingHR: Double?) -> DayEnergyEstimate {
+        let byMinute = yoopActiveKcalByMinute(hrSamples, stepsByMinute: stepsByMinute, profile: profile,
+                                              hrmax: hrmax, restingHR: restingHR)
+        // Summed in minute order, the order the day's active energy has always been summed in.
+        let activeKcal = byMinute.keys.sorted().reduce(0.0) { $0 + (byMinute[$1] ?? 0) }
+        let bmrPerS = mifflinStJeorKcalPerDay(profile) / 86_400.0
+        let window = Double(max(0, windowSeconds))
+        return DayEnergyEstimate(restingKcal: bmrPerS * window, activeKcal: activeKcal, observedSeconds: window)
+    }
+
+    /// Yoop: the active energy `estimateYoopDayEnergy` stores for a day, minute by minute (`ts / 60`),
+    /// priced as that function documents. The day's `activeKcal` is exactly these values summed in minute
+    /// order, so a screen that splits the day by hour or by activity states a split that adds up to the
+    /// number the day carries. `stepsByMinute` holds steps, already divided by `stepTicksPerStep`.
+    public static func yoopActiveKcalByMinute(_ hrSamples: [HRSample], stepsByMinute: [Int: Double],
+                                              profile: UserProfile, hrmax: Double?,
+                                              restingHR: Double?) -> [Int: Double] {
         let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
         let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
         let age = profile.age > 0 ? profile.age : 30.0
@@ -955,14 +971,13 @@ public enum Calories {
                                        vo2max: vo2max)
             heartKcal[minute, default: 0] += max(0.0, gross - bmrPerS) * durationS
         }
-        var activeKcal = 0.0
-        for minute in Set(heartKcal.keys).union(stepsByMinute.keys).sorted() {
+        var byMinute: [Int: Double] = [:]
+        for minute in Set(heartKcal.keys).union(stepsByMinute.keys) {
             let walking = max(0.0, stepsByMinute[minute] ?? 0) * kcalPerStep
             let heart = heartKcal[minute] ?? 0
             let meanBpm = (bpmSum[minute] ?? 0) / max(bpmCount[minute] ?? 0, 1)
-            activeKcal += walking > 0 && meanBpm < vigorous ? walking : max(walking, heart)
+            byMinute[minute] = walking > 0 && meanBpm < vigorous ? walking : max(walking, heart)
         }
-        let window = Double(max(0, windowSeconds))
-        return DayEnergyEstimate(restingKcal: bmrPerS * window, activeKcal: activeKcal, observedSeconds: window)
+        return byMinute
     }
 }

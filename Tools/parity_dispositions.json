@@ -484,6 +484,14 @@
       "identity_sha256": "6aa1bd589e52492f5fc7a434df510640d33b6c4f46b6ce21d36e19381d5cc2f7",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: starts the night at the end of the last real walk before the detector's start (bedtimeFromWalkEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalByMinute/5#1",
+      "identity_sha256": "8e7065aff23f43cd9698cbb002d5e2afe7646cba8c911b779f04c8dec6db0fe8",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the minute-by-minute active energy that estimateYoopDayEnergy sums, so the Calories page can split the day by hour and by activity and every split adds up to the day's active energy. estimateYoopDayEnergy now sums this function's result in minute order, so its figure is unchanged. The fork ships no Android build, so there is no Kotlin twin."
     }
   ]
 }

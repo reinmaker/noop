@@ -1376,6 +1376,64 @@ final class Repository: ObservableObject {
         return nil
     }
 
+    /// Yoop: the steps one day window counted, by minute (`ts / 60`), counted the way the day cycle counts
+    /// them (`DayCycleIntelligenceIntegration.compute`): the same accumulator over the same sleep sessions,
+    /// read in pages from the step counter's owner segments. These are ticks, before `stepTicksPerStep`; their
+    /// sum is the day's counted ticks, so a split by hour adds up to the day's step count. Nil when no
+    /// strap counter covers the window with two samples (a WHOOP 4.0, or a day before the strap counted).
+    /// The midnight day counts its own samples only, with no sleep to gate and no sample before the window.
+    func countedStepMinutes(from onset: Int, toExclusive endExclusive: Int, sleeps: [SleepSession],
+                            seedsFromBefore: Bool = true) async -> [Int: Int]? {
+        guard endExclusive > onset, let store = await ensureStore() else { return nil }
+        StepsCounter.yoopCountingEnabled = PuffinExperiment.whoopScoresEnabled
+        var coverage: [PhysiologicalSteps.OwnerCoverage] = []
+        for (priority, owner) in importedReadIds.enumerated() {
+            guard let span = try? await store.stepTimestampCoverage(deviceId: owner, from: onset, to: endExclusive),
+                  let first = span.first, let last = span.last else { continue }
+            coverage.append(.init(owner: owner, onset: first, endExclusive: min(last + 1, endExclusive),
+                                  priority: priority))
+        }
+        let segments = PhysiologicalSteps.ownerSegmentsFromCoverage(
+            .init(sleepId: "page", onset: onset, endExclusive: endExclusive),
+            coverage: coverage, fallbackOwner: importedReadIds.first ?? deviceId)
+        var minutes: [Int: Int] = [:]
+        var evaluated = false
+        for (index, segment) in segments.enumerated() {
+            let hasClasses = (try? await store.hasStepActivityClasses(
+                deviceId: segment.owner, from: segment.onset, to: segment.endExclusive)) ?? false
+            let accumulator = SleepAwareStepCounter.Accumulator(
+                sleepSessions: sleeps, hasActivityClasses: hasClasses, recordsMinutes: true)
+            var samples = 0
+            if index == 0, seedsFromBefore, let predecessor = try? await store.stepSampleBefore(
+                deviceId: segment.owner, before: segment.onset) {
+                accumulator.acceptPage([predecessor]); samples += 1
+            }
+            let pageSize = 10_000
+            var cursor = segment.onset - 1
+            while cursor < segment.endExclusive {
+                guard let page = try? await store.stepSamplesPage(
+                    deviceId: segment.owner, afterExclusive: cursor, endExclusive: segment.endExclusive,
+                    limit: pageSize), !page.isEmpty else { break }
+                accumulator.acceptPage(page); samples += page.count
+                guard let last = page.last, last.ts >= cursor else { break }
+                cursor = last.ts
+                if page.count < pageSize { break }
+            }
+            if samples >= 2 { evaluated = true }
+            _ = accumulator.finish()
+            minutes.merge(accumulator.acceptedTicksByMinute, uniquingKeysWith: +)
+        }
+        return evaluated ? minutes : nil
+    }
+
+    /// Apple Health's steps by clock hour over `[from, toExclusive)`, as the phone banked them
+    /// (`appleStepHour`, written by the iOS HealthKit sync). Hour starts in epoch seconds.
+    func appleStepHours(from: Int, toExclusive: Int) async -> [(ts: Int, steps: Int)] {
+        guard let store = await ensureStore(), toExclusive > from else { return [] }
+        return (try? await store.appleStepHours(deviceId: Self.appleHealthSource, fromTs: from - 3_599,
+                                                toTs: toExclusive - 1)) ?? []
+    }
+
     /// Pure pick of the latest classed activity across the union's per-id step lists: the non-nil
     /// `activityClass` on the sample with the greatest ts, resolving a ts tie in favour of the FIRST list (the
     /// active strap, mirroring the union's active-wins rule). Static + pure so it's unit-testable without a
