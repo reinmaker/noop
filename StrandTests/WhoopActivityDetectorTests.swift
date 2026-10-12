@@ -42,6 +42,17 @@ final class WhoopActivityDetectorTests: XCTestCase {
         XCTAssertEqual(found.first?.endSec, 1_800_000_000 + 45 * 60 + 59)
     }
 
+    /// One active minute set apart by three quiet ones after the last set is not part of the session.
+    func testALoneMinuteAfterTheLastSetDoesNotExtendTheBout() {
+        var hr = block(125, from: 0, minutes: 16)
+        hr += block(80, from: 16, minutes: 3)
+        hr += block(95, from: 19, minutes: 1)              // a brisk minute walking out, just above the bar
+        hr += block(78, from: 20, minutes: 5)
+        let found = WhoopActivityDetector.detect(hr: hr, restingBpm: 50, excluded: [])
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found.first?.endSec, 1_800_000_000 + 15 * 60 + 59)
+    }
+
     /// A rest of six minutes still splits two efforts.
     func testSixMinuteBreakSplitsTwoEfforts() {
         var hr = block(125, from: 0, minutes: 14)
