@@ -901,13 +901,16 @@ public enum Calories {
     ///   heart rates overlap (still 90th percentile 82 bpm, walking 10th percentile 72 bpm on 9 Oct 2026).
     ///
     /// `stepsByMinute` holds steps, already divided by `stepTicksPerStep`. Heart-rate samples carry time
-    /// to the next sample capped at the inferred cadence, as `estimateDayEnergy` does. APPROXIMATE: an
-    /// estimate from heart rate and steps, not calorimetry, not medical advice.
+    /// to the next sample capped at the inferred cadence, as `estimateDayEnergy` does. `heartPricedMinutes`
+    /// are minutes priced by heart rate alone (see `yoopActiveKcalByMinute`); empty prices every minute as
+    /// above. APPROXIMATE: an estimate from heart rate and steps, not calorimetry, not medical advice.
     public static func estimateYoopDayEnergy(_ hrSamples: [HRSample], stepsByMinute: [Int: Double],
                                              windowSeconds: Int, profile: UserProfile, hrmax: Double?,
-                                             restingHR: Double?) -> DayEnergyEstimate {
+                                             restingHR: Double?,
+                                             heartPricedMinutes: Set<Int> = []) -> DayEnergyEstimate {
         let byMinute = yoopActiveKcalByMinute(hrSamples, stepsByMinute: stepsByMinute, profile: profile,
-                                              hrmax: hrmax, restingHR: restingHR)
+                                              hrmax: hrmax, restingHR: restingHR,
+                                              heartPricedMinutes: heartPricedMinutes)
         // Summed in minute order, the order the day's active energy has always been summed in.
         let activeKcal = byMinute.keys.sorted().reduce(0.0) { $0 + (byMinute[$1] ?? 0) }
         let bmrPerS = mifflinStJeorKcalPerDay(profile) / 86_400.0
@@ -919,9 +922,15 @@ public enum Calories {
     /// priced as that function documents. The day's `activeKcal` is exactly these values summed in minute
     /// order, so a screen that splits the day by hour or by activity states a split that adds up to the
     /// number the day carries. `stepsByMinute` holds steps, already divided by `stepTicksPerStep`.
+    ///
+    /// `heartPricedMinutes` (keyed `ts / 60`) are minutes where the strap's step counter is not counting
+    /// steps, such as inside a logged strength session, where it ticks with arm motion: their ticks are never
+    /// priced as walking, and the minute carries its heart price alone. Every other minute is priced exactly
+    /// as with none, so a day without such minutes is unchanged to the last bit.
     public static func yoopActiveKcalByMinute(_ hrSamples: [HRSample], stepsByMinute: [Int: Double],
                                               profile: UserProfile, hrmax: Double?,
-                                              restingHR: Double?) -> [Int: Double] {
+                                              restingHR: Double?,
+                                              heartPricedMinutes: Set<Int> = []) -> [Int: Double] {
         let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
         let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
         let age = profile.age > 0 ? profile.age : 30.0
@@ -973,8 +982,9 @@ public enum Calories {
         }
         var byMinute: [Int: Double] = [:]
         for minute in Set(heartKcal.keys).union(stepsByMinute.keys) {
-            let walking = max(0.0, stepsByMinute[minute] ?? 0) * kcalPerStep
             let heart = heartKcal[minute] ?? 0
+            if heartPricedMinutes.contains(minute) { byMinute[minute] = heart; continue }
+            let walking = max(0.0, stepsByMinute[minute] ?? 0) * kcalPerStep
             let meanBpm = (bpmSum[minute] ?? 0) / max(bpmCount[minute] ?? 0, 1)
             byMinute[minute] = walking > 0 && meanBpm < vigorous ? walking : max(walking, heart)
         }

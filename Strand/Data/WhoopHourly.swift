@@ -52,8 +52,9 @@ enum WhoopHourly {
     }
 
     /// The window's clock hours with `valueByMinute` (keyed `ts / 60`) summed into them and rounded to
-    /// `total`. A minute outside `[from, toExclusive)` is not in any hour. `asleep` are the sleep
-    /// sessions, as (start, end) epoch seconds; an hour is asleep when at least half of it is inside one.
+    /// `total`. A minute outside `[from, toExclusive)` is not in any hour, and the minute holding `from` is
+    /// in the first. `asleep` are the sleep sessions, as (start, end) epoch seconds; an hour is asleep when
+    /// at least half of it is inside one.
     static func split(valueByMinute: [Int: Double], from: Int, toExclusive: Int, total: Int,
                       asleep: [(start: Int, end: Int)], timeZone: TimeZone = .current) -> Split {
         guard toExclusive > from else { return Split(bars: []) }
@@ -66,8 +67,9 @@ enum WhoopHourly {
         var sums = Array(repeating: 0.0, count: starts.count)
         let first = starts[0]
         for (minute, value) in valueByMinute {
-            let ts = minute * 60
-            guard ts >= from, ts < toExclusive else { continue }
+            // The minute holding the window's start counts, from its start onwards.
+            let ts = max(minute * 60, from)
+            guard minute * 60 + 60 > from, ts < toExclusive else { continue }
             let index = (hourStart(ts, timeZone: timeZone) - first) / 3_600
             if index >= 0, index < sums.count { sums[index] += value }
         }

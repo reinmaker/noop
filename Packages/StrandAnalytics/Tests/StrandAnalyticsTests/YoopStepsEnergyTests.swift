@@ -213,4 +213,82 @@ final class YoopStepsEnergyTests: XCTestCase {
         XCTAssertTrue(Calories.yoopActiveKcalByMinute([], stepsByMinute: [:], profile: man, hrmax: 178.6,
                                                       restingHR: 56).isEmpty)
     }
+
+    // MARK: - Minutes priced by heart rate alone (strength sessions)
+
+    /// A deterministic synthetic day: 4 hours at 1 Hz with a slow swing in heart rate and a hard stretch, and
+    /// ticks in most minutes. The literals below were taken from `yoopActiveKcalByMinute` as it stood before
+    /// `heartPricedMinutes` existed, so a day with none is held to the same bits.
+    private func syntheticDay() -> (hr: [HRSample], steps: [Int: Double], base: Int) {
+        var seed: UInt64 = 0x9E3779B97F4A7C15
+        func next() -> Int { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Int(seed >> 33) }
+        let base = 1_800_000_000 - 1_800_000_000 % 3_600
+        var hr: [HRSample] = []
+        for t in 0..<14_400 {
+            let swing = 45.0 * sin(Double(t) / 420.0)
+            let hard = (t >= 7_200 && t < 8_400) ? 55 : 0
+            hr.append(HRSample(ts: base + t, bpm: max(40, min(185, 82 + Int(swing) + hard + next() % 7))))
+        }
+        var steps: [Int: Double] = [:]
+        for m in 0..<240 where next() % 5 != 0 { steps[base / 60 + m] = Double(next() % 140) / (next() % 3 == 0 ? 1.7 : 1.0) }
+        return (hr, steps, base)
+    }
+
+    func testADayWithNoHeartPricedMinutesIsPricedExactlyAsBefore() {
+        let day = syntheticDay()
+        let byMinute = Calories.yoopActiveKcalByMinute(day.hr, stepsByMinute: day.steps, profile: man,
+                                                       hrmax: 178.6, restingHR: 56.243)
+        let energy = Calories.estimateYoopDayEnergy(day.hr, stepsByMinute: day.steps, windowSeconds: 14_400,
+                                                    profile: man, hrmax: 178.6, restingHR: 56.243)
+        XCTAssertEqual(energy.activeKcal.bitPattern, 0x4090f3208a6d0d1f)
+        XCTAssertEqual(energy.restingKcal.bitPattern, 0x4072520000000000)
+        XCTAssertEqual(byMinute.count, 216)
+        for (offset, bits) in [(3, 0x3ff66b413986338b), (60, 0x4021393954a856b6), (125, 0x3ff26ef15ccf0def),
+                               (200, 0x3fec2233bba363d1)] as [(Int, UInt64)] {
+            XCTAssertEqual((byMinute[day.base / 60 + offset] ?? -1).bitPattern, bits)
+        }
+        // An empty set is the same call, written out.
+        let explicit = Calories.estimateYoopDayEnergy(day.hr, stepsByMinute: day.steps, windowSeconds: 14_400,
+                                                      profile: man, hrmax: 178.6, restingHR: 56.243,
+                                                      heartPricedMinutes: [])
+        XCTAssertEqual(explicit.activeKcal.bitPattern, energy.activeKcal.bitPattern)
+    }
+
+    func testAHeartPricedMinuteIsNeverPricedAsWalking() {
+        // 100 bpm for a minute with 120 ticks: walking's price by default, the heart price when the minute is
+        // a strength session's.
+        let hr = (0..<60).map { HRSample(ts: $0, bpm: 100) }
+        let walking = Calories.yoopActiveKcalByMinute(hr, stepsByMinute: [0: 120], profile: man, hrmax: 178.6,
+                                                      restingHR: 51)
+        let heart = Calories.yoopActiveKcalByMinute(hr, stepsByMinute: [0: 120], profile: man, hrmax: 178.6,
+                                                    restingHR: 51, heartPricedMinutes: [0])
+        XCTAssertEqual(walking[0] ?? 0, 120 * 0.0005 * 82 * 0.415 * 1.83, accuracy: 1e-9)
+        let vo2max = 15.3 * 178.6 / 51
+        let grossKcalPerS = (0.634 * 100 + 0.404 * vo2max + 0.394 * 82 + 0.271 * 42 - 95.7735) / 251.04
+        XCTAssertEqual(heart[0] ?? 0, 60 * (grossKcalPerS - 1_758.75 / 86_400), accuracy: 1e-9)
+        XCTAssertGreaterThan(heart[0] ?? 0, walking[0] ?? 0)
+        // Ticks with no heart rate at all carry nothing in such a minute.
+        let bare = Calories.yoopActiveKcalByMinute([], stepsByMinute: [5: 90], profile: man, hrmax: 178.6,
+                                                   restingHR: 51, heartPricedMinutes: [5])
+        XCTAssertEqual(bare[5] ?? -1, 0)
+    }
+
+    func testHeartPricingAMinuteLeavesEveryOtherMinuteAlone() {
+        let day = syntheticDay()
+        let plain = Calories.yoopActiveKcalByMinute(day.hr, stepsByMinute: day.steps, profile: man, hrmax: 178.6,
+                                                    restingHR: 56.243)
+        let strength = Set((day.base / 60 + 100)..<(day.base / 60 + 130))
+        let priced = Calories.yoopActiveKcalByMinute(day.hr, stepsByMinute: day.steps, profile: man, hrmax: 178.6,
+                                                     restingHR: 56.243, heartPricedMinutes: strength)
+        XCTAssertEqual(Set(priced.keys), Set(plain.keys))
+        for (minute, value) in plain where !strength.contains(minute) {
+            XCTAssertEqual((priced[minute] ?? -1).bitPattern, value.bitPattern)
+        }
+        // The day's figure is still exactly its minutes summed in order.
+        let energy = Calories.estimateYoopDayEnergy(day.hr, stepsByMinute: day.steps, windowSeconds: 14_400,
+                                                    profile: man, hrmax: 178.6, restingHR: 56.243,
+                                                    heartPricedMinutes: strength)
+        XCTAssertEqual(energy.activeKcal.bitPattern,
+                       priced.keys.sorted().reduce(0.0) { $0 + (priced[$1] ?? 0) }.bitPattern)
+    }
 }

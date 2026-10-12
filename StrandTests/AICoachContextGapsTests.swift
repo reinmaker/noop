@@ -64,6 +64,39 @@ final class AICoachContextGapsTests: XCTestCase {
                        + "Strain \(strain) of 21; 6512 steps.")
     }
 
+    /// 12 Oct 20:20 on the user's phone: the Steps page said the 30-day normal was 10,634 and the Coach said
+    /// "about 5% above your usual 14,565". The Coach's usual now comes from the figures the rows state.
+    func testTheCoachQuotesTheNormalsTheRowsState() {
+        let prior = [
+            day("2026-10-01", sleep: 480, hrv: 60, rhr: 50, strain: 50, steps: 9_000, kcal: 500),
+            day("2026-10-02", sleep: 450, hrv: 55, rhr: 51, strain: 40, steps: 24_000, kcal: 700),
+            day("2026-10-03", sleep: 420, hrv: 40, rhr: 54, strain: 30, steps: 18_000, kcal: 900),
+        ]
+        // Its own mean said 17,000 steps and 700 kcal; the rows' normals are what it must say.
+        XCTAssertTrue(AICoachEngine.averageLines(prior)[1].contains("steps: 17000/day, active energy: 700 kcal/day"))
+        let lines = AICoachEngine.averageLines(prior, normals: (steps: 10_634.4, energy: 750.2))
+        XCTAssertTrue(lines[1].hasSuffix("steps: 10634/day, active energy: 750 kcal/day"), lines[1])
+        // No normal on the rows is no normal here, not a mean the screen does not show.
+        let none = AICoachEngine.averageLines(prior, normals: (steps: nil, energy: nil))
+        XCTAssertTrue(none[1].hasSuffix("steps: \(dash), active energy: \(dash)"), none[1])
+    }
+
+    func testTodaySoFarCarriesEachFigureWithTheNormalItIsComparedWith() {
+        let strain = String(format: "%.1f", AICoachEngine.strain21(50))
+        let steps = WhoopDayFigures.NormalReading(value: 14_100, byNow: true, fullDay: 14_565)
+        let energy = WhoopDayFigures.NormalReading(value: 750, byNow: false, fullDay: 750)
+        XCTAssertEqual(
+            AICoachEngine.todaySoFarLine(todayKey: "2026-10-12", strain: 50, steps: 15_318, activeKcal: 529,
+                                         stepsNormal: steps, activeKcalNormal: energy),
+            "Today so far (2026-10-12, in progress), as the Home screen shows it: Strain \(strain) of 21; "
+            + "15318 steps (your normal by this time of day: 14100; a whole day usually reaches 14565); "
+            + "active energy 529 kcal (your 30-day normal for a whole day: 750 kcal; today is not over).")
+        // Without energy or normals the line is the one it always was.
+        XCTAssertEqual(AICoachEngine.todaySoFarLine(todayKey: "2026-10-12", strain: 50, steps: 6_512),
+                       "Today so far (2026-10-12, in progress), as the Home screen shows it: "
+                       + "Strain \(strain) of 21; 6512 steps.")
+    }
+
     func testTodayVsNormalLeavesZerosOut() {
         let days = [
             day("2026-10-06", sleep: 420, hrv: 50, rhr: 50, strain: 40),

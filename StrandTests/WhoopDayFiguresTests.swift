@@ -152,4 +152,70 @@ final class WhoopDayFiguresTests: XCTestCase {
         XCTAssertEqual(session.stages.count, 1)
         XCTAssertEqual(session.efficiency, 0.9, accuracy: 1e-12)
     }
+
+    // MARK: the normals every readout shares
+
+    func testTheStepsNormalTakesThePhonesCountsForDaysBeforeTheStrapCounted() {
+        let days = [day("2026-10-01"), day("2026-10-02"), day("2026-10-03"), day("2026-10-04", steps: 400),
+                    day("2026-10-05", steps: 20_000), day("2026-10-06", steps: 14_000), day("today", steps: 99)]
+        let apple = ["2026-10-01": 9_000.0, "2026-10-02": 12_000.0, "2026-10-03": 3_000.0, "2026-10-04": 9_999.0]
+        // Strap counts first (the 400 is under the floor and out), the phone's for the days without one.
+        let normal = WhoopDayFigures.stepsNormal(days: days, excluding: "today", appleStepsByDay: apple)
+        XCTAssertEqual(normal ?? 0, (9_000 + 12_000 + 3_000 + 20_000 + 14_000) / 5, accuracy: 1e-9)
+        // The mean of the strap's own counts alone is another number: this is the one the Coach used to quote.
+        let strapOnly = WhoopDayFigures.normal(days: days, excluding: "today") { $0.steps.map(Double.init) }
+        XCTAssertEqual(strapOnly ?? 0, (400 + 20_000 + 14_000) / 3, accuracy: 1e-9)
+        XCTAssertNotEqual(normal, strapOnly)
+    }
+
+    func testTheEnergyNormalFloorFollowsTheMode() {
+        let days = [day("a", kcal: 50), day("b", kcal: 300), day("c", kcal: 500), day("d", kcal: 700), day("today", kcal: 1)]
+        XCTAssertEqual(WhoopDayFigures.energyNormal(days: days, excluding: "today", yoop: true) ?? 0, 387.5, accuracy: 1e-9)
+        XCTAssertEqual(WhoopDayFigures.energyNormal(days: days, excluding: "today", yoop: false) ?? 0, 500, accuracy: 1e-9)
+    }
+
+    func testTheComparedNormalIsByNowWhenThereIsOne() {
+        let both = WhoopDayFigures.compared(fullDay: 10_634, byNow: 3_100)
+        XCTAssertEqual(both, WhoopDayFigures.NormalReading(value: 3_100, byNow: true, fullDay: 10_634))
+        let whole = WhoopDayFigures.compared(fullDay: 10_634, byNow: nil)
+        XCTAssertEqual(whole, WhoopDayFigures.NormalReading(value: 10_634, byNow: false, fullDay: 10_634))
+        XCTAssertNil(WhoopDayFigures.compared(fullDay: nil, byNow: nil))
+        XCTAssertEqual(WhoopDayFigures.compared(fullDay: nil, byNow: 5)?.byNow, true)
+    }
+
+    func testTheCoachIsToldTheNormalTheRowStates() {
+        let byNow = WhoopDayFigures.NormalReading(value: 14_100.4, byNow: true, fullDay: 14_565)
+        XCTAssertEqual(byNow.coachPhrase(),
+                       " (your normal by this time of day: 14100; a whole day usually reaches 14565)")
+        XCTAssertEqual(byNow.coachPhrase(unit: " kcal"),
+                       " (your normal by this time of day: 14100 kcal; a whole day usually reaches 14565 kcal)")
+        let whole = WhoopDayFigures.NormalReading(value: 10_634, byNow: false, fullDay: 10_634)
+        XCTAssertEqual(whole.coachPhrase(), " (your 30-day normal for a whole day: 10634; today is not over)")
+    }
+
+    // MARK: the week keeps its calendar days
+
+    func testAMissingDayKeepsItsEmptySlotInTheWeek() {
+        // 7 Oct has no row: the week ending 12 Oct is 6 to 12 Oct, with 7 Oct empty, and the Monday before
+        // (5 Oct) does not take its place.
+        let days = ["2026-10-05", "2026-10-06", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12"]
+            .map { day($0, steps: 5_000) }
+        let week = WhoopDayFigures.dayKeys(endingOn: "2026-10-12", count: 7)
+        XCTAssertEqual(week, ["2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11",
+                              "2026-10-12"])
+        let values = Dictionary(WhoopDayFigures.recent(days: days, endingOn: "2026-10-12", count: 30, shown: nil) {
+            $0.steps.map(Double.init)
+        }.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
+        XCTAssertNil(values["2026-10-07"])
+        XCTAssertEqual(week.filter { values[$0] != nil }.count, 6)
+        XCTAssertFalse(week.contains("2026-10-05"))
+        XCTAssertNotNil(values["2026-10-05"])   // still inside the 30 days, so it counts for the best day
+    }
+
+    func testAClosedDaysWindowBoundsAreOnsetToTheNextOnset() {
+        let markers = ["2026-10-11": 1_791_672_932, "2026-10-12": 1_791_754_853]
+        let bounds = WhoopDayFigures.window(day: "2026-10-11", markers: markers)
+        XCTAssertEqual(bounds.from, 1_791_672_932)
+        XCTAssertEqual(bounds.to, 1_791_754_853)
+    }
 }

@@ -67,6 +67,15 @@ final class WhoopHourlyTests: XCTestCase {
         XCTAssertEqual(split.bars.map(\.value), [4])
     }
 
+    func testTheMinuteHoldingTheWindowStartIsInTheFirstHour() {
+        // A window that starts 30 s into a minute: the ticks that minute counted after the start are the day's.
+        let hour = 1_800_000_000 - 1_800_000_000 % 3_600
+        let from = hour + 600 + 30
+        let split = WhoopHourly.split(valueByMinute: [(hour + 600) / 60: 7, (hour + 660) / 60: 5, (hour + 540) / 60: 99],
+                                      from: from, toExclusive: hour + 3_600, total: 12, asleep: [], timeZone: utc)
+        XCTAssertEqual(split.bars.map(\.value), [12])
+    }
+
     func testAnEmptyWindowHasNoBars() {
         XCTAssertTrue(WhoopHourly.split(valueByMinute: [1: 1], from: 100, toExclusive: 100, total: 1,
                                         asleep: [], timeZone: utc).bars.isEmpty)

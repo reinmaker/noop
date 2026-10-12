@@ -12,7 +12,6 @@ struct WhoopStepsScreen: View {
 
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
-    @AppStorage(DayCycleMode.storageKey) private var dayCycleModeRaw = DayCycleMode.sleepOnset.rawValue
 
     /// The day's hours; nil until the first read lands, and when the source has no hourly detail.
     @State private var hours: WhoopHourly.Split?
@@ -28,7 +27,8 @@ struct WhoopStepsScreen: View {
                                shown: value) { $0.steps.map(Double.init) ?? appleByDay[$0.day] }
     }
 
-    private var week: [(day: String, value: Double)] { Array(recent.suffix(7)) }
+    /// The seven calendar days ending on the shown day, and the counts of those that have one.
+    private var week: [String] { WhoopDayFigures.dayKeys(endingOn: figures.day, count: 7) }
 
     var body: some View {
         WhoopDayPage(title: whoopPageTitle(day: figures.day, isToday: figures.isToday)) {
@@ -36,17 +36,15 @@ struct WhoopStepsScreen: View {
             WhoopPageHero(icon: "shoeprints.fill", label: String(localized: "STEPS"),
                           value: value.map { Int($0.rounded()).formatted() } ?? "--",
                           normal: figures.average.map { Int($0.rounded()).formatted() },
+                          normalLabel: figures.byNow ? String(localized: "NORMAL BY NOW")
+                                                     : String(localized: "30-DAY NORMAL"),
                           direction: WhoopDayFigures.direction(value: value, normal: figures.average),
-                          caption: sourceLine)
+                          caption: sourceLine, detail: fullDayLine)
             if let sentence = sentence(standing) { WhoopPageSentence(text: sentence) }
             hourlyCard
-            WhoopWeeklyBars(title: String(localized: "LAST 7 DAYS"),
-                            points: week.map { item in
-                                (day: weekday(item.day), value: item.value,
-                                 label: Int(item.value.rounded()).formatted(),
-                                 color: StrandPalette.effortColor.opacity(item.day == figures.day ? 1 : 0.45))
-                            },
-                            maxValue: max(1, week.map(\.value).max() ?? 1))
+            WhoopDayBarsCard(title: String(localized: "LAST 7 DAYS"), week: week,
+                             values: Dictionary(recent.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last }),
+                             shownDay: figures.day, tint: StrandPalette.effortColor)
             if let best = WhoopDayFigures.best(recent) {
                 WhoopPageFigureCard(title: String(localized: "BEST DAY IN THE LAST 30"),
                                     value: Int(best.value.rounded()).formatted(), unit: String(localized: "STEPS"),
@@ -108,9 +106,27 @@ struct WhoopStepsScreen: View {
         }
     }
 
-    /// One plain sentence: the day against the 30-day normal.
+    /// Today's whole-day normal beside the by-now one, so the distance to a full day is stated.
+    private var fullDayLine: String? {
+        guard figures.byNow, let full = figures.fullDayAverage else { return nil }
+        return String(localized: "A full day usually reaches \(Int(full.rounded()).formatted()).")
+    }
+
+    /// One plain sentence: the day against its normal, by this time of day while today is not over.
     private func sentence(_ standing: WhoopDayFigures.Standing) -> String? {
         let normal = figures.average.map { Int($0.rounded()).formatted() } ?? ""
+        if figures.byNow {
+            switch standing {
+            case .above(let gap):
+                return String(localized: "That is \(Int(gap.rounded()).formatted()) more than your normal by now, \(normal).")
+            case .below(let gap):
+                return String(localized: "That is \(Int(gap.rounded()).formatted()) fewer than your normal by now, \(normal).")
+            case .level:
+                return String(localized: "That is about your normal by now, \(normal).")
+            case .unknown:
+                return nil
+            }
+        }
         switch standing {
         case .above(let gap):
             return String(localized: "That is \(Int(gap.rounded()).formatted()) more than your 30-day normal of \(normal).")
@@ -136,10 +152,6 @@ struct WhoopStepsScreen: View {
          String(localized: "It is an estimate, and it can differ from your phone's count, which only counts while you carry the phone.")]
     }
 
-    private func weekday(_ key: String) -> String {
-        WhoopDayFigures.date(of: key)?.formatted(.dateTime.weekday(.abbreviated)) ?? key
-    }
-
     // MARK: Load
 
     private func load() async {
@@ -154,18 +166,13 @@ struct WhoopStepsScreen: View {
         let sleeps = repo.sleeps
         switch figures.stepSource {
         case .strap:
-            // The sleep-onset day counts against the night's sleep; the midnight day counts its own samples.
-            let onsetDay = DayCycleMode.persisted(dayCycleModeRaw) == .sleepOnset
-            let session = onsetDay ? sleeps.map { WhoopDayFigures.sleepSession($0) } : []
-            guard let ticks = await repo.countedStepMinutes(from: from, toExclusive: toExclusive, sleeps: session,
-                                                            seedsFromBefore: onsetDay) else {
+            guard let counted = await WhoopDayMinutes.steps(repo: repo, profile: profile, from: from,
+                                                            to: toExclusive) else {
                 hours = nil
                 return
             }
-            let perStep = max(profile.stepTicksPerStep, 0.5)
-            let counted = Int((Double(ticks.values.reduce(0, +)) / perStep).rounded())
-            hours = WhoopHourly.split(valueByMinute: ticks.mapValues { Double($0) / perStep },
-                                      from: from, toExclusive: toExclusive, total: counted,
+            hours = WhoopHourly.split(valueByMinute: counted.perMinute, from: from, toExclusive: toExclusive,
+                                      total: counted.total,
                                       asleep: sleeps.map { (start: $0.effectiveStartTs, end: $0.endTs) })
         case .phone:
             // The phone counts calendar days, so its hours are the calendar day's.

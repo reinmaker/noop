@@ -14,7 +14,6 @@ struct WhoopCaloriesScreen: View {
 
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
-    @AppStorage(DayCycleMode.storageKey) private var dayCycleModeRaw = DayCycleMode.sleepOnset.rawValue
 
     /// What one read of the day's minutes produced.
     private struct Breakdown {
@@ -26,6 +25,7 @@ struct WhoopCaloriesScreen: View {
 
     private struct Activity: Identifiable {
         let row: WorkoutRow
+        /// Its share of the day's active energy, in whole kcal.
         let kcal: Int
         var id: String { "\(row.startTs)|\(row.sport)|\(row.source)" }
     }
@@ -33,7 +33,10 @@ struct WhoopCaloriesScreen: View {
     @State private var breakdown: Breakdown?
     @State private var loaded = false
     @State private var weekTotals: [WhoopStackedWeekBars.Day] = []
-    @State private var weekActive: [(day: String, value: Double)] = []
+    @State private var weekActive: [String: Double] = [:]
+
+    /// The seven calendar days ending on the shown day.
+    private var week: [String] { WhoopDayFigures.dayKeys(endingOn: figures.day, count: 7) }
 
     /// Yoop stores ACTIVE energy and adds basal for a total; NOOP's stored figure is the whole-day total.
     private var splitsEnergy: Bool { PuffinExperiment.whoopScoresEnabled }
@@ -53,18 +56,13 @@ struct WhoopCaloriesScreen: View {
             if splitsEnergy {
                 hourlyCard
                 activitiesCard
-                WhoopStackedWeekBars(title: String(localized: "LAST 7 DAYS"), days: weekTotals,
+                WhoopStackedWeekBars(title: String(localized: "LAST 7 DAYS"), days: weekTotals, week: week,
                                      shownDay: figures.day, baseTint: StrandPalette.metricAmber.opacity(0.45),
                                      topTint: StrandPalette.metricAmber, baseName: String(localized: "BASAL"),
                                      topName: String(localized: "ACTIVE"))
             } else {
-                WhoopWeeklyBars(title: String(localized: "LAST 7 DAYS"),
-                                points: weekActive.map { item in
-                                    (day: weekday(item.day), value: item.value,
-                                     label: Int(item.value.rounded()).formatted(),
-                                     color: StrandPalette.metricAmber.opacity(item.day == figures.day ? 1 : 0.45))
-                                },
-                                maxValue: max(1, weekActive.map(\.value).max() ?? 1))
+                WhoopDayBarsCard(title: String(localized: "LAST 7 DAYS"), week: week, values: weekActive,
+                                 shownDay: figures.day, tint: StrandPalette.metricAmber)
             }
             WhoopPageNote(title: String(localized: "HOW CALORIES ARE ESTIMATED"), lines: noteLines)
         }
@@ -82,7 +80,9 @@ struct WhoopCaloriesScreen: View {
                           value: figures.total.map { Int($0.rounded()).formatted() } ?? "--",
                           unit: String(localized: "KCAL"),
                           normal: figures.totalAverage.map { Int($0.rounded()).formatted() },
-                          direction: WhoopDayFigures.direction(value: figures.total, normal: figures.totalAverage))
+                          normalLabel: normalLabel,
+                          direction: WhoopDayFigures.direction(value: figures.total, normal: figures.totalAverage),
+                          detail: fullDayLine(figures.fullDayTotalAverage))
             HStack(spacing: NoopMetrics.space3) {
                 part(icon: "flame", label: String(localized: "ACTIVE"), value: active.map { Int($0.rounded()) },
                      normal: figures.average,
@@ -97,7 +97,20 @@ struct WhoopCaloriesScreen: View {
         WhoopPageHero(icon: "flame", label: String(localized: "CALORIES"),
                       value: active.map { Int($0.rounded()).formatted() } ?? "--", unit: String(localized: "KCAL"),
                       normal: figures.average.map { Int($0.rounded()).formatted() },
-                      direction: WhoopDayFigures.direction(value: active, normal: figures.average))
+                      normalLabel: normalLabel,
+                      direction: WhoopDayFigures.direction(value: active, normal: figures.average),
+                      detail: fullDayLine(figures.fullDayAverage))
+    }
+
+    /// What the normal under the headline is: today's by this time of day, or the 30-day whole-day one.
+    private var normalLabel: String {
+        figures.byNow ? String(localized: "NORMAL BY NOW") : String(localized: "30-DAY NORMAL")
+    }
+
+    /// Today's whole-day normal beside the by-now one, so the distance to a full day is stated.
+    private func fullDayLine(_ full: Double?) -> String? {
+        guard figures.byNow, let full else { return nil }
+        return String(localized: "A full day usually reaches \(Int(full.rounded()).formatted()).")
     }
 
     private func part(icon: String, label: String, value: Int?, normal: Double?, direction: Int) -> some View {
@@ -111,7 +124,8 @@ struct WhoopCaloriesScreen: View {
                 .foregroundStyle(StrandPalette.textPrimary)
             if let normal {
                 HStack(spacing: NoopMetrics.space1) {
-                    Text(Int(normal.rounded()).formatted())
+                    Text(figures.byNow ? String(localized: "\(Int(normal.rounded()).formatted()) by now")
+                         : Int(normal.rounded()).formatted())
                         .font(WhoopStyle.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
                     if direction != 0 {
@@ -202,6 +216,11 @@ struct WhoopCaloriesScreen: View {
                 Text(windowText(item.row))
                     .font(WhoopStyle.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
+                if let own = item.row.energyKcal, own > 0 {
+                    Text("On its own page: \(Int(own.rounded()).formatted()) kcal, with resting energy")
+                        .font(WhoopStyle.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
             }
             Spacer(minLength: NoopMetrics.space1)
             Text("\(item.kcal.formatted()) kcal")
@@ -222,15 +241,23 @@ struct WhoopCaloriesScreen: View {
 
     // MARK: Words
 
-    private func weekday(_ key: String) -> String {
-        WhoopDayFigures.date(of: key)?.formatted(.dateTime.weekday(.abbreviated)) ?? key
-    }
-
     /// One plain sentence: the day's active energy against its 30-day normal. Without Yoop scores the one
     /// number is the whole day's energy and the headline's normal and arrow already say as much.
     private var sentence: String? {
         guard splitsEnergy, let active else { return nil }
         let normal = figures.average.map { Int($0.rounded()).formatted() } ?? ""
+        if figures.byNow {
+            switch WhoopDayFigures.standing(value: active, normal: figures.average) {
+            case .above(let gap):
+                return String(localized: "Your active calories are \(Int(gap.rounded()).formatted()) above your normal by now, \(normal).")
+            case .below(let gap):
+                return String(localized: "Your active calories are \(Int(gap.rounded()).formatted()) below your normal by now, \(normal).")
+            case .level:
+                return String(localized: "Your active calories are about your normal by now, \(normal).")
+            case .unknown:
+                return nil
+            }
+        }
         switch WhoopDayFigures.standing(value: active, normal: figures.average) {
         case .above(let gap):
             return String(localized: "Your active calories are \(Int(gap.rounded()).formatted()) above your 30-day normal of \(normal).")
@@ -248,6 +275,7 @@ struct WhoopCaloriesScreen: View {
             return [String(localized: "This is your strap's heart-rate estimate for the whole day, resting and active energy together. It is not a lab measurement.")]
         }
         var lines = [String(localized: "Active energy is worked out minute by minute from your steps and heart rate. A minute of walking is priced by its steps, and a minute of harder effort by your heart rate.")]
+        lines.append(String(localized: "During a strength session the strap's step counter follows your arm movement, so those minutes are priced by heart rate, never as walking."))
         lines.append(String(localized: "Basal energy is the energy your body uses at rest, estimated from your age, height, weight and sex (Mifflin-St Jeor), over the hours of this day."))
         lines.append(String(localized: "Both are estimates, not lab measurements."))
         return lines
@@ -261,40 +289,29 @@ struct WhoopCaloriesScreen: View {
         let dayStart = WhoopDayFigures.date(of: figures.day).map { cal.startOfDay(for: $0) } ?? cal.startOfDay(for: Date())
         let from = figures.windowFrom ?? Int(dayStart.timeIntervalSince1970)
         let toExclusive = from + (figures.windowSeconds ?? 86_400)
-        weekActive = WhoopDayFigures.recent(days: repo.days.filter { $0.day <= figures.day }, endingOn: figures.day,
-                                            count: 7, shown: active) { $0.activeKcalEst }
+        weekActive = Dictionary(WhoopDayFigures.recent(days: repo.days.filter { $0.day <= figures.day },
+                                                       endingOn: figures.day, count: 7, shown: active) { $0.activeKcalEst }
+            .map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         await loadWeek()
         guard splitsEnergy, active != nil else { return }
 
-        let hr = await repo.hrSamples(from: from, to: toExclusive - 1, limit: 200_000)
         let sleeps = repo.sleeps
-        let perStep = max(profile.stepTicksPerStep, 0.5)
-        let onsetDay = DayCycleMode.persisted(dayCycleModeRaw) == .sleepOnset
-        let ticks = await repo.countedStepMinutes(
-            from: from, toExclusive: toExclusive,
-            sleeps: onsetDay ? sleeps.map { WhoopDayFigures.sleepSession($0) } : [],
-            seedsFromBefore: onsetDay) ?? [:]
-        // The resting heart rate the day's energy was priced against. The sleep-onset day takes the main
-        // sleep's mean heart rate, else the day's resting heart rate; the midnight day takes the latter.
-        let primary = onsetDay
-            ? (await repo.exploreSeries(key: "rhr_primary_session", source: "my-whoop")).last { $0.day == figures.day }?.value
-            : nil
-        let resting = primary ?? repo.days.last { $0.day == figures.day }?.restingHr.map(Double.init)
-            ?? StrainScorer.defaultRestingHR
-        let user = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm, age: Double(profile.age),
-                               sex: profile.sex)
-        let maxHR = profile.effortHRmax
-        let byMinute = await Task.detached(priority: .userInitiated) {
-            Calories.yoopActiveKcalByMinute(hr, stepsByMinute: ticks.mapValues { Double($0) / perStep },
-                                            profile: user, hrmax: maxHR, restingHR: resting)
-        }.value
-        guard !byMinute.isEmpty else { breakdown = nil; return }
+        let logged = await repo.workoutRows(days: 4000)
+        let steps = await WhoopDayMinutes.steps(repo: repo, profile: profile, from: from, to: toExclusive)
+        guard let energy = await WhoopDayMinutes.activeKcal(repo: repo, profile: profile, day: figures.day,
+                                                            from: from, to: toExclusive,
+                                                            stepsByMinute: steps?.perMinute ?? [:],
+                                                            workouts: logged) else {
+            breakdown = nil
+            return
+        }
+        let byMinute = energy.perMinute
 
         // Rounded together: the bars, the activities and the rest add up to the day's whole number.
         let counted = Int(byMinute.keys.sorted().reduce(0.0) { $0 + (byMinute[$1] ?? 0) }.rounded())
         let hours = WhoopHourly.split(valueByMinute: byMinute, from: from, toExclusive: toExclusive, total: counted,
                                       asleep: sleeps.map { (start: $0.effectiveStartTs, end: $0.endTs) })
-        let rows = (await repo.workoutRows(days: 4000))
+        let rows = logged
             .filter { $0.startTs >= from && $0.startTs < toExclusive }
             .sorted { $0.startTs < $1.startTs }
         let shares = WhoopHourly.shares(valueByMinute: byMinute,

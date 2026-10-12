@@ -14,11 +14,17 @@ struct WhoopRowFigures: Hashable {
     let isToday: Bool
     /// The row's number: steps, ACTIVE calories, the VO₂ max estimate or the night's blood oxygen.
     var value: Double?
-    /// The row's 30-day figure, as shown under the number.
+    /// The normal the row compares its number with, as shown under it: the 30-day figure for a whole day, or
+    /// for today the 30-day figure BY THIS TIME OF DAY (`byNow`).
     var average: Double?
-    /// Energy only: the TOTAL CALORIES row's number and 30-day figure.
+    /// `average` is the normal by this time of day, because today is not over.
+    var byNow = false
+    /// The 30-day whole-day figure, which `average` is too unless `byNow`.
+    var fullDayAverage: Double?
+    /// Energy only: the TOTAL CALORIES row's number and normal (by now or whole day, as `average`).
     var total: Double?
     var totalAverage: Double?
+    var fullDayTotalAverage: Double?
     /// Energy only: one day of basal energy, Mifflin-St Jeor.
     var basalKcalPerDay: Double?
     /// The day's window as Home resolved it: epoch seconds at its start, and its length.
@@ -46,6 +52,34 @@ enum WhoopDayFigures {
         guard hasValue else { return nil }
         if strap != nil { return .strap }
         return phone != nil ? .phone : .estimate
+    }
+
+    /// The 30-day whole-day normal of the step count: each day's strap count, else the phone's total for
+    /// days before the strap counted, skipping days under 1,000 steps. The one definition Home's STEPS row,
+    /// its page and the Coach's "usual" read.
+    static func stepsNormal(days: [DailyMetric], excluding day: String?, appleStepsByDay: [String: Double]) -> Double? {
+        normal(days: days, excluding: day, floor: 1000) { $0.steps.map(Double.init) ?? appleStepsByDay[$0.day] }
+    }
+
+    /// The 30-day whole-day normal of the energy the energy rows state: Yoop's active energy, or NOOP's
+    /// whole-day total (skipping days under 100 kcal) with Yoop scores off.
+    static func energyNormal(days: [DailyMetric], excluding day: String?, yoop: Bool) -> Double? {
+        normal(days: days, excluding: day, floor: yoop ? 0 : 100) { $0.activeKcalEst }
+    }
+
+    /// A normal as the screens state it: what a figure is compared with, and whether that is the normal by
+    /// this time of day or the whole-day one.
+    struct NormalReading: Hashable {
+        var value: Double
+        var byNow: Bool
+        /// The 30-day whole-day normal (the value itself when not `byNow`).
+        var fullDay: Double?
+    }
+
+    /// The normal to compare today with: by now when there is one, else the whole-day normal. Nil with neither.
+    static func compared(fullDay: Double?, byNow: Double?) -> NormalReading? {
+        if let byNow { return NormalReading(value: byNow, byNow: true, fullDay: fullDay) }
+        return fullDay.map { NormalReading(value: $0, byNow: false, fullDay: $0) }
     }
 
     /// The prior 30 days' values for a row, skipping days at or below `floor` (a day the strap barely
@@ -106,15 +140,22 @@ enum WhoopDayFigures {
                      avgHRV: row.avgHrv)
     }
 
-    /// A closed day's window length in seconds, as Home resolves it for a past day: from its sleep-onset
-    /// marker (else its midnight) to the next day's marker (else the next midnight).
-    static func windowSeconds(day: String, markers: [String: Int]) -> Int {
-        guard let start = date(of: day) else { return 86_400 }
+    /// A closed day's window as Home resolves it for a past day: from its sleep-onset marker (else its
+    /// midnight) to the next day's marker (else the next midnight), as epoch seconds.
+    static func window(day: String, markers: [String: Int]) -> (from: Int, to: Int) {
+        guard let start = date(of: day) else { return (0, 0) }
         let cal = Calendar.current
-        let from = markers[day] ?? Int(cal.startOfDay(for: start).timeIntervalSince1970)
-        guard let next = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: start)) else { return 86_400 }
-        let to = markers[dayParser.string(from: next)] ?? Int(next.timeIntervalSince1970)
-        return max(0, to - from)
+        let midnight = cal.startOfDay(for: start)
+        let from = markers[day] ?? Int(midnight.timeIntervalSince1970)
+        guard let next = cal.date(byAdding: .day, value: 1, to: midnight) else { return (from, from + 86_400) }
+        return (from, max(from, markers[dayParser.string(from: next)] ?? Int(next.timeIntervalSince1970)))
+    }
+
+    /// A closed day's window length in seconds, as `window(day:markers:)` resolves it.
+    static func windowSeconds(day: String, markers: [String: Int]) -> Int {
+        guard date(of: day) != nil else { return 86_400 }
+        let bounds = window(day: day, markers: markers)
+        return bounds.to - bounds.from
     }
 
     /// +1 when `value` is above its normal, -1 below, 0 when level or either is missing: the rule a
@@ -133,5 +174,17 @@ enum WhoopDayFigures {
         guard let value, let normal, normal > 0 else { return .unknown }
         let gap = value - normal
         return abs(gap) <= normal * 0.02 ? .level : (gap > 0 ? .above(gap) : .below(-gap))
+    }
+}
+
+extension WhoopDayFigures.NormalReading {
+    /// The normal as the Coach is told it, in brackets after the figure it belongs to: by this time of day
+    /// with the whole-day normal beside it, or the whole-day normal alone with a note that today is not over.
+    func coachPhrase(unit: String = "") -> String {
+        if byNow {
+            let full = fullDay.map { "; a whole day usually reaches \(Int($0.rounded()))\(unit)" } ?? ""
+            return " (your normal by this time of day: \(Int(value.rounded()))\(unit)\(full))"
+        }
+        return " (your 30-day normal for a whole day: \(Int(value.rounded()))\(unit); today is not over)"
     }
 }

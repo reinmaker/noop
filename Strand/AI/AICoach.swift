@@ -992,12 +992,33 @@ final class AICoachEngine: ObservableObject {
         return clean.isEmpty ? nil : clean
     }
 
+    /// The steps and energy normals the Home rows state, read the way Home reads them (the phone's steps
+    /// for days before the strap counted, its floors, today left out). When Home has not published today's
+    /// normals by now, they are read here at the current time.
+    func dayNormals() async -> DayNormals {
+        let todayKey = coachTodayKey
+        let yoop = PuffinExperiment.whoopScoresEnabled
+        let apple = Dictionary((await repo.appleDailyRows()).compactMap { row in row.steps.map { (row.day, Double($0)) } },
+                               uniquingKeysWith: { a, b in max(a, b) })
+        let stepsFull = WhoopDayFigures.stepsNormal(days: repo.days, excluding: todayKey, appleStepsByDay: apple)
+        let energyFull = WhoopDayFigures.energyNormal(days: repo.days, excluding: todayKey, yoop: yoop)
+        var byNow: WhoopDayCurveBook.Normals?
+        let published = Self.homeToday?.day == todayKey
+        if !published, repo.days.contains(where: { $0.day == todayKey }) {
+            byNow = await WhoopDayCurveBook.shared.normals(repo: repo, profile: ProfileStore(), todayKey: todayKey,
+                                                           asOf: Int(Date().timeIntervalSince1970))
+        }
+        return DayNormals(stepsFull: stepsFull, energyFull: energyFull,
+                          steps: WhoopDayFigures.compared(fullDay: stepsFull, byNow: byNow?.steps),
+                          energy: WhoopDayFigures.compared(fullDay: energyFull, byNow: byNow?.kcal))
+    }
+
     /// Full data context = the metrics summary + recent workouts (+ an OPT-IN on-device-signals summary
     /// when the second consent is on). Used when the user has granted data access.
     func buildFullContext() async -> String {
         // Read here because the series is async; `buildContext()` stays synchronous.
         let sleepPerformance = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
-        var ctx = buildContext(sleepPerformance: sleepPerformance)
+        var ctx = buildContext(sleepPerformance: sleepPerformance, dayNormals: await dayNormals())
         if let patterns = CoachPatterns.block(days: repo.strainDays) { ctx += "\n\n" + patterns }
         if let memory = CoachMemoryStore.shared.contextBlock() {
             ctx = memory + "\n\n" + ctx
@@ -1731,6 +1752,20 @@ final class AICoachEngine: ObservableObject {
         /// Strain on the stored 0-100 scale, as `StrainScorer.effectiveEffort` resolves it for Home.
         let strain: Double?
         let steps: Double?
+        /// Today's active energy as the Calories rows state it, and the normals the Steps and Calories rows
+        /// compare today with (by this time of day while today is open, else the 30-day whole-day normal).
+        var activeKcal: Double? = nil
+        var stepsNormal: WhoopDayFigures.NormalReading? = nil
+        var activeKcalNormal: WhoopDayFigures.NormalReading? = nil
+    }
+
+    /// The normals the Steps and Calories rows and pages state, for the Coach to quote as "usual": the whole
+    /// day's 30-day normals, and today's by-now readings when Home has not published them.
+    struct DayNormals {
+        var stepsFull: Double?
+        var energyFull: Double?
+        var steps: WhoopDayFigures.NormalReading?
+        var energy: WhoopDayFigures.NormalReading?
     }
 
     /// The last `HomeTodayReadout` Home wrote, or nil before Home has loaded today.
@@ -1744,7 +1779,8 @@ final class AICoachEngine: ObservableObject {
     /// last 14 calendar days of recovery/strain/sleep/HRV/resting HR, and the 30-day averages. Kept well
     /// under ~1500 tokens. If there's no data, it says so. `sleepPerformance` is the stored series Home's
     /// Sleep ring reads, passed in by `buildFullContext()` because reading it is async.
-    func buildContext(sleepPerformance: [(day: String, value: Double)]? = nil) -> String {
+    func buildContext(sleepPerformance: [(day: String, value: Double)]? = nil,
+                      dayNormals: DayNormals? = nil) -> String {
         // oldest → newest, Strain as the screens show it (`Repository.strainDays`)
         let days = repo.strainDays
         var lines: [String] = ["USER BIOMETRIC SUMMARY (the user's own wearable data):"]
@@ -1775,7 +1811,10 @@ final class AICoachEngine: ObservableObject {
             ? repo.dayStrain(day: todayKey, stored: repo.days.last(where: { $0.day == todayKey })?.strain)
             : readout?.strain ?? todayRow?.strain
         lines.append(Self.todaySoFarLine(todayKey: todayKey, strain: todayStrain,
-                                         steps: readout?.steps ?? todayRow?.steps.map(Double.init)))
+                                         steps: readout?.steps ?? todayRow?.steps.map(Double.init),
+                                         activeKcal: readout?.activeKcal ?? todayRow?.activeKcalEst,
+                                         stepsNormal: readout?.stepsNormal ?? dayNormals?.steps,
+                                         activeKcalNormal: readout?.activeKcalNormal ?? dayNormals?.energy))
         if let sleepPerformance {
             lines.append(Self.sleepPerformanceLine(series: sleepPerformance, todayKey: todayKey))
         }
@@ -1813,7 +1852,7 @@ final class AICoachEngine: ObservableObject {
         let last30 = Array(days.filter { $0.day < todayKey }.suffix(30))
         lines.append("")
         lines.append("30-day averages (the 30 days before today; quote these as my usual):")
-        lines.append(contentsOf: Self.averageLines(last30))
+        lines.append(contentsOf: Self.averageLines(last30, normals: dayNormals.map { ($0.stepsFull, $0.energyFull) }))
 
         return lines.joined(separator: "\n")
     }
@@ -2007,7 +2046,12 @@ final class AICoachEngine: ObservableObject {
     /// The 30-day averages, over the days before today. Zeros are not readings, so they never pull a
     /// normal down, and skin temperature averages deviations only: WHOOP and Apple imports store an
     /// absolute wrist temperature in the same column (`VitalBands.isAbsoluteSkinTemp`).
-    nonisolated static func averageLines(_ prior: [DailyMetric]) -> [String] {
+    ///
+    /// `normals`, when given, are the steps and energy normals the Steps and Calories rows state, from
+    /// `WhoopDayFigures` (its floors, and the phone's steps for days before the strap counted); the Coach
+    /// quotes those rather than a mean of its own, which read another set of days and said another number.
+    nonisolated static func averageLines(_ prior: [DailyMetric],
+                                         normals: (steps: Double?, energy: Double?)? = nil) -> [String] {
         func mean(_ xs: [Double]) -> Double? { xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count) }
         func whole(_ xs: [Double], _ unit: String) -> String {
             mean(xs).map { "\(Int($0.rounded()))\(unit)" } ?? Self.notMeasured
@@ -2024,8 +2068,10 @@ final class AICoachEngine: ObservableObject {
         let respiration = tenth(prior.compactMap { Self.measured($0.respRateBpm) }, "/min")
         let deviations = prior.compactMap { $0.skinTempDevC }.filter { !VitalBands.isAbsoluteSkinTemp($0) }
         let skin = tenth(deviations, "°C")
-        let steps = whole(prior.compactMap { Self.measuredInt($0.steps) }, "/day")
-        let energy = whole(prior.compactMap { Self.measured($0.activeKcalEst) }, " kcal/day")
+        let steps = normals.map { $0.steps.map { "\(Int($0.rounded()))/day" } ?? Self.notMeasured }
+            ?? whole(prior.compactMap { Self.measuredInt($0.steps) }, "/day")
+        let energy = normals.map { $0.energy.map { "\(Int($0.rounded())) kcal/day" } ?? Self.notMeasured }
+            ?? whole(prior.compactMap { Self.measured($0.activeKcalEst) }, " kcal/day")
         return [
             "  recovery: \(recovery), strain: \(strain), sleep: \(sleep), HRV: \(hrv), RHR: \(rhr)",
             "  SpO2: \(spo2), respiration: \(respiration), skin-temp deviation: \(skin), steps: \(steps), "
@@ -2057,15 +2103,28 @@ final class AICoachEngine: ObservableObject {
         return line
     }
 
-    /// Today's Strain (stored 0-100 scale, shown on 0-21) and steps so far, as Home shows them. Nothing
-    /// recorded yet is said in words, never as a zero.
-    nonisolated static func todaySoFarLine(todayKey: String, strain: Double?, steps: Double?) -> String {
+    /// Today's Strain (stored 0-100 scale, shown on 0-21), steps and active energy so far, as Home shows
+    /// them, each with the normal the Home row compares it with. Nothing recorded yet is said in words,
+    /// never as a zero.
+    ///
+    /// Today is only part of a day, so a figure is compared with the normal BY NOW (what the prior days had
+    /// reached at this time of day) and the whole-day normal is given beside it, as the rows and pages do.
+    /// With only a whole-day normal the line says the day is not over.
+    nonisolated static func todaySoFarLine(todayKey: String, strain: Double?, steps: Double?,
+                                           activeKcal: Double? = nil,
+                                           stepsNormal: WhoopDayFigures.NormalReading? = nil,
+                                           activeKcalNormal: WhoopDayFigures.NormalReading? = nil) -> String {
         let strainText = Self.measured(strain).map { String(format: "Strain %.1f of 21", Self.strain21($0)) }
             ?? "no Strain recorded yet"
-        let stepsText = Self.measured(steps).map { "\(Int($0.rounded())) steps" }
-            ?? "no steps recorded or synced yet"
-        return "Today so far (\(todayKey), in progress), as the Home screen shows it: "
-            + "\(strainText); \(stepsText)."
+        let stepsText = Self.measured(steps).map {
+            "\(Int($0.rounded())) steps" + (stepsNormal?.coachPhrase() ?? "")
+        } ?? "no steps recorded or synced yet"
+        var line = "Today so far (\(todayKey), in progress), as the Home screen shows it: "
+            + "\(strainText); \(stepsText)"
+        if let kcal = Self.measured(activeKcal) {
+            line += "; active energy \(Int(kcal.rounded())) kcal" + (activeKcalNormal?.coachPhrase(unit: " kcal") ?? "")
+        }
+        return line + "."
     }
 
     /// Last night's Sleep Performance from the stored series Home's Sleep ring reads: the value for

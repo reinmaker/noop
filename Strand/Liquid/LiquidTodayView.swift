@@ -71,6 +71,7 @@ struct LiquidTodayView: View {
     @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
     @State private var dayWindowSeconds: Int?      // Yoop: the shown day's window, onset to its end or now
     @State private var dayWindowFrom: Int?         // Yoop: the shown day's window start (epoch s), handed to the dashboard pages
+    @State private var byNowNormals: WhoopDayCurveBook.Normals?   // Yoop: today's steps and energy normals by this time of day
     @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     /// Line identity for [hrValues], from the bucket timestamps this used to discard (#2082).
@@ -764,6 +765,7 @@ struct LiquidTodayView: View {
                                   calories: caloriesCount, vo2max: vo2max, appleStepsByDay: appleStepsByDay,
                                   totalCalories: totalCaloriesCount, basalKcalPerDay: basalKcalPerDay,
                                   windowFrom: dayWindowFrom, windowSeconds: dayWindowSeconds, isToday: true,
+                                  stepsByNow: byNowNormals?.steps, activeByNow: byNowNormals?.kcal,
                                   onCustomize: { customizationDestination = .today })
             WhoopStressChartCard(currentStress: stress)
             WhoopStrainRecoveryCard(days: repo.strainDays)
@@ -1789,6 +1791,14 @@ struct LiquidTodayView: View {
         let to = max(from, toExclusive - 1)
         dayWindowSeconds = max(0, toExclusive - from)
         dayWindowFrom = from
+        // Today is only part of a day, so it is read against what the prior days had reached by this time
+        // of day (`WhoopDayCurveBook`). That reads the closed days' curves the first time, so it runs beside
+        // the load and the rows take it when it lands; until then the whole-day normal stands.
+        if selectedDayOffset == 0 {
+            Task { await refreshByNowNormals(asOf: toExclusive) }
+        } else {
+            byNowNormals = nil
+        }
         // #1001: in-progress Effort for TODAY, over the SAME window resolved just above (the day-cycle
         // onset when that mode is on, else calendar midnight → now) with the identical params the daily
         // pass uses, so the live number matches what the engine will eventually persist. Below
@@ -1933,11 +1943,9 @@ struct LiquidTodayView: View {
         // #616: same-day imported active energy — the calorie fallback when the strap banked no on-device
         // HR estimate for the day, so the tile/card/detail agree (imported-first, mirrors steps).
         importedActiveKcalDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.activeKcal }.max()
-        // The Coach quotes today's Strain and steps as this screen shows them (`AICoachEngine.homeToday`).
-        if selectedDayOffset == 0 {
-            AICoachEngine.homeToday = AICoachEngine.HomeTodayReadout(
-                day: selectedDayKey, strain: effortStrain(displayDay), steps: stepCount)
-        }
+        // The Coach quotes today's Strain, steps and energy, and their normals, as this screen shows them
+        // (`AICoachEngine.homeToday`).
+        publishCoachReadout()
 
         // Weight for the SELECTED day: prefers a real Apple-Health reading (today's daily, else the
         // "weight" series' newest point so a sparse-but-recent value still renders). Falls back to the
@@ -2101,6 +2109,33 @@ struct LiquidTodayView: View {
         return h < 12 ? String(localized: "Good morning")
             : h < 17 ? String(localized: "Good afternoon")
             : String(localized: "Good evening")
+    }
+
+    /// Today's steps and energy normals by this time of day, read at `asOf`. Dropped when the day moved on
+    /// while it was read.
+    private func refreshByNowNormals(asOf: Int) async {
+        let key = selectedDayKey
+        // Read again only after ten minutes: the normal by now moves slowly, and every read lists the days.
+        if let held = byNowNormals, held.dayKey == key, asOf - held.asOf < 600, asOf >= held.asOf { return }
+        let normals = await WhoopDayCurveBook.shared.normals(repo: repo, profile: profile, todayKey: key, asOf: asOf)
+        guard selectedDayOffset == 0, selectedDayKey == key else { return }
+        byNowNormals = normals
+        publishCoachReadout()
+    }
+
+    /// What the Coach quotes for today: the figures the rows state, with the normals they compare with (by
+    /// now when there is one, else the whole-day normal), so the Coach, the rows and the pages agree.
+    private func publishCoachReadout() {
+        guard selectedDayOffset == 0 else { return }
+        let stepsFull = WhoopDayFigures.stepsNormal(days: repo.days, excluding: displayDay?.day,
+                                                    appleStepsByDay: appleStepsByDay)
+        let energyFull = WhoopDayFigures.energyNormal(days: repo.days, excluding: displayDay?.day,
+                                                      yoop: PuffinExperiment.whoopScoresEnabled)
+        AICoachEngine.homeToday = AICoachEngine.HomeTodayReadout(
+            day: selectedDayKey, strain: effortStrain(displayDay), steps: stepCount,
+            activeKcal: caloriesCount,
+            stepsNormal: WhoopDayFigures.compared(fullDay: stepsFull, byNow: byNowNormals?.steps),
+            activeKcalNormal: WhoopDayFigures.compared(fullDay: energyFull, byNow: byNowNormals?.kcal))
     }
 
     // Yoop: measured strap count ?: the iPhone's Apple Health count ?: motion estimate. The strap leads now
