@@ -350,6 +350,7 @@ private struct WhoopOverviewCard<Content: View>: View {
 struct WhoopMyDaySection: View {
     @EnvironmentObject private var router: NavRouter
     @EnvironmentObject private var coach: AICoachEngine
+    @EnvironmentObject private var model: AppModel
     @State private var showReview = false
 
     var body: some View {
@@ -376,6 +377,11 @@ struct WhoopMyDaySection: View {
             // and let the Coach write one as its first message; otherwise show the setup page.
             let outlook = Self.isOutlookHour(Calendar.current.component(.hour, from: Date()))
             Button {
+                // Always on, one line: the row once did nothing when tapped and the log could not say whether
+                // the tap arrived or the Coach sheet failed to open.
+                model.live.append(log: AppModel.stamped(
+                    "My Day row tapped (\(outlook ? "Daily Outlook" : "Day In Review")): Coach set up \(coach.isConfigured), "
+                    + "data access \(coach.dataConsent)"))
                 if coach.isConfigured && coach.dataConsent {
                     coach.nextOpener = outlook ? .dailyOutlook : .dayReview
                     router.openCoach()
@@ -398,6 +404,7 @@ struct WhoopMyDaySection: View {
                 .padding(.vertical, NoopMetrics.space4)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(outlook ? WhoopStyle.outlookGradient : WhoopStyle.reviewGradient))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
         }

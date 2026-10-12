@@ -32,6 +32,7 @@ struct RootTabView: View {
     @EnvironmentObject private var repo: Repository
     /// WHOOP-style floating Coach button: asks the Coach about the screen you're on.
     @EnvironmentObject private var coach: AICoachEngine
+    @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var showCoachSheet = false
     /// Cross-screen navigation requests (e.g. Live → "Manage devices"). Devices isn't a tab — it lives
@@ -301,6 +302,9 @@ struct RootTabView: View {
                 }
                 // WHOOP-style: the Coach opens as a sheet over the current screen. A caller that wants a
                 // question asked has already parked it in `AICoachEngine.pendingPrompt`.
+                model.live.append(log: AppModel.stamped(
+                    "Coach opened from a screen: sheet was \(showCoachSheet ? "already up" : "down"), "
+                    + "opener \(coach.nextOpener == nil ? "none" : "set")"))
                 showCoachSheet = true
                 // Opened from a screen's Coach pill: the Coach speaks first about that screen. A pill that
                 // already shows its headline has parked it in `nextOpener`, and that text is the opener.
