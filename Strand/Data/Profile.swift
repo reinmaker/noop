@@ -12,6 +12,11 @@ final class ProfileStore: ObservableObject {
     @Published var dateOfBirth: Date {
         didSet {
             d.set(dateOfBirth, forKey: K.dateOfBirth)
+            // Only a person sets this property after `init` (the pickers in Settings and the setup wizard), so
+            // this is the one place a date of birth becomes a real one. The date is stored beside the flag so a
+            // restore, which rewrites `profile.dateOfBirth` from an Int age, turns the flag off again.
+            d.set(dateOfBirth, forKey: K.dateOfBirthEntered)
+            dateOfBirthIsEntered = true
             // Mirror the DERIVED age under the legacy `profile.age` key so the `.noopbak` backup
             // whitelist (which carries an Int age, not a Date) keeps exporting a correct value with no
             // change to the cross-platform backup contract. `BackupSettings.apply` clears
@@ -19,12 +24,27 @@ final class ProfileStore: ObservableObject {
             d.set(age, forKey: K.legacyAge)
         }
     }
+    /// True once the person has picked a date of birth. Until then `dateOfBirth` is a stand-in derived from a whole
+    /// number of years (`dateOfBirth(forAge:)`), good for whole years only; `decimalAge` then says so.
+    @Published private(set) var dateOfBirthIsEntered: Bool
     @Published var sex: String { didSet { d.set(sex, forKey: K.sex) } }          // "male" | "female" | "nonbinary"
     @Published var weightKg: Double { didSet { d.set(weightKg, forKey: K.weight) } }
     @Published var heightCm: Double { didSet { d.set(heightCm, forKey: K.height) } }
     /// Optional waist circumference (cm); 0 = not set. Only used to ALSO show an estimated VO₂max
     /// alongside Fitness Age — the Fitness Age itself does not need it (the body term cancels).
     @Published var waistCm: Double { didSet { d.set(waistCm, forKey: K.waist) } }
+    /// A VO2 max, ml/kg/min, that the person read from the WHOOP app and typed in; 0 = none. Held on this device only
+    /// and never written from code, so a reading appears here only because someone entered it. `Vo2Resolver` takes it
+    /// ahead of every estimate while it is recent (`Vo2Choice.whoopAppMaxAgeDays`). Not in the backup whitelist.
+    @Published var whoopAppVo2: Double {
+        didSet {
+            d.set(Self.cleanedWhoopAppVo2(whoopAppVo2), forKey: K.whoopAppVo2)
+            // A reading that is new (none was held before) is dated today; the person can move the day.
+            if oldValue <= 0, whoopAppVo2 > 0 { whoopAppVo2Date = Date() }
+        }
+    }
+    /// The day that reading was taken in the WHOOP app.
+    @Published var whoopAppVo2Date: Date { didSet { d.set(whoopAppVo2Date, forKey: K.whoopAppVo2Date) } }
     /// 0 = auto-estimate from age.
     @Published var hrMaxOverride: Int { didSet { d.set(hrMaxOverride, forKey: K.hrMax) } }
     /// Five personalized inclusive zone starts in BPM; empty = conventional %HRmax zones.
@@ -90,6 +110,10 @@ final class ProfileStore: ObservableObject {
         static let hrZoneThresholds = "profile.hrZoneThresholds"
         static let stepScale = "profile.stepTicksPerStep"
         static let waist = "profile.waistCm"
+        /// The date of birth as the person entered it; the flag is on only while `dateOfBirth` still equals it.
+        static let dateOfBirthEntered = "profile.dateOfBirthEntered"
+        static let whoopAppVo2 = "profile.vo2maxWhoopApp"
+        static let whoopAppVo2Date = "profile.vo2maxWhoopAppDate"
         static let stepsCoeff = "profile.stepsCalibrationCoefficient"
         static let stepsSampleDays = "profile.stepsCalibrationSampleDays"
         static let stepsConfidence = "profile.stepsCalibrationConfidence"
@@ -115,6 +139,7 @@ final class ProfileStore: ObservableObject {
             resolvedDOB = Self.dateOfBirth(forAge: 30)
         }
         dateOfBirth = resolvedDOB
+        dateOfBirthIsEntered = (d.object(forKey: K.dateOfBirthEntered) as? Date) == resolvedDOB
         // `didSet` doesn't fire for the initial assignment inside `init`, so persist the resolved DOB
         // and its mirrored age explicitly — otherwise a migrated/derived DOB never reaches storage
         // until the user next edits it. Written from the LOCAL (not `self.dateOfBirth`, which Swift
@@ -125,6 +150,8 @@ final class ProfileStore: ObservableObject {
         weightKg = d.object(forKey: K.weight) as? Double ?? 75
         heightCm = d.object(forKey: K.height) as? Double ?? 178
         waistCm = d.object(forKey: K.waist) as? Double ?? 0
+        whoopAppVo2 = Self.cleanedWhoopAppVo2(d.object(forKey: K.whoopAppVo2) as? Double ?? 0)
+        whoopAppVo2Date = d.object(forKey: K.whoopAppVo2Date) as? Date ?? Date()
         hrMaxOverride = d.object(forKey: K.hrMax) as? Int ?? 0
         let storedThresholds = d.string(forKey: K.hrZoneThresholds)?
             .split(separator: ",").compactMap { Int($0) } ?? []
@@ -166,6 +193,55 @@ final class ProfileStore: ObservableObject {
     /// to remember to update. Every existing caller (HR zones, calories, Fitness/Body Age) reads this
     /// unchanged.
     var age: Int { Self.years(from: dateOfBirth, to: Date()) }
+
+    /// Age in years and fractions of a year, the figure WHOOP Age is counted from (WHOOP prints its own to a tenth).
+    /// Exact when the person has entered a date of birth. Otherwise the whole number of years plus
+    /// `unknownBirthdayFraction`: the birthday is unknown, so half a year is the expected distance past the last one
+    /// (a uniform guess, off by at most half a year), and `decimalAgeSigma` says how far.
+    var decimalAge: Double { Self.decimalAge(dateOfBirth: dateOfBirth, isEntered: dateOfBirthIsEntered, now: Date()) }
+
+    /// What a person who has not entered a birth date is assumed to be past their last birthday, in years.
+    nonisolated static let unknownBirthdayFraction = 0.5
+
+    /// One standard deviation of the age when the birthday is not known: a uniform fraction of a year.
+    nonisolated static let unknownBirthdayFractionSigma = 1 / 12.0.squareRoot()
+
+    /// `decimalAge` without a store, so it can be tested and read from the Coach.
+    nonisolated static func decimalAge(dateOfBirth: Date, isEntered: Bool, now: Date) -> Double {
+        let whole = years(from: dateOfBirth, to: now)
+        guard isEntered else { return Double(whole) + unknownBirthdayFraction }
+        let cal = Calendar.current
+        guard let last = cal.date(byAdding: .year, value: whole, to: dateOfBirth),
+              let next = cal.date(byAdding: .year, value: whole + 1, to: dateOfBirth),
+              next > last else { return Double(whole) }
+        return Double(whole) + min(1, max(0, now.timeIntervalSince(last) / next.timeIntervalSince(last)))
+    }
+
+    /// The age as the defaults hold it (for callers without a store): the decimal age and whether it is exact.
+    /// Nil when no age is held at all.
+    nonisolated static func storedAge(defaults: UserDefaults = .standard, now: Date = Date()) -> (years: Double, isExact: Bool)? {
+        let entered = defaults.object(forKey: K.dateOfBirthEntered) as? Date
+        if let dob = defaults.object(forKey: K.dateOfBirth) as? Date {
+            let exact = entered == dob
+            return (decimalAge(dateOfBirth: dob, isEntered: exact, now: now), exact)
+        }
+        guard let whole = defaults.object(forKey: K.legacyAge) as? Int else { return nil }
+        return (Double(whole) + unknownBirthdayFraction, false)
+    }
+
+    /// The VO2 max typed in from the WHOOP app, with its day, as the defaults hold it; nil when none is set.
+    nonisolated static func storedWhoopAppVo2(defaults: UserDefaults = .standard) -> (value: Double, date: Date)? {
+        let value = cleanedWhoopAppVo2(defaults.object(forKey: K.whoopAppVo2) as? Double ?? 0)
+        guard value > 0, let date = defaults.object(forKey: K.whoopAppVo2Date) as? Date else { return nil }
+        return (value, date)
+    }
+
+    /// The range a typed VO2 max may take, ml/kg/min. Outside it nothing is held.
+    nonisolated static let whoopAppVo2Range: ClosedRange<Double> = 15...90
+
+    nonisolated static func cleanedWhoopAppVo2(_ value: Double) -> Double {
+        value.isFinite && whoopAppVo2Range.contains(value) ? value : 0
+    }
 
     /// Whole years elapsed `from`→`to` (floor — a birthday not yet reached this year doesn't count).
     nonisolated static func years(from: Date, to: Date) -> Int {

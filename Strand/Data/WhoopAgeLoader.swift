@@ -11,24 +11,28 @@ enum WhoopAgeLoader {
     private static var cache: (key: String, snapshot: WhoopAgeSnapshot)?
 
     /// The snapshot for today's logical day. Cached against the repository's refresh counter, so the Health
-    /// tab, the screen and the Coach in one refresh share one read.
-    static func load(repo: Repository, age: Double, sex: String) async -> WhoopAgeSnapshot {
+    /// tab, the screen and the Coach in one refresh share one read. `age` is in years and fractions of a year
+    /// (`ProfileStore.decimalAge`); `ageSigma` is its error when the birth date is not known, else 0.
+    static func load(repo: Repository, age: Double, ageSigma: Double = 0, sex: String) async -> WhoopAgeSnapshot {
         let today = Repository.logicalDayKey(Date())
-        let key = "\(repo.refreshSeq)|\(today)|\(Int(age))|\(sex)"
+        // The VO2 max typed in from the WHOOP app is part of the key, so a new entry is read at once.
+        let typed = ProfileStore.storedWhoopAppVo2().map { "\($0.value)@\($0.date.timeIntervalSince1970)" } ?? "-"
+        let key = "\(repo.refreshSeq)|\(today)|\(String(format: "%.3f", age))|\(ageSigma)|\(sex)|\(typed)"
         if let cache, cache.key == key { return cache.snapshot }
-        let snapshot = await build(repo: repo, today: today, age: age, sex: sex)
+        let snapshot = await build(repo: repo, today: today, age: age, ageSigma: ageSigma, sex: sex)
         cache = (key, snapshot)
         return snapshot
     }
 
-    /// The profile the Coach holds (UserDefaults), for callers without a `ProfileStore`.
+    /// The profile the Coach holds (UserDefaults), for callers without a `ProfileStore`: the same decimal age.
     static func load(repo: Repository, defaults: UserDefaults = .standard) async -> WhoopAgeSnapshot {
-        let age = Double(defaults.integer(forKey: "profile.age"))
+        let stored = ProfileStore.storedAge(defaults: defaults)
+        let sigma = stored.map { $0.isExact ? 0 : ProfileStore.unknownBirthdayFractionSigma } ?? 0
         let sex = defaults.string(forKey: "profile.sex") ?? "male"
-        return await load(repo: repo, age: age, sex: sex)
+        return await load(repo: repo, age: stored?.years ?? 0, ageSigma: sigma, sex: sex)
     }
 
-    private static func build(repo: Repository, today: String, age: Double, sex: String) async -> WhoopAgeSnapshot {
+    private static func build(repo: Repository, today: String, age: Double, ageSigma: Double, sex: String) async -> WhoopAgeSnapshot {
         let keys = WhoopAge.dayKeys(endingOn: today, count: WhoopAge.windowDays)
         let first = keys.first ?? today
         var days: [String: WhoopAge.Day] = [:]
@@ -89,8 +93,8 @@ enum WhoopAgeLoader {
         guard age > 0 else {
             return WhoopAgeSnapshot(day: today, coverage: coverage, vo2: vo2, result: nil, recent: nil, pace: nil)
         }
-        let window = WhoopAge.inputs(days: all, endingOn: today, span: WhoopAge.windowDays, age: age, sex: sex, vo2: vo2)
-        let recent = WhoopAge.inputs(days: all, endingOn: today, span: WhoopAge.recentDays, age: age, sex: sex, vo2: vo2)
+        let window = WhoopAge.inputs(days: all, endingOn: today, span: WhoopAge.windowDays, age: age, ageSigma: ageSigma, sex: sex, vo2: vo2)
+        let recent = WhoopAge.inputs(days: all, endingOn: today, span: WhoopAge.recentDays, age: age, ageSigma: ageSigma, sex: sex, vo2: vo2)
         let result = coverage.isUnlocked ? WhoopAge.compute(window) : nil
         let pace = result == nil ? nil : WhoopAge.pace(window: window, recent: recent)
         return WhoopAgeSnapshot(day: today, coverage: coverage, vo2: vo2, result: result, recent: recent, pace: pace)
@@ -101,9 +105,14 @@ enum WhoopAgeLoader {
 
 @MainActor
 enum Vo2Resolver {
-    /// The choice for today's logical day, from Apple Health's newest reading and Yoop's newest estimate.
-    static func load(repo: Repository, sex: String = UserDefaults.standard.string(forKey: "profile.sex") ?? "male") async -> Vo2Choice? {
+    /// The choice for today's logical day, from the reading typed in from the WHOOP app (Settings), Apple Health's
+    /// newest reading and Yoop's newest estimate. Every screen and the Coach read it through here.
+    static func load(repo: Repository, sex: String = UserDefaults.standard.string(forKey: "profile.sex") ?? "male",
+                     defaults: UserDefaults = .standard) async -> Vo2Choice? {
         let today = Repository.logicalDayKey(Date())
+        let whoop = ProfileStore.storedWhoopAppVo2(defaults: defaults).map {
+            Vo2Choice.Reading(value: $0.value, day: Repository.localDayKey($0.date), estimator: nil)
+        }
         let apple = await repo.appleDailyRows(days: 200)
             .compactMap { row in row.vo2max.map { (day: row.day, value: $0) } }
             .filter { $0.day <= today }
@@ -115,6 +124,6 @@ enum Vo2Resolver {
             let tag = await repo.scoreProvenanceTag(resolvedSource: point.source, day: point.day, metricKey: "vo2max_est")
             yoop = Vo2Choice.Reading(value: point.value, day: point.day, estimator: tag)
         }
-        return Vo2Choice.choose(apple: apple, yoop: yoop, today: today, sex: sex)
+        return Vo2Choice.choose(whoop: whoop, apple: apple, yoop: yoop, today: today, sex: sex)
     }
 }

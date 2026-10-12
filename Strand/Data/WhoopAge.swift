@@ -2,7 +2,8 @@ import Foundation
 
 /// Yoop: WHOOP Age and Pace of Aging, Yoop's own estimate built on WHOOP's published Healthspan method
 /// ("The WHOOP Healthspan Feature", WHOOP with the Buck Institute, 2025, revised 4 Sep 2025; called "the white
-/// paper" below). It is not WHOOP's number: WHOOP's overlap correction is not published (see `fitnessShrink`).
+/// paper" below). It is not WHOOP's number: WHOOP's overlap correction and several curve scales are not
+/// published, so those are fitted (see "Calibration").
 ///
 /// The method, from the white paper:
 /// - Every contributor has a hazard ratio (HR) for all-cause mortality against a health-optimised referent,
@@ -33,16 +34,43 @@ enum WhoopAge {
     /// A weekly figure needs this many days of strap data in the window before it is stated.
     static let minDaysForWeekly = 14
 
-    /// Yoop's assumption: the overlap correction. WHOOP multiplies each hazard ratio by adjustment factors
-    /// from a structural equation model on its members' data (white paper, "Accounting for Correlated
-    /// Behaviors and Metrics") and does not publish them. The studies behind the fitness and activity
-    /// contributors (VO2 max, resting heart rate, steps, zone time, strength, lean mass) are adjusted for each
-    /// other only in part, so their years are multiplied by this factor. 0.65 is the single value for which the
-    /// white paper's two Table 2 anchors both come out near WHOOP's: 30 year old male WHOOP members (-1.6
-    /// years) and the typical US 30 year old male (about +6 years). The two sleep contributors, whose studies
-    /// adjust for activity and fitness, are left as they are.
-    static let fitnessShrink = 0.65
-    static let sleepShrink = 1.0
+    // MARK: - Calibration
+    //
+    // WHOOP corrects the hazard ratios of its contributors with adjustment factors from a structural equation model
+    // on its members' data (white paper, "Accounting for Correlated Behaviors and Metrics") and does not publish them
+    // or several of the curves' scales. Everything else here is published: the log-linear form t = 10 x ln(HR), the
+    // hazard ratios and the targets. What is not is fitted, once, to two things and nothing else:
+    //   1. WHOOP's own Healthspan readout for one member (six-month averages): WHOOP Age six years and four tenths
+    //      under the member's chronological age, with each contributor's years as the app printed them;
+    //   2. the white paper's Table 2: WHOOP members aged 30 (male -1.6 years, female -1.6) and the typical US adult of 30
+    //      (male about +6, female about +7.5).
+    // Each fitted value says which of the two pins it. `WhoopAgeTests` feeds both back in and holds the result to
+    // them (total within 0.5 years of the readout, each contributor within 0.3, Table 2 within 0.3 for members and 0.6
+    // for the US adults). This is a calibration against one person's readout and a table of typical values, not a
+    // validation: the form stays the published one, only the scales move, and the page says "calibrated against
+    // WHOOP's own readout".
+    //
+    // Pinned by the readout (a printed value is good to 0.05 years):
+    //   sleep benefit 0.41 y/h, consistency 0.17 y/point, steps scale 0.37, zones 1-3 scale 0.70, zones 4-5 target 20 min,
+    //   strength slope 0.0026 ln(HR) a minute, VO2 max scale 0.73, resting heart rate scale 1.43.
+    // Pinned by Table 2 alone (the readout cannot see them: the member sits at the target, or has no lean mass):
+    //   zones 4-5 scale 0.25, lean body mass scale 0.32.
+
+    /// The scale each contributor's years are multiplied by after the published curve. 1.0 where the published curve
+    /// already matches WHOOP's readout (sleep, consistency and strength carry their fitted slope inside the curve
+    /// instead). Below 1 the studies behind the curve overstate a contributor that is correlated with the others
+    /// (WHOOP's overlap correction); above 1 WHOOP's readout is steeper than the cited hazard ratio.
+    static func scale(_ key: Key) -> Double {
+        switch key {
+        case .sleepDuration, .sleepConsistency, .strength: return 1.0
+        case .steps: return 0.37             // fitted to the readout: -0.3 years at 9,599 steps
+        case .zones13: return 0.70           // fitted to the readout: -0.6 years at 180 minutes a week
+        case .zones45: return 0.25           // fitted to Table 2 (the readout member sits at the target)
+        case .vo2max: return 0.73            // fitted to the readout: -2.8 years at 48 ml/kg/min
+        case .restingHr: return 1.43         // fitted to the readout: -1.1 years at 51 bpm (a slope of 12.9% a 10 bpm, steeper than the cited 9%)
+        case .leanBodyMass: return 0.32      // fitted to Table 2 (no lean mass in the readout)
+        }
+    }
 
     /// Yoop's assumption: each contributor's years carry this relative error from the width of the
     /// confidence intervals of the cited meta-analyses (for example resting heart rate RR 1.09, 95% CI 1.07 to
@@ -55,17 +83,17 @@ enum WhoopAge {
         case sleepDuration, sleepConsistency, steps, zones13, zones45, strength, vo2max, restingHr, leanBodyMass
         var id: String { rawValue }
 
-        var shrink: Double {
-            switch self {
-            case .sleepDuration, .sleepConsistency: return WhoopAge.sleepShrink
-            default: return WhoopAge.fitnessShrink
-            }
-        }
+        /// This contributor's calibration scale (`WhoopAge.scale`).
+        var scale: Double { WhoopAge.scale(self) }
     }
 
     /// What the nine contributors read, as the averages of a window.
     struct Inputs: Equatable {
+        /// Age in years and fractions of a year (WHOOP counts to a tenth: the readout is a decimal age).
         var age: Double
+        /// 1 standard deviation of `age` when the birth date is not known (`ProfileStore.unknownBirthdayFractionSigma`),
+        /// else 0. It does not move the years, only how far WHOOP Age can be from the figure stated.
+        var ageSigma: Double = 0
         /// "male", "female" or anything else (the two sets of constants are averaged).
         var sex: String
         /// Average nightly hours asleep.
@@ -87,11 +115,11 @@ enum WhoopAge {
         /// Lean body mass as a percentage of body mass. WHOOP and Yoop only use it when it is entered.
         var leanBodyMassPct: Double?
 
-        init(age: Double, sex: String, sleepHours: Double? = nil, sleepConsistency: Double? = nil,
+        init(age: Double, ageSigma: Double = 0, sex: String, sleepHours: Double? = nil, sleepConsistency: Double? = nil,
              steps: Double? = nil, zones13PerWeek: Double? = nil, zones45PerWeek: Double? = nil,
              strengthPerWeek: Double? = nil, vo2max: Double? = nil, vo2maxSigma: Double? = nil,
              restingHr: Double? = nil, leanBodyMassPct: Double? = nil) {
-            self.age = age; self.sex = sex; self.sleepHours = sleepHours
+            self.age = age; self.ageSigma = ageSigma; self.sex = sex; self.sleepHours = sleepHours
             self.sleepConsistency = sleepConsistency; self.steps = steps
             self.zones13PerWeek = zones13PerWeek; self.zones45PerWeek = zones45PerWeek
             self.strengthPerWeek = strengthPerWeek; self.vo2max = vo2max; self.vo2maxSigma = vo2maxSigma
@@ -206,9 +234,11 @@ enum WhoopAge {
     /// in a straight line to 70 at 80.
     static func zones13Target(age: Double) -> Double { interpolate(age, [(30, 100), (80, 70)]) }
 
-    /// Zone 4 to 5 minutes a week that add nothing: 10 for a young adult, 7 for an older one (Table 1). Yoop's
-    /// assumption: 10 to age 30, falling in a straight line to 7 at 80.
-    static func zones45Target(age: Double) -> Double { interpolate(age, [(30, 10), (80, 7)]) }
+    /// Zone 4 to 5 minutes a week that add nothing. The white paper's Table 1 gives 7 to 10 for a young adult and
+    /// lower with age, but WHOOP's own readout prints 0.0 years at 20 minutes a week for that member (the
+    /// marker sits in the neutral part of its bar, about 15 to 25 minutes), so the target is fitted to the readout at
+    /// 20 minutes, the same for every age and sex: the readout cannot say how it moves.
+    static func zones45Target(age: Double) -> Double { 20 }
 
     /// Strength activity minutes a week that add nothing: 40 (white paper, "Strength Activity Time").
     static let strengthTarget = 40.0
@@ -230,26 +260,30 @@ enum WhoopAge {
     /// Sleep duration, hours a night. Short sleep: Itani et al. 2017 (Sleep Med 32:246), pooled all-cause
     /// mortality HR 1.12 for short sleep (about 6 hours), taken as ln(1.12) per hour under 7, capped at three
     /// hours short. 7 to 9 hours: a minor reduction (white paper; Magee et al. 2013, Sleep Med 14:591, found a
-    /// slight, not significant, reduction at 8 to 9 hours); Yoop's assumption: 0.2 years from 8 hours. More than
-    /// 9 hours: no effect (white paper), tapering to nothing between 9 and 10.
+    /// slight, not significant, reduction at 8 to 9 hours). Fitted to the readout: 0.41 years an hour above 7, to 8
+    /// hours, flat to 9 (the readout's -0.1 at 7 h 13 min). More than 9 hours: no effect (white paper), tapering to
+    /// nothing between 9 and 10.
+    static let sleepBenefitYearsPerHour = 0.41
+
     static func sleepDurationYears(hours: Double) -> Double {
         if hours < sleepRange.lowerBound {
             let short = min(3, sleepRange.lowerBound - hours)
             return yearsPerLnHazard * log(1.12) * short
         }
-        let benefit = 0.2
-        if hours <= 9 { return -benefit * min(1, hours - sleepRange.lowerBound) }
-        if hours < 10 { return -benefit * (10 - hours) }
+        if hours <= 9 { return -sleepBenefitYearsPerHour * min(1, hours - sleepRange.lowerBound) }
+        if hours < 10 { return -sleepBenefitYearsPerHour * (10 - hours) }
         return 0
     }
 
     /// Sleep consistency, percent. WHOOP: 70% breaks even, below adds, above subtracts. Windred et al. 2024
     /// (Sleep 47:zsad253), 60,977 UK Biobank adults: the most regular quintile of the sleep regularity index
-    /// had 20% to 48% lower all-cause mortality than the least regular. Yoop's assumption: that spread, about
-    /// ln(0.52) over 40 points of the index, is read as 0.012 ln(HR) per consistency point, limited to
-    /// +4 and -2.5 years.
+    /// had 20% to 48% lower all-cause mortality than the least regular. The slope is fitted to the readout: 0.17
+    /// years a point (ln(HR) 0.017 a point, inside the 0.012 to 0.022 that reading Windred's spread over 30 to 40
+    /// points of the index gives), the readout's -0.2 years at 71%. Limited to +4 and -2.5 years.
+    static let consistencyYearsPerPoint = 0.17
+
     static func sleepConsistencyYears(percent: Double) -> Double {
-        let years = yearsPerLnHazard * 0.012 * (consistencyTarget - percent)
+        let years = consistencyYearsPerPoint * (consistencyTarget - percent)
         return min(4, max(-2.5, years))
     }
 
@@ -270,9 +304,10 @@ enum WhoopAge {
         return interpolate(steps, stepsKnots)
     }
 
-    /// Steps a day against the target. An older adult's target is lower (`stepsTarget`); their steps are scaled
-    /// to the same curve (Yoop's assumption, in line with the white paper's note that fewer steps are needed
-    /// over 60).
+    /// Steps a day against the target, before the contributor's scale (`scale(.steps)`, 0.37, fitted: the readout
+    /// prints -0.3 years at 9,599 steps where Paluch's quartiles alone give -0.8). An older adult's target is lower
+    /// (`stepsTarget`); their steps are scaled to the same curve (Yoop's assumption, in line with the white paper's
+    /// note that fewer steps are needed over 60).
     static func stepsYears(steps: Double, age: Double) -> Double {
         let scale = 8000 / stepsTarget(age: age)
         return yearsPerLnHazard * (stepsLnHazard(steps * scale) - stepsLnHazard(8000))
@@ -292,25 +327,33 @@ enum WhoopAge {
 
     /// Zone 4 to 5 minutes a week. Ahmadi et al. 2022 (Eur Heart J 43:4801): 15 to 20 minutes a week of
     /// vigorous bursts, 18% to 24% lower all-cause mortality; Lee et al. 2022: HR 0.81 at 75 to 149 minutes a
-    /// week of vigorous activity, so no further benefit is credited. Yoop's assumption: ln(HR) rises to ln(0.80)
-    /// at 20 minutes a week on a log scale, ln(1 + minutes / 5), and is flat above.
+    /// week of vigorous activity. Yoop's assumption: ln(HR) falls to ln(0.80) at 75 minutes a week on a log scale,
+    /// ln(1 + minutes / 5), and is flat above. The shape is published only as these two points; the target is 20
+    /// (`zones45Target`) and the scale 0.25 is fitted to Table 2.
+    static let zones45SaturationMinutes = 75.0
+
     static func zones45LnHazard(_ minutes: Double) -> Double {
-        let reach = log(1 + min(max(minutes, 0), 20) / 5)
-        return log(0.80) * reach / log(1 + 20.0 / 5)
+        let reach = log(1 + min(max(minutes, 0), zones45SaturationMinutes) / 5)
+        return log(0.80) * reach / log(1 + zones45SaturationMinutes / 5)
     }
 
     static func zones45Years(minutesPerWeek: Double, age: Double) -> Double {
         yearsPerLnHazard * (zones45LnHazard(minutesPerWeek) - zones45LnHazard(zones45Target(age: age)))
     }
 
-    /// Strength activity minutes a week. Momma et al. 2022 (Br J Sports Med 56:755, 16 cohorts): any
-    /// muscle-strengthening against none, all-cause mortality RR 0.85, J shaped, lowest at 40 minutes a week
-    /// (RR 0.83, 95% CI 0.79 to 0.86); the white paper stops crediting at two hours. Yoop's assumption: ln(RR)
-    /// falls straight from 0 at none to ln(0.83) at 40 minutes, then a further 2% to two hours, then is flat.
+    /// Strength activity minutes a week. The white paper: 30 to 60 minutes a week go with 10% to 30% lower all-cause
+    /// mortality (Momma et al. 2022, Br J Sports Med 56:755; Shailendra et al. 2022), 40 minutes breaks even, the
+    /// shape is U shaped with its optimum between 30 minutes and 2 hours, and nothing more is credited above 2 hours.
+    /// The cited studies' effect of 17% at 40 minutes is too steep above the target for WHOOP's readout, which
+    /// prints -1.3 years at 90 minutes (HR 0.88 against the target). So the curve is straight in minutes up to the
+    /// 2 hours the white paper stops at, ln(HR) = -0.0026 a minute, fitted to that readout. That puts 26% lower
+    /// mortality at 2 hours against none, inside the white paper's 10% to 30%. It has no overlap scale
+    /// (`scale(.strength)` is 1): the slope is the fit.
+    static let strengthLnHazardPerMinute = 0.0026
+    static let strengthCapMinutes = 120.0
+
     static func strengthLnHazard(_ minutes: Double) -> Double {
-        let m = max(0, minutes)
-        if m <= strengthTarget { return log(0.83) * m / strengthTarget }
-        return log(0.83) + log(0.98) * (min(m, 120) - strengthTarget) / 80
+        -strengthLnHazardPerMinute * min(max(minutes, 0), strengthCapMinutes)
     }
 
     static func strengthYears(minutesPerWeek: Double) -> Double {
@@ -318,8 +361,9 @@ enum WhoopAge {
     }
 
     /// VO2 max. Kodama et al. 2009 (JAMA 301:2024): 13% lower all-cause mortality for each extra MET (3.5
-    /// ml/kg/min), the white paper's figure. The distance from the target is limited to four METs either way
-    /// so that the estimate is not extrapolated (Yoop's assumption).
+    /// ml/kg/min), the white paper's figure, before the contributor's scale (`scale(.vo2max)`, 0.73, fitted: the
+    /// readout prints -2.8 years at 48 ml/kg/min where the hazard ratio alone gives -3.8). The distance from the
+    /// target is limited to four METs either way so that the estimate is not extrapolated (Yoop's assumption).
     static func vo2maxYears(vo2: Double, age: Double, sex: String) -> Double {
         let met = 3.5
         let gap = min(4 * met, max(-4 * met, vo2 - vo2maxTarget(age: age, sex: sex)))
@@ -327,15 +371,18 @@ enum WhoopAge {
     }
 
     /// Resting heart rate during sleep. Zhang et al. 2016 (CMAJ 188:E53, 46 cohorts): all-cause mortality RR
-    /// 1.09 (95% CI 1.07 to 1.12) for each 10 bpm, the white paper's figure. Limited to 30 bpm either side.
+    /// 1.09 (95% CI 1.07 to 1.12) for each 10 bpm, the white paper's figure, before the contributor's scale
+    /// (`scale(.restingHr)`, 1.43, fitted: the readout prints -1.1 years at 51 bpm where RR 1.09 gives -0.8, an
+    /// effective 12.9% a 10 bpm; WHOOP measures during sleep, and the cited meta-analysis mostly did not).
+    /// Limited to 30 bpm either side.
     static func restingHrYears(bpm: Double, sex: String) -> Double {
         let gap = min(30, max(-30, bpm - restingHrReference(sex: sex)))
         return yearsPerLnHazard * log(1.09) * gap / 10
     }
 
     /// Lean body mass percentage. Jayedi et al. 2022 (Int J Obes 46:1573, 35 cohorts): 11% higher all-cause
-    /// mortality for each 10 percentage points of body fat, the white paper's figure. Limited to 15 points
-    /// either side.
+    /// mortality for each 10 percentage points of body fat, the white paper's figure, before the contributor's
+    /// scale (`scale(.leanBodyMass)`, 0.32, fitted to Table 2). Limited to 15 points either side.
     static func leanBodyMassYears(percent: Double, age: Double, sex: String) -> Double {
         let gap = min(15, max(-15, leanBodyMassTarget(age: age, sex: sex) - percent))
         return yearsPerLnHazard * log(1.11) * gap / 10
@@ -350,7 +397,7 @@ enum WhoopAge {
         let value: Double?
         /// The value that adds nothing.
         let target: Double?
-        /// Years added (positive) or subtracted (negative), after the overlap correction.
+        /// Years added (positive) or subtracted (negative), after the contributor's scale.
         let years: Double
         /// 1 standard deviation of `years`, from the model error and the input's own error.
         let sigma: Double
@@ -371,7 +418,7 @@ enum WhoopAge {
         }
     }
 
-    /// Raw years (before the overlap correction) for one contributor, nil without a value.
+    /// Raw years (before the contributor's scale) for one contributor, nil without a value.
     static func rawYears(_ key: Key, _ inputs: Inputs) -> Double? {
         guard let v = inputs.value(key), v.isFinite else { return nil }
         switch key {
@@ -387,12 +434,12 @@ enum WhoopAge {
         }
     }
 
-    /// Years a unit of the input's own error is worth for this contributor, after the overlap correction.
+    /// Years a unit of the input's own error is worth for this contributor, after the contributor's scale.
     private static func inputSigma(_ key: Key, _ inputs: Inputs) -> Double {
         switch key {
         case .vo2max:
             guard let s = inputs.vo2maxSigma else { return 0 }
-            return abs(yearsPerLnHazard * log(0.87)) * s / 3.5 * key.shrink
+            return abs(yearsPerLnHazard * log(0.87)) * s / 3.5 * key.scale
         default: return 0
         }
     }
@@ -401,7 +448,7 @@ enum WhoopAge {
         guard let raw = rawYears(key, inputs) else {
             return Impact(key: key, value: nil, target: target(key, inputs), years: 0, sigma: 0)
         }
-        let years = raw * key.shrink
+        let years = raw * key.scale
         let sigma = (pow(modelRelativeError * years, 2) + pow(inputSigma(key, inputs), 2)).squareRoot()
         return Impact(key: key, value: inputs.value(key), target: target(key, inputs), years: years, sigma: sigma)
     }
@@ -418,15 +465,18 @@ enum WhoopAge {
         let sigma: Double
 
         var chronologicalAge: Double { inputs.age }
+        /// 1 standard deviation of WHOOP Age itself: the contributors' error and, when the birth date is not known,
+        /// the error in the age, combined as independent.
+        var whoopAgeSigma: Double { (sigma * sigma + inputs.ageSigma * inputs.ageSigma).squareRoot() }
         var whoopAge: Double { inputs.age + totalYears }
         /// Positive: WHOOP Age is younger than the calendar age.
         var yearsYounger: Double { -totalYears }
 
         /// The years the VO2 max contributor carries at the two ends of its range (the used value less and plus one
-        /// standard deviation), after the overlap correction: the first is the older end, the second the younger.
+        /// standard deviation), after the contributor's scale: the first is the older end, the second the younger.
         var vo2YearsRange: (older: Double, younger: Double)? {
             guard let v = inputs.vo2max, let s = inputs.vo2maxSigma else { return nil }
-            func years(_ x: Double) -> Double { WhoopAge.vo2maxYears(vo2: x, age: inputs.age, sex: inputs.sex) * Key.vo2max.shrink }
+            func years(_ x: Double) -> Double { WhoopAge.vo2maxYears(vo2: x, age: inputs.age, sex: inputs.sex) * Key.vo2max.scale }
             return (years(max(0, v - s)), years(v + s))
         }
 
@@ -492,7 +542,7 @@ enum WhoopAge {
         let key: Key
         /// How much to add: steps a day, minutes a week, hours a night, consistency points, or bpm lower.
         let amount: Double
-        /// Years it would take off, after the overlap correction.
+        /// Years it would take off, after the contributor's scale.
         let yearsGained: Double
         /// False: it closes a gap to the target. True: the target is met and this goes on to where the studies
         /// behind the curve stop finding more benefit.
@@ -506,7 +556,7 @@ enum WhoopAge {
         switch key {
         case .steps: return 10_000 * stepsTarget(age: inputs.age) / 8_000
         case .zones13: return 300
-        case .zones45: return 20
+        case .zones45: return zones45SaturationMinutes
         case .sleepDuration: return 8
         case .sleepConsistency: return 80
         default: return nil
@@ -529,7 +579,7 @@ enum WhoopAge {
                 }
             } else if let goal = stretchGoal(impact.key, result.inputs), goal > value,
                       let raw = rawYears(impact.key, result.inputs.replacing(impact.key, with: goal)) {
-                let gained = impact.years - raw * impact.key.shrink
+                let gained = impact.years - raw * impact.key.scale
                 if gained >= 0.15 {
                     out.append(Lever(key: impact.key, amount: goal - value, yearsGained: gained, isStretch: true))
                 }

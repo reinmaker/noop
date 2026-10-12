@@ -108,13 +108,18 @@ struct WhoopVo2MaxScreen: View {
                           value: figures.value.map { Int($0.rounded()).formatted() } ?? "--",
                           unit: "ml/kg/min", caption: rangeLine)
             WhoopPageSentence(text: String(localized: "VO₂ max is how much oxygen your body can use at full effort. A higher number means a fitter heart and lungs."))
-            WhoopTrendCard(title: String(localized: "LAST 90 DAYS"), points: trend, tint: StrandPalette.chargeColor,
-                           hint: choice?.source == .appleHealth
-                               ? String(localized: "Apple Health's own readings, before the adjustment")
-                               : String(localized: "Hold and drag to read a day"),
-                           readout: { day, value in "\(dateText(day)): \(Int(value.rounded()).formatted())" })
+            // A reading typed in from the WHOOP app is one point with no history, and the line would be a different
+            // source's, so the headline and the line could disagree: no trend is drawn for it.
+            if choice?.source != .whoopApp {
+                WhoopTrendCard(title: String(localized: "LAST 90 DAYS"), points: trend, tint: StrandPalette.chargeColor,
+                               hint: choice?.source == .appleHealth
+                                   ? String(localized: "Apple Health's own readings, before the adjustment")
+                                   : String(localized: "Hold and drag to read a day"),
+                               readout: { day, value in "\(dateText(day)): \(Int(value.rounded()).formatted())" })
+            }
             if let choice {
-                WhoopAgeVo2Card(vo2: choice, onAddWaist: choice.source == .nes || profile.waistCm > 0 ? nil : { showSettings = true })
+                WhoopAgeVo2Card(vo2: choice, onAddWaist: choice.source == .nes || profile.waistCm > 0 ? nil : { showSettings = true },
+                                onOpenSettings: { showSettings = true })
             }
             WhoopPageNote(title: String(localized: "HOW YOUR ESTIMATE IS MADE"),
                           lines: [String(localized: "It is an estimate, not a lab test, and VO₂ max is shown as the range it could be.")])
@@ -150,7 +155,9 @@ struct WhoopVo2MaxScreen: View {
         choice = resolved
         let since = WhoopAge.dayKeys(endingOn: Repository.localDayKey(Date()), count: Self.trendDays).first ?? ""
         // The trend is the chosen source's own series, so the line and the headline come from the same place.
-        if resolved?.source == .appleHealth {
+        if resolved?.source == .whoopApp {
+            trend = []
+        } else if resolved?.source == .appleHealth {
             let health = await repo.exploreSeries(key: "vo2max", source: Repository.appleHealthSource)
             trend = health.filter { $0.day >= since }.map { (day: $0.day, value: $0.value) }
         } else {

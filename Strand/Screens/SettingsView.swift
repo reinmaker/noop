@@ -385,6 +385,13 @@ struct SettingsView: View {
                             .accessibilityLabel("Date of birth, age \(profile.age) years")
                     }
                 }
+                // WHOOP counts age to a tenth of a year; the date makes Yoop's WHOOP Age do the same.
+                Text(profile.dateOfBirthIsEntered
+                     ? "Your WHOOP Age counts your age to a tenth of a year from this date. It stays on this device."
+                     : "Pick your real birth date. Until you do, Yoop assumes you are half a year past your last birthday when it counts your WHOOP Age. It stays on this device.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(profile.dateOfBirthIsEntered ? StrandPalette.textTertiary : StrandPalette.accent)
+                    .fixedSize(horizontal: false, vertical: true)
                 rowDivider
                 FormRow(label: "Sex") {
                     Picker("Sex", selection: $profile.sex) {
@@ -438,6 +445,26 @@ struct SettingsView: View {
                     }
                 }
                 Text("Optional: VO₂max builds from about 4 nights of heart rate; a waist makes it more accurate. The Fitness Age itself doesn't need it. Measure around your middle, at the navel.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                rowDivider
+                // A VO₂ max the person reads from the WHOOP app. Nothing writes it but this row.
+                FormRow(label: "VO₂ max from the WHOOP app (optional)") {
+                    whoopAppVo2Field
+                }
+                if profile.whoopAppVo2 > 0 {
+                    rowDivider
+                    FormRow(label: "Reading taken") {
+                        DatePicker("Reading taken",
+                                   selection: $profile.whoopAppVo2Date,
+                                   in: ...Date(),
+                                   displayedComponents: .date)
+                            .labelsHidden()
+                            .tint(StrandPalette.accent)
+                    }
+                }
+                Text("Optional: type in the VO₂ max the WHOOP app shows you, and the day you read it. Yoop uses it ahead of every estimate of its own for 90 days, as a range of 5 either way. It stays on this device.")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -802,6 +829,37 @@ struct SettingsView: View {
             Stepper("Height in inches", value: inches, in: 47...91, step: 1)
                 .labelsHidden()
                 .accessibilityLabel("Height, \(parts.feet) feet \(parts.inches) inches")
+        }
+        .fixedSize()
+    }
+
+    /// A VO₂ max typed in from the WHOOP app: 0 = unset (shows a muted "Not set"). Steps in whole numbers; the first
+    /// increment from unset lands at 40, and stepping below the floor clears it again.
+    private var whoopAppVo2Field: some View {
+        let set = profile.whoopAppVo2 > 0
+        let range = ProfileStore.whoopAppVo2Range
+        return HStack(spacing: NoopMetrics.space2) {
+            HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space1) {
+                Text(set ? String(format: "%.0f", profile.whoopAppVo2) : String(localized: "Not set"))
+                    .font(StrandFont.bodyNumber)
+                    .foregroundStyle(set ? StrandPalette.textPrimary : StrandPalette.textTertiary)
+                    .frame(minWidth: NoopMetrics.formValueColumnWidth, alignment: .center)
+                if set {
+                    Text(verbatim: "ml/kg/min")
+                        .font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize()
+                }
+            }
+            .fixedSize()
+            Stepper("VO₂ max from the WHOOP app") {
+                profile.whoopAppVo2 = min(range.upperBound, set ? profile.whoopAppVo2 + 1 : 40)
+            } onDecrement: {
+                let next = profile.whoopAppVo2 - 1
+                profile.whoopAppVo2 = next < range.lowerBound ? 0 : next
+            }
+                .labelsHidden()
+                .accessibilityLabel(set ? "VO₂ max from the WHOOP app, \(Int(profile.whoopAppVo2.rounded())) millilitres per kilogram per minute" : "VO₂ max from the WHOOP app not set")
         }
         .fixedSize()
     }

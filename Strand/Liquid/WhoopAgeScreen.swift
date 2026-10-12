@@ -3,7 +3,7 @@ import StrandDesign
 
 // WHOOP-style fork: WHOOP Age and Pace of Aging, the Health tab's headline. The figures are `WhoopAgeSnapshot`'s
 // (`WhoopAgeLoader`), the same ones the Coach reads; nothing on this page computes a number of its own. It is
-// Yoop's estimate on the method WHOOP published, and says so once, in the note at the foot.
+// Yoop's estimate on the method WHOOP published, calibrated against one WHOOP readout, and says so in the note at the foot.
 
 // MARK: - Wording
 
@@ -127,6 +127,18 @@ enum WhoopAgeText {
         return String(localized: "Between \(a) and \(b) YRS")
     }
 
+    /// The calendar age under the bubble, to a tenth as WHOOP counts it; marked while the birth date is a guess.
+    static func calendarAge(_ age: Double, isExact: Bool) -> String {
+        let shown = String(format: "%.1f", age)
+        return isExact ? String(localized: "CALENDAR AGE \(shown)") : String(localized: "CALENDAR AGE \(shown) (ESTIMATED)")
+    }
+
+    /// The reading typed in from the WHOOP app, as the row names it: "WHOOP app (12 Oct)".
+    static func whoopAppLabel(day: String) -> String {
+        let date = WhoopDayFigures.date(of: day)?.formatted(.dateTime.month(.abbreviated).day()) ?? day
+        return String(localized: "WHOOP app (\(date))")
+    }
+
     /// The gap to the calendar age, as the bubble prints it.
     static func delta(yearsYounger: Double) -> String {
         if abs(yearsYounger) < 0.5 { return String(localized: "ON TRACK") }
@@ -182,17 +194,20 @@ struct WhoopAgeBubble: View {
 /// The line under the bubble: calendar age, typical error and the unlock count while calibrating.
 struct WhoopAgeCaption: View {
     let snapshot: WhoopAgeSnapshot?
-    let calendarAge: Int
+    /// Age in years and fractions of a year (`ProfileStore.decimalAge`); 0 or less when none is held.
+    let calendarAge: Double
+    /// False while the birth date has not been entered and the age is a stand-in.
+    var ageIsExact = true
 
     var body: some View {
         VStack(spacing: NoopMetrics.space1) {
             if let snapshot {
                 if snapshot.isUnlocked, let result = snapshot.result {
-                    Text("CALENDAR AGE \(calendarAge)")
+                    Text(WhoopAgeText.calendarAge(calendarAge, isExact: ageIsExact))
                         .font(WhoopStyle.smallLabel)
                         .foregroundStyle(StrandPalette.textSecondary)
-                    let low = String(format: "%.1f", result.whoopAge - result.sigma)
-                    let high = String(format: "%.1f", result.whoopAge + result.sigma)
+                    let low = String(format: "%.1f", result.whoopAge - result.whoopAgeSigma)
+                    let high = String(format: "%.1f", result.whoopAge + result.whoopAgeSigma)
                     Text("LIKELY RANGE \(low) TO \(high)")
                         .font(WhoopStyle.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
@@ -419,32 +434,92 @@ struct WhoopAgeScreen: View {
     @EnvironmentObject private var profile: ProfileStore
     @State private var snapshot: WhoopAgeSnapshot?
     @State private var showSettings = false
+    @State private var showBirthDate = false
 
     var body: some View {
-        WhoopAgePage(snapshot: snapshot, calendarAge: profile.age,
-                     onAddWaist: profile.waistCm > 0 ? nil : { showSettings = true })
-            .task(id: repo.refreshSeq) {
-                snapshot = await WhoopAgeLoader.load(repo: repo, age: Double(profile.age), sex: profile.sex)
+        WhoopAgePage(snapshot: snapshot, calendarAge: profile.decimalAge, ageIsExact: profile.dateOfBirthIsEntered,
+                     onAddWaist: profile.waistCm > 0 ? nil : { showSettings = true },
+                     onOpenSettings: { showSettings = true },
+                     onAddBirthDate: profile.dateOfBirthIsEntered ? nil : { showBirthDate = true })
+            // A new birth date, like a new refresh, reads the window again.
+            .task(id: "\(repo.refreshSeq)|\(profile.dateOfBirth.timeIntervalSince1970)|\(profile.dateOfBirthIsEntered)") {
+                snapshot = await WhoopAgeLoader.load(repo: repo, age: profile.decimalAge,
+                                                     ageSigma: profile.dateOfBirthIsEntered ? 0 : ProfileStore.unknownBirthdayFractionSigma,
+                                                     sex: profile.sex)
             }
-            // The profile card, where the waist is entered; the estimate is read again when it is closed.
+            // The profile card, where the waist and a WHOOP app VO2 max are entered; the estimate is read again when
+            // it is closed.
             .sheet(isPresented: $showSettings, onDismiss: { Task { await repo.refresh() } }) {
                 NavigationStack { SettingsView() }
                     #if os(macOS)
                     .frame(width: 900, height: 820)
                     #endif
             }
+            .sheet(isPresented: $showBirthDate) { WhoopBirthDateSheet() }
+    }
+}
+
+/// Picks the birth date without leaving the WHOOP Age page: the same field as Settings, saved on this device.
+struct WhoopBirthDateSheet: View {
+    @EnvironmentObject private var profile: ProfileStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var picked = ProfileStore.dateOfBirth(forAge: 35)
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: NoopMetrics.space4) {
+                Text("Your birth date lets Yoop count your age to a tenth of a year, as WHOOP does. It stays on this device.")
+                    .font(WhoopStyle.body)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                DatePicker("Date of birth", selection: $picked, in: ProfileStore.dateOfBirthRange,
+                           displayedComponents: .date)
+                    .labelsHidden()
+                    #if os(iOS)
+                    .datePickerStyle(.wheel)
+                    #else
+                    .datePickerStyle(.graphical)
+                    #endif
+                    .tint(StrandPalette.accent)
+                Button {
+                    profile.dateOfBirth = picked
+                    dismiss()
+                } label: {
+                    WhoopActionButtonLabel(title: String(localized: "SAVE BIRTH DATE"), systemImage: "checkmark")
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: 0)
+            }
+            .padding(NoopMetrics.space4)
+            .background(StrandPalette.surfaceBase.ignoresSafeArea())
+            .navigationTitle(Text("DATE OF BIRTH"))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
+        .onAppear { if profile.dateOfBirthIsEntered { picked = profile.dateOfBirth } }
+        #if os(macOS)
+        .frame(width: 420, height: 520)
+        #endif
     }
 }
 
 /// The page itself, from a snapshot alone, so it can be rendered without a repository.
 struct WhoopAgePage: View {
     let snapshot: WhoopAgeSnapshot?
-    let calendarAge: Int
+    let calendarAge: Double
+    var ageIsExact = true
     var onAddWaist: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
+    var onAddBirthDate: (() -> Void)?
 
     var body: some View {
         WhoopDayPage(title: String(localized: "WHOOP AGE")) {
-            WhoopAgeContent(snapshot: snapshot, calendarAge: calendarAge, onAddWaist: onAddWaist)
+            WhoopAgeContent(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact,
+                            onAddWaist: onAddWaist, onOpenSettings: onOpenSettings, onAddBirthDate: onAddBirthDate)
         }
     }
 }
@@ -452,28 +527,50 @@ struct WhoopAgePage: View {
 /// What the page holds, top to bottom.
 struct WhoopAgeContent: View {
     let snapshot: WhoopAgeSnapshot?
-    let calendarAge: Int
+    let calendarAge: Double
+    var ageIsExact = true
     /// Opens the profile for the waist; nil when it is entered.
     var onAddWaist: (() -> Void)?
+    /// Opens the profile, where a VO2 max from the WHOOP app is entered; nil hides the prompt.
+    var onOpenSettings: (() -> Void)?
+    /// Opens the birth date picker; nil when the birth date is entered.
+    var onAddBirthDate: (() -> Void)?
 
     var body: some View {
         VStack(spacing: NoopMetrics.space4) {
             VStack(spacing: NoopMetrics.space3) {
                 WhoopAgeBubble(snapshot: snapshot)
-                WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge)
+                WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, NoopMetrics.space2)
+            if calendarAge > 0, let onAddBirthDate { birthDateCard(onAddBirthDate) }
             if let snapshot, snapshot.isUnlocked, let result = snapshot.result {
                 paceCard(snapshot)
                 WhoopAgeContributorsCard(result: result, vo2: snapshot.vo2)
                 leverCard(snapshot)
                 certaintyCard(result, snapshot: snapshot)
-                if let vo2 = snapshot.vo2 { WhoopAgeVo2Card(vo2: vo2, onAddWaist: vo2.source == .nes ? nil : onAddWaist) }
+                if let vo2 = snapshot.vo2 {
+                    WhoopAgeVo2Card(vo2: vo2, onAddWaist: vo2.source == .nes ? nil : onAddWaist, onOpenSettings: onOpenSettings)
+                }
             } else if let snapshot {
                 calibrationCard(snapshot)
             }
             noteCard
+        }
+    }
+
+    /// Asks for the birth date, and says what is assumed until it is given.
+    private func birthDateCard(_ action: @escaping () -> Void) -> some View {
+        WhoopTitledCard(title: String(localized: "ADD YOUR BIRTH DATE"), showsChevron: false) {
+            Text("WHOOP counts your age to a tenth of a year. Without your birth date Yoop assumes you are half a year past your last birthday, and your WHOOP Age can be off by up to half a year.")
+                .font(WhoopStyle.body)
+                .foregroundStyle(StrandPalette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: action) {
+                WhoopActionButtonLabel(title: String(localized: "ADD BIRTH DATE"), systemImage: "calendar")
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -570,7 +667,7 @@ struct WhoopAgeContent: View {
         var lines = [
             String(localized: "This is Yoop's estimate on the method WHOOP published in its Healthspan white paper (2025). It is not WHOOP's own number."),
             String(localized: "Each of nine measures is turned into years from the death-risk studies behind it, against a healthy target rather than the average person. Your WHOOP Age is your age plus those years. A measure with no data adds nothing."),
-            String(localized: "WHOOP corrects for the overlap between measures with figures it does not publish. Yoop multiplies the fitness and activity measures by 0.65 instead, a value chosen so that the white paper's two published examples come out about right."),
+            String(localized: "WHOOP corrects for the overlap between measures with figures it does not publish. Yoop's scales for them, and the curves WHOOP does not publish, are calibrated against WHOOP's own readout for one member and the white paper's published examples. They are fitted to those, not measured, and nothing here has been checked against anyone else's WHOOP Age."),
         ]
         if let snapshot {
             lines.append(String(localized: "Built on \(snapshot.coverage.strapDays) of the last \(snapshot.coverage.windowDays) days the strap recorded. Steps use every day with a count."))
@@ -588,6 +685,8 @@ struct WhoopAgeVo2Card: View {
     let vo2: Vo2Choice
     /// Opens the profile where the waist is entered; nil hides the prompt (a waist is already entered).
     var onAddWaist: (() -> Void)?
+    /// Opens the profile where a VO2 max read from the WHOOP app is entered; nil hides the prompt.
+    var onOpenSettings: (() -> Void)?
 
     private func date(_ day: String) -> String {
         WhoopDayFigures.date(of: day)?.formatted(.dateTime.month(.abbreviated).day()) ?? day
@@ -612,9 +711,19 @@ struct WhoopAgeVo2Card: View {
         }
     }
 
+    private var whoopNote: String {
+        if vo2.source == .whoopApp {
+            return String(localized: "Typed in from the WHOOP app. WHOOP states no error for it, so Yoop shows it as a range of 5 either way.")
+        }
+        return String(localized: "Older than 90 days, so not used.")
+    }
+
     private var appleNote: String {
         if vo2.source == .appleHealth {
             return String(localized: "Measured by your Apple Watch on outdoor walks and runs. Reads about 6 low against a lab test, and misses by about 7.")
+        }
+        if vo2.source == .whoopApp, vo2.appleIsRecent {
+            return String(localized: "Not used while a recent WHOOP app reading exists.")
         }
         return String(localized: "Older than 60 days, so not used.")
     }
@@ -623,11 +732,17 @@ struct WhoopAgeVo2Card: View {
         let what = vo2.yoop?.estimator == "nes"
             ? String(localized: "From your age, waist, resting heart rate and activity. Typically within 5 to 6 of a lab test.")
             : String(localized: "From your sleeping heart rate (Uth 2004). Tested on well-trained men aged 21 to 51 only, off by 4.7 at best, and a sleeping rate reads high.")
-        return vo2.source == .appleHealth ? what + " " + String(localized: "Not used while a recent Apple Health reading exists.") : what
+        switch vo2.source {
+        case .whoopApp: return what + " " + String(localized: "Not used while a recent WHOOP app reading exists.")
+        case .appleHealth: return what + " " + String(localized: "Not used while a recent Apple Health reading exists.")
+        case .nes, .uth: return what
+        }
     }
 
     private var why: String {
         switch vo2.source {
+        case .whoopApp:
+            return String(localized: "The reading you typed in from the WHOOP app comes first: it is WHOOP's own estimate for you, so Yoop uses it as it stands and shows the spread as a range.")
         case .appleHealth:
             return String(localized: "Apple Health's reading is measured, so it comes first. A lab test usually finds about 6 more, so Yoop adds that and shows the spread as a range.")
         case .nes:
@@ -639,6 +754,10 @@ struct WhoopAgeVo2Card: View {
 
     var body: some View {
         WhoopTitledCard(title: String(localized: "VO₂ MAX: WHICH NUMBER"), showsChevron: false) {
+            if let whoop = vo2.whoop {
+                reading(WhoopAgeText.whoopAppLabel(day: whoop.day).uppercased(), whoop, note: whoopNote)
+                Rectangle().fill(WhoopStyle.cardStroke).frame(height: 1)
+            }
             reading(String(localized: "Apple Health").uppercased(), vo2.apple, note: appleNote)
             Rectangle().fill(WhoopStyle.cardStroke).frame(height: 1)
             reading(String(localized: "YOOP ESTIMATE"), vo2.yoop, note: yoopNote)
@@ -661,6 +780,16 @@ struct WhoopAgeVo2Card: View {
                 .font(WhoopStyle.caption)
                 .foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let onOpenSettings, vo2.whoop == nil {
+                Button(action: onOpenSettings) {
+                    WhoopActionButtonLabel(title: String(localized: "ADD A VO₂ MAX FROM THE WHOOP APP"), systemImage: "lungs")
+                }
+                .buttonStyle(.plain)
+                Text("If the WHOOP app shows you a VO₂ max, type it in under Profile in Settings. Yoop uses it before any estimate of its own.")
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let onAddWaist {
                 Button(action: onAddWaist) {
                     WhoopActionButtonLabel(title: String(localized: "ADD YOUR WAIST"), systemImage: "ruler")
