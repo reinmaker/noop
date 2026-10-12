@@ -34,6 +34,19 @@ import StrandAnalytics
 private let skinTempPrivacyLine =
     String(localized: "This never leaves your device unless you export a backup yourself.")
 
+/// The WHOOP-style shell the Health tab's skin-temperature cards share, so they sit on the same card surface as
+/// the rest of the page.
+private struct WhoopSkinCardShell<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(WhoopStyle.cardPadding)
+            .whoopCard()
+    }
+}
+
 /// A small, footnote-styled privacy row with a lock glyph — dropped at the foot of each
 /// sensitive card so the promise is impossible to miss without shouting.
 private struct PrivacyNote: View {
@@ -78,7 +91,7 @@ struct CycleAwarenessCard: View {
     private var hue: Color { StrandPalette.restColor }
 
     var body: some View {
-        NoopCard(tint: hue) {
+        WhoopSkinCardShell {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 header
 
@@ -245,7 +258,7 @@ struct CycleAwarenessOptInCard: View {
     var onEnable: () -> Void
 
     var body: some View {
-        NoopCard(tint: StrandPalette.restColor) {
+        WhoopSkinCardShell {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 HStack(spacing: 8) {
                     Image(systemName: "drop.degreesign")
@@ -632,7 +645,7 @@ struct BodyClockCard: View {
     private var hue: Color { StrandPalette.restColor }
 
     var body: some View {
-        NoopCard(tint: hue) {
+        WhoopSkinCardShell {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 header
 
@@ -649,11 +662,17 @@ struct BodyClockCard: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(hue)
                         .accessibilityHidden(true)
-                    Text("Estimated body-clock low around \(clockString(estimate.tempMinHour))")
+                    // Half-hours: a clock time read off a wrist heart-rate rhythm cannot honestly be given to the minute.
+                    Text("Estimated body-clock low around \(clockString((estimate.tempMinHour * 2).rounded() / 2))")
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
                 .accessibilityElement(children: .combine)
+
+                Text("A rough estimate from your heart-rate rhythm, not a lab measurement.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if let plan, plan.direction != .none, let firstDay = plan.days.first {
                     Divider().overlay(StrandPalette.hairline)
@@ -716,11 +735,12 @@ struct BodyClockCard: View {
 
     /// "About 25 min later than your schedule" — a plain, skimmable headline.
     private var offsetTitle: String {
-        let mins = Int(abs(estimate.offsetVsScheduleMinutes).rounded())
+        // To the nearest half hour, for the same reason as the clock time above.
+        let mins = Int((abs(estimate.offsetVsScheduleMinutes) / 30).rounded()) * 30
         if estimate.confidence == .unreadable {
             return String(localized: "Hard to read right now")
         }
-        if mins <= 20 {
+        if mins == 0 {
             return String(localized: "About in sync with your schedule")
         }
         return estimate.offsetVsScheduleMinutes > 0
@@ -777,7 +797,7 @@ struct HeadsUpCard: View {
     var distance: IllnessDistance.Result? = nil
 
     var body: some View {
-        NoopCard(padding: 14, tint: hue) {
+        WhoopSkinCardShell {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: glyph)

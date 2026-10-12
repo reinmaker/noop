@@ -1836,7 +1836,7 @@ struct LiquidTodayView: View {
         async let restA = repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
         async let stressA = repo.series(key: "stress", source: "my-whoop")
         async let fitA = repo.exploreSeries(key: "fitness_age", source: "my-whoop")
-        async let vo2A = repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
+        async let vo2A = Vo2Resolver.load(repo: repo)
         async let vitA = repo.exploreSeries(key: "vitality", source: "my-whoop")
         async let stepsA = repo.exploreSeries(key: "steps_est", source: "my-whoop")
         // Queue 11a: SpO₂ candidate fallback (see `spo2CandidateByDay`'s declaration).
@@ -1927,7 +1927,8 @@ struct LiquidTodayView: View {
             StressModel(days: daysSnapshot, stored: storedStress)?.score
         }.value
         fitnessAge = (await fitA).last?.value   // history-wide latest banked (not day-scoped)
-        vo2max = (await vo2A).last?.value        // #1391: latest banked VO₂max estimate
+        // The one VO₂ max every screen states (`Vo2Choice`): Apple Health first, then Yoop's own, never a bare Uth figure.
+        vo2max = (await vo2A)?.used
         vitality = (await vitA).last?.value
         // Steps is a DAILY metric, so key it to the SELECTED day (like restScore above), not the history-wide
         // latest. Without this, swiping to a past day with no strap step count showed today's estimate (the

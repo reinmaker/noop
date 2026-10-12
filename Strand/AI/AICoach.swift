@@ -1140,6 +1140,15 @@ final class AICoachEngine: ObservableObject {
             }
         }
 
+        // 3. WHOOP Age, Pace of Aging and the two biggest levers: the figures the Health tab states, from the
+        // one resolver both read, so the Coach cannot quote a different number than the screen.
+        let age = await WhoopAgeLoader.load(repo: repo).coachLines
+        if !age.isEmpty {
+            if !lines.isEmpty { lines.append("") }
+            lines.append("WHOOP AGE (the Health tab's figures; quote them as they are):")
+            lines.append(contentsOf: age.map { "  " + $0 })
+        }
+
         return lines.joined(separator: "\n")
     }
 

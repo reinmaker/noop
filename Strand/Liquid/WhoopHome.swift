@@ -218,36 +218,38 @@ struct WhoopInsightCard: View {
 
 // MARK: - Overview cards
 
-/// "HEALTH MONITOR: WITHIN RANGE n/n Metrics": the same personal-baseline banding the Health screen's
-/// vital-signs tiles use (HRV, resting HR, respiration, SpO2, skin temperature).
+/// "HEALTH MONITOR: WITHIN RANGE n/n Metrics": the Health tab's own tally (`HealthMonitorRule`), so Home, the tab
+/// and the Health Monitor screen state one count: each vital against the wearer's own usual range, counted when
+/// it is from the latest night.
 struct HealthMonitorCard: View {
     @EnvironmentObject private var repo: Repository
 
     var body: some View {
-        let readings = BodyVitalSigns.readings(days: repo.days, today: nil, temperatureUnit: .celsius,
-                                               skinTempPreferred: .deviation)
-        let measured = readings.filter { $0.banding.band != .noData }
-        let inRange = measured.filter { $0.banding.band == .inRange }.count
-        let allGood = !measured.isEmpty && inRange == measured.count
+        let statuses = HealthMonitorRule.statuses(days: repo.days, todayKey: Repository.logicalDayKey(Date()))
+        let headline = HealthMonitorRule.headline(statuses)
+        let summary = HealthMonitorRule.summary(statuses)
+        let allGood = headline == .within
+        let tint = allGood ? WhoopStyle.rangeGreen : (headline == .outOfRange ? WhoopStyle.rangeAmber : StrandPalette.textTertiary)
 
         NavigationLink(value: TabRoute.healthMonitor) {
             WhoopOverviewCard(title: String(localized: "HEALTH MONITOR")) {
                 HStack(spacing: 10) {
-                    Image(systemName: measured.isEmpty ? "hourglass" : (allGood ? "checkmark" : "exclamationmark"))
+                    Image(systemName: allGood ? "checkmark" : (headline == .outOfRange ? "exclamationmark" : "hourglass"))
                         .font(WhoopStyle.detail)
-                        .foregroundStyle(allGood ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
+                        .foregroundStyle(tint)
                         .frame(width: 32, height: 32)
-                        .background(RoundedRectangle(cornerRadius: 7)
-                            .fill((allGood ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber).opacity(0.18)))
+                        .background(RoundedRectangle(cornerRadius: 7).fill(tint.opacity(0.18)))
                     VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
-                        Text(measured.isEmpty ? String(localized: "CALIBRATING")
-                             : (allGood ? String(localized: "WITHIN RANGE") : String(localized: "OUT OF RANGE")))
+                        Text(WhoopVitalText.headline(headline))
                             .font(WhoopStyle.smallLabel)
-                            .foregroundStyle(allGood ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
-                        Text(measured.isEmpty ? String(localized: "Wear it tonight")
-                             : "\(inRange)/\(measured.count) " + String(localized: "Metrics"))
-                            .font(WhoopStyle.detail)
-                            .foregroundStyle(StrandPalette.textSecondary)
+                            .foregroundStyle(tint)
+                        if summary.counted > 0 || headline == .noData {
+                            let tally = "\(summary.within)/\(summary.counted)"
+                            Text(summary.counted == 0 ? String(localized: "Wear it tonight")
+                                 : tally + " " + String(localized: "Metrics"))
+                                .font(WhoopStyle.detail)
+                                .foregroundStyle(StrandPalette.textSecondary)
+                        }
                     }
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
