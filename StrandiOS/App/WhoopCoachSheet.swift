@@ -209,7 +209,9 @@ struct WhoopCoachSheet: View {
                 ForEach(Array(options.enumerated()), id: \.offset) { _, option in
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                         HStack(spacing: NoopMetrics.space2) {
-                            Image(systemName: "figure.run")
+                            // The suggestion's own sport icon (Weightlifting a barbell, Yoga a yoga pose), not a
+                            // running figure for every card.
+                            Image(systemName: sportSymbol(option.name))
                                 .font(WhoopStyle.icon)
                                 .frame(width: 30, height: 30)
                                 .background(RoundedRectangle(cornerRadius: 8).fill(WhoopStyle.ringTrack))

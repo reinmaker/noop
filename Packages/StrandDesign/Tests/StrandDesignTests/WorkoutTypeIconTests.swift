@@ -62,6 +62,14 @@ final class WorkoutTypeIconTests: XCTestCase {
         XCTAssertNil(KnownWorkoutType.resolving(""))
     }
 
+    /// `figure.strengthtraining.traditional` is the figure with a loaded barbell, `.functional` a lunge;
+    /// Weightlifting showed the lunge.
+    func testWeightliftingIsTheBarbellFigure() {
+        XCTAssertEqual(WorkoutTypeIconography.glyph(for: .weightlifting), .system("figure.strengthtraining.traditional"))
+        XCTAssertEqual(sportSymbol("Weightlifting"), "figure.strengthtraining.traditional")
+        XCTAssertEqual(KnownWorkoutType.resolving("easy jog"), .running)
+    }
+
     func testPadelUsesCustomGlyph() {
         XCTAssertEqual(WorkoutTypeIconography.glyph(for: .padel),
                        .custom(.padelRacket))

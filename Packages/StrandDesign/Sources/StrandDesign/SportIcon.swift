@@ -151,7 +151,7 @@ public enum KnownWorkoutType: String, CaseIterable, Sendable {
         case s.contains("ski"):                             return .skiing
         case s.contains("hike") || s.contains("hiking"):    return .hiking
         case s.contains("walk"):                            return .walking
-        case s.contains("run"):                             return .running
+        case s.contains("run") || s.contains("jog"):        return .running
         case s.contains("cycl") || s.contains("bike") || s.contains("ride"):
                                                             return .cycling
         case s.contains("swim"):                            return .poolSwim
@@ -292,10 +292,12 @@ public enum WorkoutTypeIconography {
             return systemOrCustom("figure.elliptical", .ellipticalBadge)
         case .strength:
             return systemOrCustom("dumbbell.fill", fallbackSystem: "dumbbell")
+        // `traditional` is the figure holding a loaded barbell, which is weightlifting; `functional` is a
+        // lunge. They were the other way round, so Weightlifting showed a lunge.
         case .bodybuilding:
-            return systemOrCustom("figure.strengthtraining.traditional", .bodybuildingBadge)
+            return systemOrCustom("figure.strengthtraining.functional", .bodybuildingBadge)
         case .weightlifting:
-            return systemOrCustom("figure.strengthtraining.functional", .barbellBadge)
+            return systemOrCustom("figure.strengthtraining.traditional", .barbellBadge)
         case .hiit:
             return systemOrCustom("figure.highintensity.intervaltraining", fallbackSystem: "bolt.fill")
         case .yoga:
@@ -427,8 +429,8 @@ public enum WorkoutTypeIconography {
         case .rowMachine:       return "system:figure.indoor.rowing"
         case .elliptical:       return "system:figure.elliptical"
         case .strength:         return "system:dumbbell.fill"
-        case .bodybuilding:     return "system:figure.strengthtraining.traditional"
-        case .weightlifting:    return "system:figure.strengthtraining.functional"
+        case .bodybuilding:     return "system:figure.strengthtraining.functional"
+        case .weightlifting:    return "system:figure.strengthtraining.traditional"
         case .hiit:             return "system:figure.highintensity.intervaltraining"
         case .yoga:             return "system:figure.yoga"
         case .pilates:          return "system:figure.pilates"
