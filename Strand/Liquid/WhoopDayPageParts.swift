@@ -24,12 +24,16 @@ struct WhoopPageHero: View {
     let label: String
     let value: String
     var unit: String?
-    /// The 30-day normal, formatted; nil hides the line.
+    /// The normal, formatted; nil hides the line. Its label says which it is: the 30-day whole-day normal,
+    /// or today's normal by this time of day.
     var normal: String?
+    var normalLabel = String(localized: "30-DAY NORMAL")
     /// +1 above the normal, -1 below, 0 level or unknown.
     var direction: Int = 0
     var higherIsBetter = true
     var caption: String?
+    /// A line under the normal, such as the whole-day normal beside a by-now one.
+    var detail: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -56,7 +60,7 @@ struct WhoopPageHero: View {
             }
             if let normal {
                 HStack(spacing: NoopMetrics.space2) {
-                    Text("30-DAY NORMAL")
+                    Text(normalLabel)
                         .font(WhoopStyle.smallLabel)
                         .foregroundStyle(StrandPalette.textSecondary)
                     Text(normal)
@@ -68,6 +72,11 @@ struct WhoopPageHero: View {
                             .foregroundStyle((direction > 0) == higherIsBetter ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
                     }
                 }
+            }
+            if let detail {
+                Text(detail)
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textSecondary)
             }
             if let caption {
                 Text(caption)
@@ -173,6 +182,62 @@ struct WhoopHourBarsCard: View {
     }
 }
 
+/// Seven calendar days as bars, the shown day at full strength. The days are the calendar's: a day with no
+/// value keeps its empty slot, so the week never reaches back a day to fill it (the Strain & Recovery card
+/// on Home is keyed the same way).
+struct WhoopDayBarsCard: View {
+    let title: String
+    /// The seven day keys, oldest first.
+    let week: [String]
+    /// A value per day key; a day without one is an empty slot.
+    let values: [String: Double]
+    let shownDay: String
+    let tint: Color
+
+    @State private var selected: String?
+
+    private func weekday(_ key: String) -> String {
+        WhoopDayFigures.date(of: key)?.formatted(.dateTime.weekday(.abbreviated)) ?? key
+    }
+
+    var body: some View {
+        WhoopTitledCard(title: title, showsChevron: false) {
+            let present = week.filter { values[$0] != nil }
+            if present.isEmpty {
+                Text("Fills in as days are scored.")
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            } else {
+                Chart {
+                    ForEach(present, id: \.self) { key in
+                        let dimmed = selected != nil ? selected != key : key != shownDay
+                        BarMark(x: .value("Day", key), y: .value("Value", values[key] ?? 0), width: .ratio(0.5))
+                            .foregroundStyle(tint.opacity(dimmed ? 0.4 : 1))
+                            .annotation(position: .top, spacing: 2) {
+                                Text(Int((values[key] ?? 0).rounded()).formatted())
+                                    .font(selected == key ? WhoopStyle.smallLabel : WhoopStyle.chevron)
+                                    .foregroundStyle(tint.opacity(dimmed ? 0.5 : 1))
+                            }
+                    }
+                }
+                .chartYScale(domain: 0...(max(1, present.compactMap { values[$0] }.max() ?? 1) * 1.15))
+                .chartYAxis(.hidden)
+                .chartXScale(domain: week)
+                .chartXAxis {
+                    AxisMarks(values: week) { value in
+                        AxisValueLabel {
+                            Text(value.as(String.self).map(weekday) ?? "")
+                                .foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                }
+                .whoopScrub($selected)
+                .frame(height: 170)
+            }
+        }
+    }
+}
+
 /// Seven days as stacked bars, the shown day at full strength: a base layer and a top layer per day (basal
 /// and active energy), with the day's whole figure over the bar.
 struct WhoopStackedWeekBars: View {
@@ -186,6 +251,8 @@ struct WhoopStackedWeekBars: View {
 
     let title: String
     let days: [Day]
+    /// The seven calendar days, oldest first. A day with no entry in `days` keeps its empty slot.
+    let week: [String]
     let shownDay: String
     let baseTint: Color
     let topTint: Color
@@ -225,8 +292,9 @@ struct WhoopStackedWeekBars: View {
                 .chartLegend(.hidden)
                 .chartYScale(domain: 0...((days.map(\.total).max() ?? 0) * 1.15))
                 .chartYAxis(.hidden)
+                .chartXScale(domain: week)
                 .chartXAxis {
-                    AxisMarks { value in
+                    AxisMarks(values: week) { value in
                         AxisValueLabel {
                             Text(value.as(String.self).map(weekday) ?? "")
                                 .foregroundStyle(StrandPalette.textSecondary)

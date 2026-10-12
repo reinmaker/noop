@@ -1376,6 +1376,13 @@ final class Repository: ObservableObject {
         return nil
     }
 
+    /// What `countedStepMinutes` read for a window: the accepted ticks by minute, and when the strap's counter
+    /// first reported inside the window (nil when it did not).
+    struct CountedStepMinutes {
+        var ticks: [Int: Int]
+        var firstSampleTs: Int?
+    }
+
     /// Yoop: the steps one day window counted, by minute (`ts / 60`), counted the way the day cycle counts
     /// them (`DayCycleIntelligenceIntegration.compute`): the same accumulator over the same sleep sessions,
     /// read in pages from the step counter's owner segments. These are ticks, before `stepTicksPerStep`; their
@@ -1383,13 +1390,15 @@ final class Repository: ObservableObject {
     /// strap counter covers the window with two samples (a WHOOP 4.0, or a day before the strap counted).
     /// The midnight day counts its own samples only, with no sleep to gate and no sample before the window.
     func countedStepMinutes(from onset: Int, toExclusive endExclusive: Int, sleeps: [SleepSession],
-                            seedsFromBefore: Bool = true) async -> [Int: Int]? {
+                            seedsFromBefore: Bool = true) async -> CountedStepMinutes? {
         guard endExclusive > onset, let store = await ensureStore() else { return nil }
         StepsCounter.yoopCountingEnabled = PuffinExperiment.whoopScoresEnabled
         var coverage: [PhysiologicalSteps.OwnerCoverage] = []
+        var firstSampleTs: Int?
         for (priority, owner) in importedReadIds.enumerated() {
             guard let span = try? await store.stepTimestampCoverage(deviceId: owner, from: onset, to: endExclusive),
                   let first = span.first, let last = span.last else { continue }
+            firstSampleTs = min(firstSampleTs ?? first, first)
             coverage.append(.init(owner: owner, onset: first, endExclusive: min(last + 1, endExclusive),
                                   priority: priority))
         }
@@ -1423,7 +1432,7 @@ final class Repository: ObservableObject {
             _ = accumulator.finish()
             minutes.merge(accumulator.acceptedTicksByMinute, uniquingKeysWith: +)
         }
-        return evaluated ? minutes : nil
+        return evaluated ? CountedStepMinutes(ticks: minutes, firstSampleTs: firstSampleTs) : nil
     }
 
     /// Apple Health's steps by clock hour over `[from, toExclusive)`, as the phone banked them
