@@ -398,9 +398,11 @@ struct WhoopAgeHealthCard: View {
     @State private var snapshot: WhoopAgeSnapshot?
 
     var body: some View {
-        WhoopAgeHealthCardContent(snapshot: snapshot, calendarAge: profile.age)
-            .task(id: repo.refreshSeq) {
-                snapshot = await WhoopAgeLoader.load(repo: repo, age: Double(profile.age), sex: profile.sex)
+        WhoopAgeHealthCardContent(snapshot: snapshot, calendarAge: profile.decimalAge, ageIsExact: profile.dateOfBirthIsEntered)
+            .task(id: "\(repo.refreshSeq)|\(profile.dateOfBirth.timeIntervalSince1970)|\(profile.dateOfBirthIsEntered)") {
+                snapshot = await WhoopAgeLoader.load(repo: repo, age: profile.decimalAge,
+                                                     ageSigma: profile.dateOfBirthIsEntered ? 0 : ProfileStore.unknownBirthdayFractionSigma,
+                                                     sex: profile.sex)
             }
     }
 }
@@ -408,13 +410,14 @@ struct WhoopAgeHealthCard: View {
 /// The card from a snapshot alone, so it can be rendered without a repository.
 struct WhoopAgeHealthCardContent: View {
     let snapshot: WhoopAgeSnapshot?
-    let calendarAge: Int
+    let calendarAge: Double
+    var ageIsExact = true
 
     var body: some View {
         NavigationLink(value: TabRoute.whoopAge) {
             VStack(spacing: NoopMetrics.space3) {
                 WhoopAgeBubble(snapshot: snapshot, diameter: 200)
-                WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge)
+                WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact)
                 if let pace = snapshot?.pace, snapshot?.isUnlocked == true {
                     HStack(spacing: NoopMetrics.space2) {
                         Text("PACE OF AGING").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textSecondary)

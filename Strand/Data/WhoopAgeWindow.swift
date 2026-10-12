@@ -73,12 +73,12 @@ extension WhoopAge {
     /// figures are totals per week of strap days: the sum over days the strap recorded, divided by those days
     /// over seven, so a window the strap covered for half the time is not counted as a window of no activity.
     /// They need `minDaysForWeekly` strap days to be stated.
-    static func inputs(days: [Day], endingOn today: String, span: Int, age: Double, sex: String,
+    static func inputs(days: [Day], endingOn today: String, span: Int, age: Double, ageSigma: Double = 0, sex: String,
                        vo2: Vo2Choice?, leanBodyMassPct: Double? = nil) -> Inputs {
         let keys = Set(WhoopAge.dayKeys(endingOn: today, count: span))
         let inWindow = days.filter { keys.contains($0.day) }
         let strap = inWindow.filter(\.isStrapDay)
-        var out = Inputs(age: age, sex: sex)
+        var out = Inputs(age: age, ageSigma: ageSigma, sex: sex)
         out.sleepHours = mean(strap.compactMap(\.sleepMin).filter { $0 >= minNightMinutes }.map { $0 / 60 })
         out.sleepConsistency = mean(strap.compactMap(\.consistency))
         out.restingHr = mean(strap.compactMap(\.restingHr).filter { $0 > 0 })
@@ -153,8 +153,9 @@ struct WhoopAgeSnapshot: Equatable {
         guard let r = result, isUnlocked else { return [] }
         let years = abs(r.yearsYounger)
         let direction = r.yearsYounger >= 0 ? "younger" : "older"
-        var parts = [String(format: "WHOOP Age %.1f against a calendar age of %.0f: %.1f years %@ (Yoop's estimate on WHOOP's published Healthspan method, not WHOOP's own number; about +/- %.1f years).",
-                            r.whoopAge, r.chronologicalAge, years, direction, r.sigma)]
+        let ageNote = r.inputs.ageSigma > 0 ? ", with the birth date not entered so half a year past the last birthday assumed" : ""
+        var parts = [String(format: "WHOOP Age %.1f against a calendar age of %.1f%@: %.1f years %@ (Yoop's estimate on WHOOP's published Healthspan method, calibrated against one WHOOP readout, not WHOOP's own number; about +/- %.1f years).",
+                            r.whoopAge, r.chronologicalAge, ageNote, years, direction, r.whoopAgeSigma)]
         if let pace {
             let word = Self.paceWord(WhoopAge.paceState(pace))
             parts.append(String(format: "Pace of Aging %.1fx (%@).", pace, word))
@@ -172,6 +173,7 @@ struct WhoopAgeSnapshot: Equatable {
     static func vo2Sentence(_ vo2: Vo2Choice) -> String {
         let source: String
         switch vo2.source {
+        case .whoopApp: source = String(format: "the reading of %.0f the wearer typed in from the WHOOP app on %@", vo2.reading, vo2.day)
         case .appleHealth: source = String(format: "Apple Health's reading of %.0f on %@, adjusted for the Apple Watch's usual low reading", vo2.reading, vo2.day)
         case .nes: source = String(format: "Yoop's waist-based estimate (Nes, HUNT) of %.0f", vo2.reading)
         case .uth: source = String(format: "Yoop's rough heart-rate estimate (Uth) of %.0f", vo2.reading)
