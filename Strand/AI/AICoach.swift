@@ -252,6 +252,13 @@ final class AICoachEngine: ObservableObject {
     private let repo: Repository
     private let session: URLSession
 
+    /// Tonight's sleep plan as the screens resolve it (`WhoopSleepPlan.current`), set by `AppModel`, which
+    /// owns the alarm settings a plan reads. Nil in tests, and the Coach then states no plan.
+    var sleepPlan: (@MainActor () -> WhoopSleepPlan?)?
+
+    /// The plan's bedtime and wake time in steps of 10 minutes, for the Home insight's cache key.
+    var sleepPlanToken: String { sleepPlan?()?.fingerprintToken ?? "-" }
+
     private static let providerKey = "ai.provider"
     private static let modelKey = "ai.model"
     private static let consentKey = "ai.dataConsent"
@@ -1782,9 +1789,8 @@ final class AICoachEngine: ObservableObject {
         } else {
             lines.append(String(format: "Sleep need: about %.1fh a night.", SleepModel.sleepNeedMin(days: days) / 60))
         }
-        // Tonight's plan exactly as the Tonight's Sleep card and Sleep Planner show it, when one of them
-        // showed it today; otherwise worked out now.
-        lines.append((WhoopSleepPlan.shownToday() ?? WhoopSleepPlan.tonight(repo: repo, alarm: nil)).coachLine)
+        // Tonight's plan exactly as the Tonight's Sleep card and Sleep Planner show it: the same call, made now.
+        if let plan = sleepPlan?() { lines.append(plan.coachLine) }
 
         // Every calendar date of the last 14, newest first, so a gap reads as a gap.
         lines.append("")

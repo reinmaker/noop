@@ -316,6 +316,8 @@ final class AppModel: ObservableObject {
             AppModel.postSmartAlarm()
             self.applySmartAlarm()
         }
+        // Tonight's sleep plan for the Coach and the wind-down reminder, from the same call the screens make.
+        wireSleepPlan()
         // Strap battery alerts (#368): low-battery warning + full-charge note. The notifier self-gates
         // on the user's setting and the OS authorization, and carries its own persisted once-per-
         // crossing state, so feeding it every battery reading is safe.
@@ -773,6 +775,8 @@ final class AppModel: ObservableObject {
         await refreshV5Signals()
         // Yoop: detected activities land in the day by themselves after each sync, as in WHOOP.
         await repo.addDetectedActivities()
+        // The sync moved the day's Strain and sleep, and with them tonight's bedtime: plan the reminder again.
+        WindDownNudge.replan()
         #if os(iOS)
         // #980: a strap backfill routinely completes while the app is BACKGROUNDED (it runs as a
         // bluetooth-central, so it stays alive to receive the offload). The only other widget-publish
@@ -1700,6 +1704,9 @@ final class AppModel: ObservableObject {
 
     func applySmartAlarm() {
         let overrides = WindDownNudge.perDayWakeOverrides
+        // Tonight's plan takes its wake time from the armed alarm, so whatever this arms or disarms moves it,
+        // and with it the wind-down reminder. iOS runs this on every foreground, which is also when that is planned.
+        defer { WindDownNudge.replan() }
         guard behavior.smartAlarmEnabled else {
             ble.disableStrapAlarm()
             Self.cancelSmartAlarmBackupNotification()

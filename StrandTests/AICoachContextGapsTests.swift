@@ -205,7 +205,8 @@ final class AICoachContextGapsTests: XCTestCase {
 
     private func plan(strainMin: Double, debtMin: Double) -> WhoopSleepPlan {
         WhoopSleepPlan(baselineMin: 450, strainMin: strainMin, debtMin: debtMin, efficiency: 0.9,
-                       wake: Date(timeIntervalSince1970: 0), wakeIsAlarm: false, optimalStart: nil)
+                       wake: Date(timeIntervalSince1970: 0), wakeSource: .usual, optimalStart: nil,
+                       recommendedWake: nil)
     }
 
     func testSleepPlanLeavesOutZeroParts() {
@@ -215,18 +216,6 @@ final class AICoachContextGapsTests: XCTestCase {
         let debt = plan(strainMin: 0.4, debtMin: 45).coachLine
         XCTAssertTrue(debt.contains("sleep need 8h 15m = healthy minimum 7h 30m + sleep debt 0h 45m;"), debt)
         XCTAssertFalse(debt.contains("recent Strain"), debt)
-    }
-
-    /// A plan shown late in the evening still counts after midnight (the day rolls at 04:00); one from the
-    /// day before does not.
-    func testShownPlanCountsOnlyOnTheDayItWasShown() {
-        let calendar = Calendar.current
-        guard let evening = calendar.date(from: DateComponents(year: 2026, month: 10, day: 9, hour: 23)),
-              let nextMorning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 10, hour: 9)) else {
-            return XCTFail("dates")
-        }
-        XCTAssertTrue(WhoopSleepPlan.isFromToday(shownAt: evening, now: evening.addingTimeInterval(2 * 3600)))
-        XCTAssertFalse(WhoopSleepPlan.isFromToday(shownAt: evening, now: nextMorning))
     }
 
     // MARK: - The pill's headline as the opener

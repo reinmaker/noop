@@ -144,11 +144,11 @@ final class NightNeedTests: XCTestCase {
     /// need: the Sleep screen's Hours vs Needed, its Sleep Performance, and the engine's stored score, which
     /// reads the days as they will read once its pass is stored.
     @MainActor
-    func testThePlanAndTheNextMorningsScoresResolveOneNeed() {
-        withYoopScores(true) {
+    func testThePlanAndTheNextMorningsScoresResolveOneNeed() throws {
+        try withYoopScores(true) {
             let repo = Repository(deviceId: "my-whoop")
             repo.days = evening
-            let plan = WhoopSleepPlan.tonight(repo: repo, alarm: at("2026-10-11", 7, 30), now: at("2026-10-10", 22, 0))
+            let plan = try XCTUnwrap(WhoopSleepPlan.tonight(repo: repo, alarm: at("2026-10-11", 7, 30), now: at("2026-10-10", 22, 0), wakeOverrides: [:], chosenWake: nil))
             let planned = NightNeed(baselineMin: plan.baselineMin, strainMin: plan.strainMin, debtMin: plan.debtMin)
             XCTAssertEqual(planned, SleepModel.nightNeed(wakeDay: "2026-10-11", days: evening, importedSleep: [:]))
 

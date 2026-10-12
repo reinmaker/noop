@@ -38,6 +38,10 @@ final class BehaviorStore: ObservableObject {
     @Published var smartAlarmEnabled: Bool { didSet { d.set(smartAlarmEnabled, forKey: K.alarmOn) } }
     /// Target wake time, minutes since local midnight.
     @Published var smartAlarmMinutes: Int { didSet { d.set(smartAlarmMinutes, forKey: K.alarmTime) } }
+    /// Whether the user ever set the alarm's time. Until they have, `smartAlarmMinutes` is the store's 07:00
+    /// placeholder, a time nobody picked, which the Alarms screen replaces with the recommended wake time
+    /// (`WhoopSleepPlan.strapAlarmSeed`) when the alarm is switched on.
+    var smartAlarmTimeIsChosen: Bool { d.object(forKey: K.alarmTime) != nil }
     /// Weekdays the alarm fires on (Calendar weekday numbers: 1 = Sun … 7 = Sat). An empty set means
     /// "every day" — the backward-compatible default for anyone upgrading from before per-day scheduling.
     @Published var smartAlarmWeekdays: Set<Int> { didSet { d.set(Array(smartAlarmWeekdays).sorted(), forKey: K.alarmWeekdays) } }

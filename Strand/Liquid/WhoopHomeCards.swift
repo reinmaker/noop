@@ -68,35 +68,23 @@ enum WhoopTime {
 
 // MARK: - Tonight's Sleep
 
-/// "TONIGHT'S SLEEP": recommended bedtime (wake time minus sleep need) and the strap alarm.
+/// "TONIGHT'S SLEEP": recommended bedtime and the wake time, from tonight's plan (`WhoopSleepPlan.current`),
+/// the one call the Sleep Planner, the Alarms screen, the Coach and the wind-down reminder read too.
 ///
-/// The alarm half uses the same gate and resolver as the Alarms screen (`smartAlarmEnabled`, the strap
-/// arm check and `AppModel.nextSmartAlarmDate` with the per-day overrides), so it can never show an
-/// alarm that will not fire. Without an armed alarm, bedtime counts back from the usual wake time.
+/// The wake time is the strap alarm only when one will fire tonight (the same gate and resolver as the Alarms
+/// screen, `WhoopSleepPlan.armedAlarm`), so the card can never show an alarm that will not fire; else a wake
+/// time the user chose, else the end of the time in bed placed on the usual middle of the night, and its label
+/// says which.
 struct WhoopTonightsSleepCard: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var behavior: BehaviorStore
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var router: NavRouter
 
-    /// The next armed strap alarm, or nil (no alarm, or the strap cannot arm one).
-    static func nextAlarm(behavior: BehaviorStore, model: AppModel, from now: Date = Date()) -> Date? {
-        guard behavior.smartAlarmEnabled, !(model.whoop5Detected && !PuffinExperiment.isEnabled) else { return nil }
-        return AppModel.nextSmartAlarmDate(minutes: behavior.smartAlarmMinutes,
-                                           weekdays: behavior.smartAlarmWeekdays,
-                                           overrides: WindDownNudge.perDayWakeOverrides,
-                                           from: now)
-    }
-
     var body: some View {
         let now = Date()
-        let alarm = Self.nextAlarm(behavior: behavior, model: model, from: now)
-        // WHOOP's Sleep Planner: tonight's need (healthy minimum + Strain + debt) over the usual efficiency,
-        // back from the alarm or the usual wake time of recent nights.
-        let plan = WhoopSleepPlan.tonight(repo: repo, alarm: alarm, now: now)
-        let wake = plan.wake
-        let bedtime = plan.bedtime
-        let bedtimeText = bedtime <= now ? String(localized: "Now") : WhoopTime.clock(bedtime)
+        let plan = WhoopSleepPlan.current(repo: repo, behavior: behavior, model: model, now: now)
+        let bedtimeText = plan.map { $0.bedtime <= now ? String(localized: "Now") : WhoopTime.clock($0.bedtime) } ?? "-"
 
         NavigationLink(value: TabRoute.sleepPlanner) {
             WhoopTitledCard(title: String(localized: "TONIGHT'S SLEEP")) {
@@ -120,15 +108,17 @@ struct WhoopTonightsSleepCard: View {
                     VStack(spacing: NoopMetrics.space1) {
                         HStack(spacing: 6) {
                             Image(systemName: "alarm").font(WhoopStyle.icon)
-                            Text(WhoopTime.clock(wake)).font(WhoopStyle.number(24))
+                            Text(plan.map { WhoopTime.clock($0.wake) } ?? "-").font(WhoopStyle.number(24))
                         }
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(alarm != nil ? WhoopStyle.rangeGreen : StrandPalette.textTertiary)
-                                .frame(width: 6, height: 6)
-                            Text(alarm != nil ? String(localized: "ALARM ON") : String(localized: "USUAL WAKE"))
-                                .font(WhoopStyle.smallLabel)
-                                .foregroundStyle(alarm != nil ? WhoopStyle.rangeGreen : StrandPalette.textSecondary)
+                        if let plan {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(plan.wakeIsAlarm ? WhoopStyle.rangeGreen : StrandPalette.textTertiary)
+                                    .frame(width: 6, height: 6)
+                                Text(plan.wakeLabel)
+                                    .font(WhoopStyle.smallLabel)
+                                    .foregroundStyle(plan.wakeIsAlarm ? WhoopStyle.rangeGreen : StrandPalette.textSecondary)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -138,7 +128,9 @@ struct WhoopTonightsSleepCard: View {
             }
         }
         .buttonStyle(.plain)
-        .onAppear { WhoopSleepPlan.lastShown = plan }
+        // The day moves the bedtime (Strain builds, a sync lands); when it moves by 10 minutes or more the
+        // wind-down reminder is planned again, so it follows what this card shows.
+        .onChangeCompat(of: plan?.fingerprintToken) { _ in WindDownNudge.replan() }
     }
 }
 

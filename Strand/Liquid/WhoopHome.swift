@@ -135,7 +135,10 @@ struct WhoopInsightCard: View {
         // The day's Strain in steps of 2 (0-21 scale), so a card that cites Strain is rewritten as the day
         // moves on: on 10 Oct it still said "13.5 Strain" with the ring at 17.8 after an evening game.
         let strain = repo.dayStrain(d).map { String(Int(AICoachEngine.strain21($0) / 2)) } ?? "-"
-        return "v3|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.isConfigured)|\(coach.dataConsent)"
+        // Tonight's planned bedtime and wake time in steps of 10 minutes: the card quotes the plan, and
+        // the plan moves with the day's Strain, so a bedtime that has moved is written again (on 12 Oct
+        // the card said 01:08 while Tonight's Sleep said 01:31).
+        return "v4|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.sleepPlanToken)|\(coach.isConfigured)|\(coach.dataConsent)"
     }
 
     var body: some View {
@@ -347,6 +350,7 @@ private struct WhoopOverviewCard<Content: View>: View {
 struct WhoopMyDaySection: View {
     @EnvironmentObject private var router: NavRouter
     @EnvironmentObject private var coach: AICoachEngine
+    @EnvironmentObject private var model: AppModel
     @State private var showReview = false
 
     var body: some View {
@@ -373,6 +377,11 @@ struct WhoopMyDaySection: View {
             // and let the Coach write one as its first message; otherwise show the setup page.
             let outlook = Self.isOutlookHour(Calendar.current.component(.hour, from: Date()))
             Button {
+                // Always on, one line: the row once did nothing when tapped and the log could not say whether
+                // the tap arrived or the Coach sheet failed to open.
+                model.live.append(log: AppModel.stamped(
+                    "My Day row tapped (\(outlook ? "Daily Outlook" : "Day In Review")): Coach set up \(coach.isConfigured), "
+                    + "data access \(coach.dataConsent)"))
                 if coach.isConfigured && coach.dataConsent {
                     coach.nextOpener = outlook ? .dailyOutlook : .dayReview
                     router.openCoach()
@@ -395,6 +404,7 @@ struct WhoopMyDaySection: View {
                 .padding(.vertical, NoopMetrics.space4)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(outlook ? WhoopStyle.outlookGradient : WhoopStyle.reviewGradient))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
         }
