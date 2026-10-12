@@ -101,8 +101,9 @@ enum WhoopVitalText {
 struct WhoopVitalsCard: View {
     let statuses: [HealthMonitorRule.Status]
     var fahrenheit = false
-    /// Where the blood oxygen reading came from, already worded ("Imported from Apple Health").
-    var bloodOxygenSource: String?
+    /// A line about where a reading came from, already worded: blood oxygen "Imported from Apple Health",
+    /// respiratory rate "Estimated from your heartbeat intervals" when Yoop made it rather than WHOOP.
+    var notes: [HealthMonitorRule.Vital: String] = [:]
     let today: String
     var showsRule = true
 
@@ -165,8 +166,7 @@ struct WhoopVitalsCard: View {
                 Text(WhoopVitalText.title(status))
                     .font(WhoopStyle.smallLabel)
                     .foregroundStyle(StrandPalette.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(caption(status))
                     .font(WhoopStyle.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
@@ -174,6 +174,7 @@ struct WhoopVitalsCard: View {
             }
             Spacer(minLength: NoopMetrics.space1)
             VStack(alignment: .trailing, spacing: NoopMetrics.space1) {
+                // The value and its chip keep their width so the name beside them never shrinks to make room.
                 if let value {
                     HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space1) {
                         Text(value)
@@ -231,11 +232,10 @@ struct WhoopVitalsCard: View {
         case .learning(let nights):
             parts.append(String(localized: "Learning your range, \(nights) of \(HealthMonitorRule.minNights) nights"))
         case .within, .above, .below, .noData:
-            if status.vital == .bloodOxygen {
-                if let source = bloodOxygenSource { parts.append(source) }
-            } else if let range = WhoopVitalText.range(status, fahrenheit: fahrenheit) {
+            if status.vital != .bloodOxygen, let range = WhoopVitalText.range(status, fahrenheit: fahrenheit) {
                 parts.append(String(localized: "Usual \(range)"))
             }
+            if let note = notes[status.vital] { parts.append(note) }
         }
         return parts.joined(separator: " · ")
     }
@@ -264,23 +264,43 @@ struct WhoopVitalsSection: View {
         UnitPrefs.resolveTemperature(system: UnitSystem(rawValue: unitSystemRaw) ?? .metric, override: temperatureRaw) == .fahrenheit
     }
 
-    /// Worded like the Blood Oxygen page: where the night's reading came from, by the source the merged day took.
-    private func bloodOxygenSource(_ statuses: [HealthMonitorRule.Status]) -> String? {
-        guard let day = statuses.first(where: { $0.vital == .bloodOxygen })?.day else { return nil }
-        let rows = repo.vitalRows.filter { $0.metric.day == day && $0.metric.spo2Pct != nil }
-        guard let source = rows.min(by: { $0.source.vitalPriority < $1.source.vitalPriority })?.source else { return nil }
-        switch source {
-        case .whoopImport: return String(localized: "Imported from your WHOOP export")
-        case .appleHealth: return String(localized: "Imported from Apple Health")
-        case .noopComputed, .localCache: return String(localized: "Saved on this device")
+    /// The source the merged day took a figure from, by the app's source precedence.
+    private func source(of vital: HealthMonitorRule.Vital, day: String) -> DailyMetricSource? {
+        let rows = repo.vitalRows.filter { row in
+            guard row.metric.day == day else { return false }
+            switch vital {
+            case .bloodOxygen: return row.metric.spo2Pct != nil
+            case .respiratoryRate: return row.metric.respRateBpm != nil
+            default: return false
+            }
         }
+        return rows.min(by: { $0.source.vitalPriority < $1.source.vitalPriority })?.source
+    }
+
+    /// Where a reading came from, worded like the Blood Oxygen page; only for the two that need saying.
+    private func notes(_ statuses: [HealthMonitorRule.Status]) -> [HealthMonitorRule.Vital: String] {
+        var out: [HealthMonitorRule.Vital: String] = [:]
+        if let day = statuses.first(where: { $0.vital == .bloodOxygen })?.day,
+           let from = source(of: .bloodOxygen, day: day) {
+            switch from {
+            case .whoopImport: out[.bloodOxygen] = String(localized: "Imported from your WHOOP export")
+            case .appleHealth: out[.bloodOxygen] = String(localized: "Imported from Apple Health")
+            case .noopComputed, .localCache: out[.bloodOxygen] = String(localized: "Saved on this device")
+            }
+        }
+        // A night Yoop scored has no respiration sensor behind its rate: it is read off the beat to beat
+        // variation (respiratory sinus arrhythmia), so it is an estimate. WHOOP's own is an export's.
+        if let day = statuses.first(where: { $0.vital == .respiratoryRate })?.day,
+           source(of: .respiratoryRate, day: day) == .noopComputed {
+            out[.respiratoryRate] = String(localized: "Estimated from your heartbeat intervals")
+        }
+        return out
     }
 
     var body: some View {
         let today = Repository.logicalDayKey(Date())
         let statuses = HealthMonitorRule.statuses(days: repo.days, todayKey: today)
-        WhoopVitalsCard(statuses: statuses, fahrenheit: fahrenheit, bloodOxygenSource: bloodOxygenSource(statuses),
-                        today: today, showsRule: showsRule)
+        WhoopVitalsCard(statuses: statuses, fahrenheit: fahrenheit, notes: notes(statuses), today: today, showsRule: showsRule)
     }
 }
 

@@ -555,9 +555,14 @@ struct WhoopAgeContent: View {
                 .font(WhoopStyle.body)
                 .foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            ProgressView(value: Double(min(snapshot.coverage.recoveriesInLast31Days, WhoopAge.unlockRecoveries)),
-                         total: Double(WhoopAge.unlockRecoveries))
-                .tint(WhoopStyle.rangeGreen)
+            let fraction = min(1, Double(snapshot.coverage.recoveriesInLast31Days) / Double(WhoopAge.unlockRecoveries))
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(WhoopStyle.ringTrack)
+                    Capsule().fill(WhoopStyle.rangeGreen).frame(width: geo.size.width * fraction)
+                }
+            }
+            .frame(height: 8)
         }
     }
 
