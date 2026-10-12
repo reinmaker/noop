@@ -4,10 +4,11 @@ import XCTest
 /// The Alarms screen carries two time pickers and only one of them wakes anybody.
 ///
 /// The strap wake-alarm's "Wake at" arms the strap's firmware alarm. The wind-down card's picker is an
-/// INPUT to the reminder's arithmetic: nudge = wake - sleep need - lead. Both were labelled "Wake time"
-/// for VoiceOver, both sat on the same screen, and the two values are stored independently
-/// (`behavior.smartAlarmMinutes` vs `windDown.wakeMinutes`) so they routinely disagree. A reporter asked
-/// outright which of the two times would wake them, which is the question this screen must never provoke.
+/// INPUT to tonight's plan (the reminder fires a lead before the plan's bedtime, which counts back from the
+/// wake time). Both were labelled "Wake time" for VoiceOver, both sat on the same screen, and the two values
+/// are stored independently (`behavior.smartAlarmMinutes` vs `windDown.wakeMinutes`) so they routinely
+/// disagree. A reporter asked outright which of the two times would wake them, which is the question this
+/// screen must never provoke.
 ///
 /// Source-asserted because SwiftUI labels have no unit seam, the same reason `PiiRedactionTests` reads
 /// source. These pin the wording contract, not the layout.
@@ -57,7 +58,7 @@ final class AlarmWakeTimeLabellingTests: XCTestCase {
         let src = try Self.alarmViewSource()
         XCTAssertTrue(src.contains("Days you leave alone keep your strap alarm at"),
                       "the untouched-day explainer must name the strap alarm's own fallback")
-        XCTAssertTrue(src.contains("and time the reminder from"),
+        XCTAssertTrue(src.contains("and the reminder follows your recommended wake time"),
                       "the untouched-day explainer must name the reminder's fallback too")
     }
 
@@ -68,8 +69,8 @@ final class AlarmWakeTimeLabellingTests: XCTestCase {
     /// stop people misreading which time wakes them cannot itself state a time that will not.
     func testTheWakesYouLineResolvesTheNextFireRatherThanTheBaseTime() throws {
         let src = try Self.alarmViewSource()
-        XCTAssertTrue(src.contains("AppModel.nextSmartAlarmDate("),
-                      "the answer line must come from the same resolver applySmartAlarm arms the strap from")
+        XCTAssertTrue(src.contains("WhoopSleepPlan.armedAlarm("),
+                      "the answer line must come from the one resolver, over the same pure function applySmartAlarm arms the strap from")
         guard let range = src.range(of: "private var nextStrapAlarmLabel: String? {") else {
             return XCTFail("nextStrapAlarmLabel not found")
         }
@@ -111,7 +112,9 @@ final class AlarmWakeTimeLabellingTests: XCTestCase {
         // Every readout resolves through one funnel, and the funnel carries the gate. Counting gated call
         // sites was the weaker test and it passed while `nextStrapAlarmLabel` went ungated: it resolved
         // the alarm by itself, so the wind-down card still promised a buzz a 5/MG would never give.
-        XCTAssertEqual(src.components(separatedBy: "AppModel.nextSmartAlarmDate(").count - 1, 1,
+        XCTAssertEqual(src.components(separatedBy: "AppModel.nextSmartAlarmDate(").count - 1, 0,
+                       "no readout resolves the next fire itself: the one resolver is WhoopSleepPlan.armedAlarm")
+        XCTAssertEqual(src.components(separatedBy: "WhoopSleepPlan.armedAlarm(").count - 1, 1,
                        "exactly one resolver call: every alarm readout must come through nextStrapAlarm")
         guard let funnel = src.range(of: "private func nextStrapAlarm(from now: Date = Date()) -> Date? {") else {
             return XCTFail("nextStrapAlarm funnel not found")
@@ -123,23 +126,26 @@ final class AlarmWakeTimeLabellingTests: XCTestCase {
                       "the funnel is where the gate belongs, so no readout can skip it")
     }
 
-    /// The hero is the first figure on the screen and it must not call the reminder's input "Wake".
+    /// The hero is the first figure on the screen and it must say where its wake time comes from.
     ///
-    /// It sat above both cards, in the largest type on the page, labelling `wakeMinutes` as "Wake". A
-    /// reader looking for their alarm met that number first, which is where the reported confusion starts.
-    func testTheHeroDoesNotCallTheReminderInputWake() throws {
+    /// It sat above both cards, in the largest type on the page, labelling the reminder's input as "Wake".
+    /// A reader looking for their alarm met that number first, which is where the reported confusion starts.
+    /// The wake figure is now tonight's plan's, and its label is the plan's (`wakeLabel`): "ALARM ON" only
+    /// when an alarm will fire tonight, else a time the user chose, the recommended time or the usual one.
+    func testTheHeroLabelsItsWakeTimeBySource() throws {
         let src = try Self.alarmViewSource()
-        XCTAssertFalse(src.contains("heroTime(label: \"Wake\","),
-                       "the hero's wake figure is the wind-down input, so it cannot be labelled \"Wake\"")
-        XCTAssertTrue(src.contains("heroTime(label: \"Usual wake\","),
-                      "name it for what it is")
+        let hero = try Self.windowHeroBody(in: src)
+        XCTAssertFalse(src.contains("heroTime(label: \"Wake\","), "a bare \"Wake\" does not say whose")
+        XCTAssertTrue(hero.contains("plan?.wakeLabel"), "the label comes from the plan, so it cannot say ALARM ON for a time nobody armed")
+        XCTAssertTrue(hero.contains("WhoopSleepPlan.current("), "the figures are the plan the Home card shows")
+        XCTAssertFalse(hero.contains("nudgeMinuteOfDay"), "the reminder's old fixed-need time is gone from the hero")
     }
 
-    /// The alarm may join the hero row, but never on the arrow.
+    /// The alarm is the wake figure only when it is tonight's wake, and the countdown block carries the rest.
     ///
-    /// The arrow is an arithmetic pair: the nudge is DERIVED from the usual wake time. The alarm is not
-    /// part of that derivation, so chaining it would claim the nudge is timed for the alarm, which is the
-    /// one thing this screen must stop implying.
+    /// The arrow joins bedtime to wake time, which is the plan's pair: the bedtime is counted back from the
+    /// wake time, and the wake time is the armed alarm only when one fires tonight. No third figure repeats
+    /// the alarm, and the countdown and its stamp resolve from the same clock as the plan.
     func testTheHeroShowsTheAlarmSeparatelyFromTheDerivedPair() throws {
         let src = try Self.alarmViewSource()
         XCTAssertFalse(src.contains("heroTime(label: \"Alarm\""),
@@ -151,7 +157,10 @@ final class AlarmWakeTimeLabellingTests: XCTestCase {
                       "the stamp must resolve from the tick the countdown used, not its own Date()")
         let body = try Self.windowHeroBody(in: src)
         let arrows = body.components(separatedBy: "systemName: \"arrow.right\"").count - 1
-        XCTAssertEqual(arrows, 1, "exactly one arrow: it joins the derived pair, and the alarm is not in it")
+        XCTAssertEqual(arrows, 1, "exactly one arrow: it joins the plan's bedtime to its wake time")
+        // The plan and the countdown come from ONE tick, so a figure and its countdown cannot straddle the
+        // moment an alarm fires and name different mornings.
+        XCTAssertEqual(body.components(separatedBy: "now: tick.date").count - 1, 1, "the plan resolves from the tick")
     }
 
     /// The countdown must tick and must resolve the same next fire as everything else on the card.

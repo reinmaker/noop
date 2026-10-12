@@ -135,7 +135,10 @@ struct WhoopInsightCard: View {
         // The day's Strain in steps of 2 (0-21 scale), so a card that cites Strain is rewritten as the day
         // moves on: on 10 Oct it still said "13.5 Strain" with the ring at 17.8 after an evening game.
         let strain = repo.dayStrain(d).map { String(Int(AICoachEngine.strain21($0) / 2)) } ?? "-"
-        return "v3|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.isConfigured)|\(coach.dataConsent)"
+        // Tonight's planned bedtime and wake time in steps of 10 minutes: the card quotes the plan, and
+        // the plan moves with the day's Strain, so a bedtime that has moved is written again (on 12 Oct
+        // the card said 01:08 while Tonight's Sleep said 01:31).
+        return "v4|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.sleepPlanToken)|\(coach.isConfigured)|\(coach.dataConsent)"
     }
 
     var body: some View {
