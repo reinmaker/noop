@@ -21,6 +21,35 @@ final class WhoopActivityDetectorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(found.first?.durationMin ?? 0, 18)
     }
 
+    /// 12 Oct lifting: sets at 95-130 bpm with four-minute rests at 80-90 bpm, the wrist moving about 0.3 g
+    /// throughout. It is one bout over its whole span, not a one-minute stub from the motion-based
+    /// cool-down (the median motion alone made it a "moving sport" whose last "playing" minute was its first).
+    func testLiftingWithLongRestsAndModerateMotionIsOneBout() {
+        var hr: [(ts: Int, bpm: Int)] = []
+        hr += block(105, from: 0, minutes: 4)
+        hr += block(130, from: 4, minutes: 4)             // the hardest set, peak 130
+        hr += block(98, from: 8, minutes: 6)
+        hr += block(84, from: 14, minutes: 4)              // a four-minute rest between sets
+        hr += block(100, from: 18, minutes: 14)
+        hr += block(86, from: 32, minutes: 4)              // another rest
+        hr += block(96, from: 36, minutes: 10)
+        let base = 1_800_000_000 / 60
+        var motion: [Int: Double] = [:]
+        for m in 0..<46 { motion[base + m] = 0.32 }
+        let found = WhoopActivityDetector.detect(hr: hr, restingBpm: 50, excluded: [], motion: motion)
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found.first?.startSec, 1_800_000_000)
+        XCTAssertEqual(found.first?.endSec, 1_800_000_000 + 45 * 60 + 59)
+    }
+
+    /// A rest of six minutes still splits two efforts.
+    func testSixMinuteBreakSplitsTwoEfforts() {
+        var hr = block(125, from: 0, minutes: 14)
+        hr += block(80, from: 14, minutes: 6)
+        hr += block(125, from: 20, minutes: 14)
+        XCTAssertEqual(WhoopActivityDetector.detect(hr: hr, restingBpm: 50, excluded: []).count, 2)
+    }
+
     func testShortBurstsAndExcludedSpansAreIgnored() {
         XCTAssertTrue(WhoopActivityDetector.detect(hr: block(130, from: 0, minutes: 8), restingBpm: 52, excluded: []).isEmpty)
         let session = block(125, from: 0, minutes: 20)
