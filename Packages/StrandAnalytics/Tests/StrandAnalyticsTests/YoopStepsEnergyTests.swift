@@ -192,4 +192,25 @@ final class YoopStepsEnergyTests: XCTestCase {
                                                     restingHR: 51)
         XCTAssertEqual(energy.activeKcal, 1_543 * 0.0005 * 82 * 0.415 * 1.83, accuracy: 1e-9)
     }
+
+    func testMinutePricesSumToTheDaysActiveEnergyExactly() {
+        // A mixed day: a calm stretch, a walk with steps, a hard effort and a heart-rate dropout with steps.
+        var hr: [HRSample] = []
+        for t in 0..<3_600 { hr.append(HRSample(ts: 10_000 + t, bpm: t < 1_200 ? 62 : (t < 2_400 ? 97 : 152))) }
+        let steps: [Int: Double] = [Int(10_000 / 60) + 21: 118, Int(10_000 / 60) + 22: 121.5,
+                                    Int(10_000 / 60) + 45: 160, 400: 37]
+        let byMinute = Calories.yoopActiveKcalByMinute(hr, stepsByMinute: steps, profile: man, hrmax: 178.6,
+                                                       restingHR: 56.243)
+        let day = Calories.estimateYoopDayEnergy(hr, stepsByMinute: steps, windowSeconds: 86_400,
+                                                 profile: man, hrmax: 178.6, restingHR: 56.243)
+        let summed = byMinute.keys.sorted().reduce(0.0) { $0 + (byMinute[$1] ?? 0) }
+        XCTAssertEqual(summed, day.activeKcal)   // bit-for-bit, not within a tolerance
+        XCTAssertGreaterThan(day.activeKcal, 0)
+        XCTAssertGreaterThan(byMinute[400] ?? 0, 0)   // steps with no heart rate still price a minute
+    }
+
+    func testMinutePricesAreEmptyForAnEmptyDay() {
+        XCTAssertTrue(Calories.yoopActiveKcalByMinute([], stepsByMinute: [:], profile: man, hrmax: 178.6,
+                                                      restingHR: 56).isEmpty)
+    }
 }

@@ -39,6 +39,10 @@ extension TabRoute {
         case .recovery: return .recovery
         case .strain: return .strain
         case .workouts, .activity: return .strain
+        case .steps: return .steps
+        case .calories: return .calories
+        case .vo2max: return .vo2max
+        case .bloodOxygen: return .bloodOxygen
         case .health, .stress, .hydration, .healthMonitor: return .health
         case .fullDayChart, .coupled: return .home
         case .metricExplorer, .dataSources: return .trends

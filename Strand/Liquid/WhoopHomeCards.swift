@@ -340,6 +340,12 @@ struct WhoopDashboardSection: View {
     /// Yoop: the day's total energy (basal + active), and one day's basal energy for the total's average.
     var totalCalories: Double?
     var basalKcalPerDay: Double?
+    /// The shown day's window as Home resolved it (epoch seconds at its start, and its length in seconds),
+    /// and whether it is the open day. Handed on to the pages the rows open, so a page reads the window the
+    /// row's number was counted over instead of resolving it a second time.
+    var windowFrom: Int?
+    var windowSeconds: Int?
+    var isToday = true
     let onCustomize: () -> Void
 
     private struct Row: Identifiable {
@@ -356,8 +362,7 @@ struct WhoopDashboardSection: View {
     /// The prior 30 days' mean, skipping days below `floor` (a day the strap barely recorded would
     /// otherwise drag the "normal" down to nothing). Nil with fewer than 3 usable days.
     private func average(floor: Double = 0, _ pick: (DailyMetric) -> Double?) -> Double? {
-        let prior = days.filter { $0.day != today?.day }.suffix(30).compactMap(pick).filter { $0 > floor }
-        return prior.count < 3 ? nil : prior.reduce(0, +) / Double(prior.count)
+        WhoopDayFigures.normal(days: days, excluding: today?.day, floor: floor, pick)
     }
 
     /// Each day's strap count, else the phone's for days before the strap counted (as Home's figure).
@@ -365,8 +370,21 @@ struct WhoopDashboardSection: View {
         average(floor: 1000) { $0.steps.map(Double.init) ?? appleStepsByDay[$0.day] }
     }
 
+    /// The row's own numbers, handed to the page it opens.
+    private func figures(value: Double?, average: Double?, total: Double? = nil,
+                         totalAverage: Double? = nil) -> WhoopRowFigures {
+        WhoopRowFigures(day: today?.day ?? Repository.logicalDayKey(Date()), isToday: isToday, value: value,
+                        average: average, total: total, totalAverage: totalAverage,
+                        basalKcalPerDay: basalKcalPerDay, windowFrom: windowFrom, windowSeconds: windowSeconds,
+                        stepSource: WhoopDayFigures.stepSource(strap: today?.steps,
+                                                               phone: today.flatMap { appleStepsByDay[$0.day] },
+                                                               hasValue: steps != nil))
+    }
+
     private var rows: [Row] {
-        [
+        let spo2Average = average { $0.spo2Pct }
+        let stepsNormal = stepsAverage
+        return [
             Row(id: "hrv", label: String(localized: "HEART RATE VARIABILITY"), icon: "waveform.path.ecg",
                 value: today?.avgHrv, average: average { $0.avgHrv }, decimals: 0, higherIsBetter: true,
                 route: .metric("hrv")),
@@ -377,14 +395,15 @@ struct WhoopDashboardSection: View {
                 value: today?.respRateBpm, average: average { $0.respRateBpm }, decimals: 1,
                 higherIsBetter: false, route: .metric("resp_rate")),
             Row(id: "spo2", label: String(localized: "BLOOD OXYGEN"), icon: "drop",
-                value: today?.spo2Pct, average: average { $0.spo2Pct }, decimals: 0, higherIsBetter: true,
-                route: nil),
+                value: today?.spo2Pct, average: spo2Average, decimals: 0, higherIsBetter: true,
+                route: .bloodOxygen(figures(value: today?.spo2Pct, average: spo2Average))),
             Row(id: "steps", label: String(localized: "STEPS"), icon: "shoeprints.fill",
-                value: steps, average: stepsAverage, decimals: 0,
-                higherIsBetter: true, route: nil),
+                value: steps, average: stepsNormal, decimals: 0,
+                higherIsBetter: true, route: .steps(figures(value: steps, average: stepsNormal))),
         ] + calorieRows + [
             Row(id: "vo2", label: String(localized: "VO₂ MAX"), icon: "bicycle",
-                value: vo2max, average: nil, decimals: 0, higherIsBetter: true, route: nil),
+                value: vo2max, average: nil, decimals: 0, higherIsBetter: true,
+                route: .vo2max(figures(value: vo2max, average: nil))),
         ]
     }
 
@@ -392,17 +411,21 @@ struct WhoopDashboardSection: View {
     /// figure is the whole-day total, shown as CALORIES.
     private var calorieRows: [Row] {
         guard PuffinExperiment.whoopScoresEnabled else {
+            let normal = average(floor: 100) { $0.activeKcalEst }
             return [Row(id: "kcal", label: String(localized: "CALORIES"), icon: "flame",
-                        value: calories, average: average(floor: 100) { $0.activeKcalEst }, decimals: 0,
-                        higherIsBetter: true, route: nil)]
+                        value: calories, average: normal, decimals: 0, higherIsBetter: true,
+                        route: .calories(figures(value: calories, average: normal)))]
         }
         let activeAverage = average { $0.activeKcalEst }
+        let totalAverage = basalKcalPerDay.flatMap { basal in activeAverage.map { $0 + basal } }
+        // ACTIVE and TOTAL open the one page, which states both.
+        let page = TabRoute.calories(figures(value: calories, average: activeAverage, total: totalCalories,
+                                             totalAverage: totalAverage))
         return [
             Row(id: "kcal", label: String(localized: "ACTIVE CALORIES"), icon: "flame",
-                value: calories, average: activeAverage, decimals: 0, higherIsBetter: true, route: nil),
+                value: calories, average: activeAverage, decimals: 0, higherIsBetter: true, route: page),
             Row(id: "kcalTotal", label: String(localized: "TOTAL CALORIES"), icon: "flame.fill",
-                value: totalCalories, average: basalKcalPerDay.flatMap { basal in activeAverage.map { $0 + basal } },
-                decimals: 0, higherIsBetter: true, route: nil),
+                value: totalCalories, average: totalAverage, decimals: 0, higherIsBetter: true, route: page),
         ]
     }
 
@@ -470,8 +493,9 @@ struct WhoopDashboardSection: View {
     }
 
     @ViewBuilder private func arrow(_ row: Row) -> some View {
-        if let v = row.value, let avg = row.average, abs(v - avg) > 0.0001 {
-            let up = v > avg
+        let move = WhoopDayFigures.direction(value: row.value, normal: row.average)
+        if move != 0 {
+            let up = move > 0
             let good = up == row.higherIsBetter
             Image(systemName: up ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                 .font(WhoopStyle.chevron)

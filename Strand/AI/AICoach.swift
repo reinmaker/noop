@@ -1276,6 +1276,8 @@ final class AICoachEngine: ObservableObject {
     /// The screen the wearer is looking at, so the Coach can open with a message about it.
     enum CoachScreen: String {
         case home, sleep, recovery, strain, health, trends, other
+        /// The pages behind My Dashboard's rows.
+        case steps, calories, vo2max, bloodOxygen
 
         var describedForCoach: String {
             switch self {
@@ -1285,6 +1287,10 @@ final class AICoachEngine: ObservableObject {
             case .strain: return "Strain screen (today's Strain so far, heart-rate zones, workouts and steps)"
             case .health: return "Health screen (vitals against their normal ranges, and stress)"
             case .trends: return "Trends screen (the last 30 days of Recovery, Strain, Sleep and HRV)"
+            case .steps: return "Steps screen (today's steps by hour against your 30-day normal, the last 7 days and your best day)"
+            case .calories: return "Calories screen (today's active, resting and total energy, split by hour and by activity)"
+            case .vo2max: return "VO₂ max screen (your estimated VO₂ max and its trend over the last 90 days)"
+            case .bloodOxygen: return "Blood oxygen screen (last night's blood oxygen against your 30-day range)"
             case .other: return "app"
             }
         }

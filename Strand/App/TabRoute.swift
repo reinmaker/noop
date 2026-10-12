@@ -44,6 +44,12 @@ enum TabRoute: Hashable {
     case sleepPlanner
     /// One activity's WHOOP-style page, from Home's ACTIVITIES card.
     case activity(WhoopActivityRoute)
+    /// The pages behind My Dashboard's rows, each opened with the row's own figures so the page's headline
+    /// is the number the row shows. ACTIVE and TOTAL CALORIES share one page.
+    case steps(WhoopRowFigures)
+    case calories(WhoopRowFigures)
+    case vo2max(WhoopRowFigures)
+    case bloodOxygen(WhoopRowFigures)
 }
 
 extension View {
@@ -88,6 +94,10 @@ extension View {
             case .healthMonitor: WhoopHealthMonitorScreen()
             case .sleepPlanner: WhoopSleepPlannerScreen()
             case .activity(let route): WhoopActivityScreen(row: route.row)
+            case .steps(let figures): WhoopStepsScreen(figures: figures)
+            case .calories(let figures): WhoopCaloriesScreen(figures: figures)
+            case .vo2max(let figures): WhoopVo2MaxScreen(figures: figures)
+            case .bloodOxygen(let figures): WhoopBloodOxygenScreen(figures: figures)
             }
             }
             // WHOOP-style: the Coach opens about the screen being viewed.
