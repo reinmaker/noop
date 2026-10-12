@@ -62,6 +62,17 @@ struct WhoopSleepPlan {
     var optimalEnd: Date? { optimalStart.map { $0.addingTimeInterval(timeInBedMin * 60) } }
     var wakeIsAlarm: Bool { wakeSource == .alarm }
 
+    /// Hours before bedtime after which no more training should happen. Vigorous exercise that ends within an
+    /// hour of lying down delays sleep and shortens it, while earlier training does not (Stutz, Eiholzer and
+    /// Spengler, Sports Medicine 2019, a meta-analysis of 23 studies); three hours leaves margin for the heart
+    /// rate, and the skin and core temperature the effort raised, to settle.
+    static let trainingCutoffHours = 3.0
+
+    /// The last sensible time to train today: `trainingCutoffHours` before tonight's bedtime. The Home row
+    /// turns from the Daily Outlook into the Day In Review at this time, and the Coach is told not to suggest
+    /// training after it.
+    var trainingCutoff: Date { bedtime.addingTimeInterval(-Self.trainingCutoffHours * 3600) }
+
     /// What a screen calls the wake time, from where it comes.
     var wakeLabel: String {
         switch wakeSource {
@@ -316,6 +327,8 @@ struct WhoopSleepPlan {
                          + extras.joined(separator: " + ") + ";")
         }
         parts.append("time in bed \(hm(timeInBedMin)) at \(percent)% sleep efficiency.")
+        parts.append("The last sensible time to train today is \(WhoopTime.clock(trainingCutoff)), \(Int(Self.trainingCutoffHours)) hours before bed: "
+                     + "never suggest training after it, and treat the day as over from then.")
         parts.append("Use exactly these times whenever you suggest a bedtime, lights out or a wake time.")
         return parts.joined(separator: " ")
     }

@@ -324,6 +324,17 @@ final class WhoopSleepPlanTests: XCTestCase {
         XCTAssertEqual(plan.reminderDate(leadMinutes: 30), plan.bedtime.addingTimeInterval(-30 * 60))
     }
 
+    /// No more training from three hours before bed: the Home row turns into the Day In Review there, and the
+    /// Coach is told the same time.
+    func testTheTrainingCutoffIsThreeHoursBeforeBed() {
+        let plan = WhoopSleepPlan(baselineMin: 450, strainMin: 0, debtMin: 0, efficiency: 0.9,
+                                  wake: Date(timeIntervalSince1970: 1_800_000_000), wakeSource: .usual,
+                                  optimalStart: nil, recommendedWake: nil)
+        XCTAssertEqual(plan.trainingCutoff, plan.bedtime.addingTimeInterval(-3 * 3600))
+        XCTAssertTrue(plan.coachLine.contains("last sensible time to train today is \(WhoopTime.clock(plan.trainingCutoff))"),
+                      plan.coachLine)
+    }
+
     /// The coach names the wake time's source in words, so it never calls a recommended wake an alarm.
     func testTheCoachLineNamesTheSource() {
         func line(_ source: WhoopSleepPlan.WakeSource) -> String {

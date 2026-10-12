@@ -345,12 +345,14 @@ private struct WhoopOverviewCard<Content: View>: View {
 
 // MARK: - My Day
 
-/// "My Day" header + the gradient Coach row: the Daily Outlook (the plan for the day) until 17:00, the Day In
-/// Review from then on, as WHOOP switches them. Each opens the Coach writing it.
+/// "My Day" header + the gradient Coach row: the Daily Outlook (the plan for the day) until the hour no more
+/// training should happen, the Day In Review from then on (`isOutlook`). Each opens the Coach writing it.
 struct WhoopMyDaySection: View {
     @EnvironmentObject private var router: NavRouter
     @EnvironmentObject private var coach: AICoachEngine
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var behavior: BehaviorStore
     @State private var showReview = false
 
     var body: some View {
@@ -375,7 +377,11 @@ struct WhoopMyDaySection: View {
             .padding(.top, NoopMetrics.space2)
             // WHOOP-style: the Outlook and the Review are Coach conversations. With the Coach set up, open it
             // and let the Coach write one as its first message; otherwise show the setup page.
-            let outlook = Self.isOutlookHour(Calendar.current.component(.hour, from: Date()))
+            // Re-read every minute so the row turns into the Day In Review at the cutoff while the app is open.
+            TimelineView(.everyMinute) { tick in
+            let outlook = Self.isOutlook(
+                now: tick.date,
+                cutoff: WhoopSleepPlan.current(repo: repo, behavior: behavior, model: model, now: tick.date)?.trainingCutoff)
             Button {
                 // Always on, one line: the row once did nothing when tapped and the log could not say whether
                 // the tap arrived or the Coach sheet failed to open.
@@ -407,14 +413,21 @@ struct WhoopMyDaySection: View {
                 .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
+            }
         }
         .sheet(isPresented: $showReview) { DayInReviewSheet() }
     }
 
-    /// The hour the row turns from the morning's Daily Outlook to the evening's Day In Review.
-    static let reviewFromHour = 17
-
-    static func isOutlookHour(_ hour: Int) -> Bool { hour < reviewFromHour }
+    /// Whether the row is the Daily Outlook (the day's training is still ahead) rather than the Day In Review.
+    /// The Outlook runs from the morning until the hour no more training should happen
+    /// (`WhoopSleepPlan.trainingCutoff`, three hours before tonight's bedtime), and the Review takes over from
+    /// there through the night, including after midnight, until the next day's night is the one being planned.
+    /// Without a plan (too few recent nights) the fixed hours stand in: the Outlook from 04:00 to 19:00.
+    static func isOutlook(now: Date, cutoff: Date?, calendar: Calendar = .current) -> Bool {
+        if let cutoff { return now < cutoff }
+        let hour = calendar.component(.hour, from: now)
+        return hour >= 4 && hour < 19
+    }
 
     /// "Daniel's Daily Outlook", or "Your Daily Outlook" before the Coach knows the wearer's name.
     static func outlookTitle(_ firstName: String) -> String {
