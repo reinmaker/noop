@@ -42,58 +42,15 @@ enum WhoopDayMinutes {
                      total: Int((Double(ticks) / perStep).rounded()), firstSampleTs: counted.firstSampleTs)
     }
 
-    /// The logged strength sessions' share of `[from, to)`, clipped to it, as (start, end) epoch seconds. A
-    /// session is strength by `MuscleLoad.isStrength`, the one list of them, whoever logged it. The strap's
-    /// step counter ticks with arm motion during one, so these are the minutes the day prices by heart rate
-    /// instead of by steps (`Calories.yoopActiveKcalByMinute`).
-    nonisolated static func strengthWindows(workouts: [WorkoutRow], from: Int, to: Int) -> [(start: Int, end: Int)] {
-        workouts.filter { MuscleLoad.isStrength($0.sport) }
-            .map { (start: max($0.startTs, from), end: min(max($0.endTs, $0.startTs + 1), to)) }
-            .filter { $0.end > $0.start }
-            .sorted { $0.start < $1.start }
-    }
-
-    /// The minutes (`ts / 60`) those windows touch, for `Calories.yoopActiveKcalByMinute`'s `heartPricedMinutes`.
-    nonisolated static func heartPricedMinutes(_ windows: [(start: Int, end: Int)]) -> Set<Int> {
-        var minutes = Set<Int>()
-        for window in windows { minutes.formUnion((window.start / 60)...((window.end - 1) / 60)) }
-        return minutes
-    }
-
-    /// The active energy of `day`'s window `[from, to)` by minute, priced as the day prices it
-    /// (`Calories.yoopActiveKcalByMinute`), the minutes of a logged strength session by heart rate alone on
-    /// the sleep-onset day, which is the day the engine prices them so for. `workouts` are the logged
-    /// activities (read when not given). The resting heart rate is the main sleep's mean on the sleep-onset
-    /// day (`primaryResting`, read here when not given), else the day's resting heart rate. Nil without
-    /// heart rate.
-    static func activeKcal(repo: Repository, profile: ProfileStore, day: String, from: Int, to: Int,
-                           stepsByMinute: [Int: Double], primaryResting: [String: Double]? = nil,
-                           workouts: [WorkoutRow]? = nil) async -> Energy? {
+    /// The active energy of the window `[from, to)` by minute, priced as the day prices it
+    /// (`Calories.yoopActiveKcalByMinute`): from the minute's mean heart rate alone, by the one WHOOP-fitted
+    /// line, with no steps, no special minutes and no profile term (the profile enters the basal rate only).
+    /// Nil without heart rate.
+    static func activeKcal(repo: Repository, from: Int, to: Int) async -> Energy? {
         let hr = await repo.hrSamples(from: from, to: to - 1, limit: 200_000)
         guard !hr.isEmpty else { return nil }
-        var heartPriced = Set<Int>()
-        if onsetDay {
-            let rows: [WorkoutRow]
-            if let workouts { rows = workouts } else { rows = await repo.workoutRows(days: 4000) }
-            heartPriced = heartPricedMinutes(strengthWindows(workouts: rows, from: from, to: to))
-        }
-        var primary: Double?
-        if onsetDay {
-            let byDay: [String: Double]
-            if let primaryResting { byDay = primaryResting } else {
-                byDay = Dictionary((await repo.exploreSeries(key: "rhr_primary_session", source: "my-whoop"))
-                    .map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
-            }
-            primary = byDay[day]
-        }
-        let resting = primary ?? repo.days.last { $0.day == day }?.restingHr.map(Double.init)
-            ?? StrainScorer.defaultRestingHR
-        let user = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm, age: Double(profile.age),
-                               sex: profile.sex)
-        let maxHR = profile.effortHRmax
         let byMinute = await Task.detached(priority: .utility) {
-            Calories.yoopActiveKcalByMinute(hr, stepsByMinute: stepsByMinute, profile: user, hrmax: maxHR,
-                                            restingHR: resting, heartPricedMinutes: heartPriced)
+            Calories.yoopActiveKcalByMinute(hr)
         }.value
         return byMinute.isEmpty ? nil : Energy(perMinute: byMinute, firstSampleTs: hr.first?.ts)
     }

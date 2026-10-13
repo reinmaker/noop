@@ -1045,10 +1045,15 @@ final class AppModel: ObservableObject {
             ? StrainScorer.strain(samples, maxHR: Double(profile.hrMax),
                                   restingHR: restingHR,
                                   method: PuffinExperiment.effortMethod, sex: profile.sex) : nil
-        // Estimate calories from the captured HR window (same Keytel/Harris–Benedict model the
-        // auto-detector uses) so a manual session shows energy too, not just duration/strain. (#117)
+        // Estimate calories from the captured HR window (same model the auto-detector uses: Keytel/Harris-Benedict,
+        // or the WHOOP-fitted heart-rate line with Yoop scores on) so a manual session shows energy too, not just
+        // duration/strain. (#117)
         let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
                              age: Double(profile.age), sex: profile.sex)
+        // Yoop: the session's energy is the active energy the one WHOOP-fitted heart-rate line gives its
+        // minutes. `estimateBoutCalories` follows `yoopEnergyEnabled`, which the engine sets from this same
+        // switch each pass; set it here too, so a session saved before the first pass is priced the same way.
+        Calories.yoopEnergyEnabled = PuffinExperiment.whoopScoresEnabled
         let kcal = samples.count >= 2
             // #983: same measured resting HR as the strain above, not nil. The calories model's
             // active-vs-resting threshold sits at resting + 30% HRR, so the default silently shifts what

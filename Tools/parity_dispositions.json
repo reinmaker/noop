@@ -328,14 +328,6 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
-      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::estimateYoopDayEnergy/7#1",
-      "identity_sha256": "af07b5abdc4eb02b7250487e9abcb7568179e371034eff65b7991ddccc386fc2",
-      "platform": "swift",
-      "rationale": "Yoop fork, iOS only: the day's energy split into resting (Mifflin-St Jeor BMR over the whole day window) and active (steps priced by the ACSM walking cost, other minutes by Keytel above an HR-flex point), called only when Calories.yoopEnergyEnabled is set (default off, so NOOP's stored total is unchanged); heartPricedMinutes (default empty, byte-identical when empty) prices the minutes of a logged strength session by heart rate alone. The fork ships no Android build, so there is no Kotlin twin."
-    },
-    {
-      "type": "platform_specific",
-      "kind": "add-unpaired-function",
       "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager.swift::asleepRestingHR/4#1",
       "identity_sha256": "51ed80d11922fb6a8c15df33235360f82a744490057b990fb2f8cc24ce5e9b67",
       "platform": "swift",
@@ -488,10 +480,50 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
-      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalByMinute/6#1",
-      "identity_sha256": "ed3405f931f325f82d854dcf074927a399be00e3186458c0768e43d8fa44cbe0",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalPerMinute/1#1",
+      "identity_sha256": "973c59aa338851201e2c15241f69e83121d9ba5abd0891bb48f8736990c42e8b",
       "platform": "swift",
-      "rationale": "Yoop fork, iOS only: the minute-by-minute active energy that estimateYoopDayEnergy sums, so the Calories page can split the day by hour and by activity and every split adds up to the day's active energy. estimateYoopDayEnergy now sums this function's result in minute order, so its figure is unchanged; heartPricedMinutes (default empty, byte-identical when empty) prices the minutes of a logged strength session by heart rate alone, never as walking. The fork ships no Android build, so there is no Kotlin twin."
+      "rationale": "Yoop fork, iOS only: the active energy of one minute at a mean heart rate, max(0, 0.1988 x bpm - 16.43), an empirical fit to the wearer's own WHOOP export (110 workouts, RMSE 0.39 kcal per minute, no weight or sex terms), the one price every Yoop calorie figure is built from. The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::estimateYoopDayEnergy/3#1",
+      "identity_sha256": "c69369e8a69e23ab5f8b205281a0f2745131f11cfc9e39451985baedcd3100e6",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the day's energy split into resting (Mifflin-St Jeor BMR over the whole day window) and active (yoopActiveKcalByMinute summed in minute order, priced from heart rate alone by the WHOOP-fitted line, with no steps and no special cases), called only when Calories.yoopEnergyEnabled is set (default off, so NOOP's stored total is unchanged). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalByMinute/1#1",
+      "identity_sha256": "5321d7baf37bf28d734f5b7b9905bb748dbbbff5950caaede86b7c0dcbf08184",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the minute-by-minute active energy that estimateYoopDayEnergy sums, each minute priced at its mean heart rate by the WHOOP-fitted line and weighted by the part of the minute the readings cover, so the Calories page can split the day by hour and by activity and every split adds up to the day's active energy. The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActivityKcal/3#1",
+      "identity_sha256": "68801b43d939bda6972c6f1b6d95de7575b12a7258b24809e9607e1fbf07261f",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the active energy of one activity, the minutes of yoopActiveKcalByMinute that overlap its window, each counted whole, the rule the Calories page splits the day by, so an activity's page, the workout list and its share of the day state one number. The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalPerBpm",
+      "identity_sha256": "5863d7a441ddc74d811eb6598e75b960d2401a6e08d49503bd2f0d4e7a9337a8",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the slope of the empirical fit to the wearer's own WHOOP export, kcal per minute per bpm of mean heart rate, read only by the Yoop energy estimators. The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutDetector.swift::yoopActiveKcalIntercept",
+      "identity_sha256": "603f9cdafc3187673a461475fa7c36c92019572363387691aee191f8f0f5413f",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: the intercept of the empirical fit to the wearer's own WHOOP export, kcal per minute, read only by the Yoop energy estimators. The fork ships no Android build, so there is no Kotlin twin."
     }
   ]
 }

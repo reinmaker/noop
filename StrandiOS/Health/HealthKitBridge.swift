@@ -1296,17 +1296,9 @@ final class HealthKitBridge: ObservableObject {
         }
 
         guard !rows.isEmpty else { return }
-        // Yoop: a workout's stored energy is gross (Keytel's equation includes resting energy), but Health's
-        // `activeEnergyBurned` is energy above rest, so the resting share (Mifflin-St Jeor BMR over the
-        // session) is taken off before writing.
-        let restingKcalPerSecond: Double = PuffinExperiment.whoopScoresEnabled
-            ? await MainActor.run {
-                let p = ProfileStore()
-                return Calories.mifflinStJeorKcalPerDay(UserProfile(weightKg: p.weightKg, heightCm: p.heightCm,
-                                                                     age: Double(p.age), sex: p.sex,
-                                                                     stepTicksPerStep: p.stepTicksPerStep)) / 86_400
-            }
-            : 0
+        // Health's `activeEnergyBurned` is energy above rest. With Yoop scores on, a workout's stored energy
+        // already is: the active energy of the one WHOOP-fitted heart-rate line (`Calories.yoopActivityKcal`),
+        // so it is written as it stands, with no resting share to take off.
         let pred = NSCompoundPredicate(andPredicateWithSubpredicates: [
             HKQuery.predicateForObjects(from: HKSource.default()),
             HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeyExternalUUID,
@@ -1325,8 +1317,7 @@ final class HealthKitBridge: ObservableObject {
                 try await builder.beginCollection(at: start)
                 try await builder.addMetadata([HKMetadataKeyExternalUUID: key(row)])
                 var extras: [HKSample] = []
-                if let gross = row.energyKcal,
-                   case let kcal = gross - restingKcalPerSecond * Double(row.endTs - row.startTs), kcal > 0,
+                if let kcal = row.energyKcal, kcal > 0,
                    let t = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
                    store.authorizationStatus(for: t) == .sharingAuthorized {
                     extras.append(HKQuantitySample(type: t, quantity: .init(unit: .kilocalorie(), doubleValue: kcal),
