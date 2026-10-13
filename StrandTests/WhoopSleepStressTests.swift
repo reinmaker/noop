@@ -61,14 +61,14 @@ final class WhoopSleepStressTests: XCTestCase {
         XCTAssertNil(SleepStressNight.make(.empty))
     }
 
-    /// A calm night reads 0% high (optimal, as WHOOP shows on a normal night); an hour 35 bpm over rest
+    /// A calm night reads 0% high (optimal, as WHOOP shows on a normal night); an hour 45 bpm over rest
     /// in an 8-hour night reads 12.5% (sufficient).
     func testNightFromHeartRate() throws {
         let start = 1_800_000_000
-        // Eight hours, one reading every 30 s, the last `highMinutes` of it 35 bpm over rest.
+        // Eight hours, one reading every 30 s, the last `highMinutes` of it 45 bpm over rest.
         func night(highMinutes: Int) -> SleepStressNight? {
             let hr = (0..<960).map { i in
-                HRSample(ts: start + i * 30, bpm: i * 30 >= (480 - highMinutes) * 60 ? 85 : 52)
+                HRSample(ts: start + i * 30, bpm: i * 30 >= (480 - highMinutes) * 60 ? 95 : 52)
             }
             return SleepStressNight.make(WhoopStressCurve.analyze(hr: hr, restingHR: 50))
         }

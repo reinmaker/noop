@@ -4,16 +4,18 @@ import StrandAnalytics
 import StrandDesign
 
 /// WHOOP-style Stress Monitor: a 270-degree 0-3 gauge with the current level, the day's stress line with
-/// sleep shaded, a one-line read of time in high stress, and WHOOP's three breakdown cards (Total Day,
-/// Non Activity, Sleep), each a stacked bar of time in Low / Medium / High. The level is the line's
-/// latest reading (the same value Home's Stress Monitor shows); the daily score stands in until the
-/// first reading is scored.
+/// sleep shaded and activities marked, a one-line read of time in high stress, and WHOOP's three breakdown
+/// cards (Total Day, Non Activity, Sleep), each a stacked bar of time in Low / Medium / High. The level is
+/// the line's latest reading (the same value Home's Stress Monitor shows); the daily score stands in until
+/// the first reading is scored. An activity is shown, not scored: its windows carry no stress level
+/// (`WhoopStressCurve`), so the line breaks across it.
 struct WhoopStressHero: View {
     let daytime: DaytimeStress.Result?
     let dailyScore: Double?
     /// Today's sleep windows (unix seconds), shaded on the line and counted in the Sleep card.
     var sleepSpans: [ClosedRange<Int>] = []
-    /// Today's workouts (unix seconds), left out of the Non Activity card.
+    /// Today's activities (unix seconds), marked on the line and left out of the Non Activity card. They
+    /// are the stretches left unscored (`WhoopStressCurve.activitySpans`).
     var activitySpans: [ClosedRange<Int>] = []
     let onBreathe: () -> Void
 
@@ -94,7 +96,7 @@ struct WhoopStressHero: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 bandCard(title: String(localized: "TOTAL DAY"), icon: "circle.dashed", minutes: total,
-                         note: String(localized: "Stress experienced throughout the day including sleep and activities."))
+                         note: String(localized: "Stress experienced throughout the day including sleep, without activities."))
                 bandCard(title: String(localized: "NON ACTIVITY"), icon: "figure.stand",
                          minutes: Self.minutesByBand(points) { !inSleep($0) && !inActivity($0) },
                          note: String(localized: "Stress experienced outside of Strain activities and sleep."))
@@ -186,12 +188,16 @@ struct WhoopStressHero: View {
             let lo = max(span.lowerBound, first), hi = min(span.upperBound, last)
             return lo < hi ? lo...hi : nil
         }
+        let marked = activitySpans.compactMap { span -> ClosedRange<Int>? in
+            let lo = max(span.lowerBound, first), hi = min(span.upperBound, last)
+            return lo < hi ? lo...hi : nil
+        }
         let picked = selection.flatMap { sel in
             points.min { abs($0.time.timeIntervalSince(sel)) < abs($1.time.timeIntervalSince(sel)) }
         }
         return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
             readout(picked)
-            stressChart(points, shaded: shaded, picked: picked)
+            stressChart(points, shaded: shaded, marked: marked, picked: picked)
         }
     }
 
@@ -214,8 +220,18 @@ struct WhoopStressHero: View {
         .frame(height: 16)
     }
 
-    private func stressChart(_ points: [Sample], shaded: [ClosedRange<Int>], picked: Sample?) -> some View {
+    private func stressChart(_ points: [Sample], shaded: [ClosedRange<Int>], marked: [ClosedRange<Int>],
+                             picked: Sample?) -> some View {
         Chart {
+            ForEach(marked.indices, id: \.self) { i in
+                RectangleMark(xStart: .value("Activity start", Date(timeIntervalSince1970: TimeInterval(marked[i].lowerBound))),
+                              xEnd: .value("Activity end", Date(timeIntervalSince1970: TimeInterval(marked[i].upperBound))),
+                              yStart: .value("Bottom", 0.0), yEnd: .value("Top", 3.0))
+                    .foregroundStyle(WhoopStyle.ringTrack.opacity(0.35))
+                    .annotation(position: .top, alignment: .leading) {
+                        Image(systemName: "figure.run").font(WhoopStyle.chevron).foregroundStyle(StrandPalette.textPrimary)
+                    }
+            }
             ForEach(shaded.indices, id: \.self) { i in
                 RectangleMark(xStart: .value("Sleep start", Date(timeIntervalSince1970: TimeInterval(shaded[i].lowerBound))),
                               xEnd: .value("Sleep end", Date(timeIntervalSince1970: TimeInterval(shaded[i].upperBound))),

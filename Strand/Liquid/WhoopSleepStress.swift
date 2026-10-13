@@ -4,10 +4,11 @@ import StrandAnalytics
 import StrandDesign
 import WhoopStore
 
-/// One night's stress the WHOOP way (`WhoopStressCurve`): each 5-minute bucket of the night's heart rate
-/// read against the user's own last 14 days, as the Stress screen reads a day. The Sleep screen's SLEEP
-/// STRESS card, its HIGH SLEEP STRESS contributor row and the heart-rate graph's readout all read this one
-/// curve, so the three cannot disagree.
+/// One night's stress the WHOOP way (`WhoopStressCurve`): each 5-minute window of the night's heart rate
+/// (and, where clean, its heart rate variability) read against the resting rate and the user's own 14-day
+/// baseline, scored by the one resolver the Stress screen reads a day with (`WhoopStressDay`). The Sleep
+/// screen's SLEEP STRESS card, its HIGH SLEEP STRESS contributor row and the heart-rate graph's readout all
+/// read this one curve, so the three cannot disagree.
 struct SleepStressNight {
     /// The night's scored 5-minute readings, earliest first.
     let points: [WhoopStressHero.Sample]
@@ -42,10 +43,9 @@ struct SleepStressNight {
         points.last(where: { $0.ts <= ts && ts < $0.ts + WhoopStressCurve.bucketSeconds })?.level
     }
 
-    /// Scores the night of `session`, from falling asleep to waking: its heart rate against the resting
-    /// rate and the 14 days before it ended. Nil when WHOOP-style stress is off
-    /// (`StressDayCurve.whoopRestingHR`) or the night has no heart rate. Not `StressDayCurve.today`, which
-    /// is memoized and covers today only.
+    /// Scores the night of `session`, from falling asleep to waking, with `WhoopStressDay.score`. Nil when
+    /// WHOOP-style stress is off (`StressDayCurve.whoopRestingHR`) or the night has no heart rate. Not
+    /// `StressDayCurve.today`, which is memoized and covers today only.
     @MainActor
     static func load(repo: Repository, session: CachedSleepSession) async -> SleepStressNight? {
         guard let restHR = StressDayCurve.whoopRestingHR(repo) else { return nil }
@@ -53,11 +53,10 @@ struct SleepStressNight {
         guard to > from else { return nil }
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
         guard !hr.isEmpty else { return nil }
-        let reference = await StressDayCurve.whoopStressReference(repo, to: to)
-        let tz = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(to)))
-        let result = await runUnescalated(priority: .userInitiated) {
-            WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz, reference: reference)
-        }
+        // The night's own resting rate when it has one: an older night is read against the rate it was
+        // slept at, not today's.
+        let rest = session.restingHr.map(Double.init) ?? restHR
+        let result = await WhoopStressDay.score(repo: repo, hr: hr, from: from, to: to, restingHR: rest)
         return make(result)
     }
 }
