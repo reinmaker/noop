@@ -405,7 +405,8 @@ extension SleepModel {
     /// genuine long sleepers. Age isn't plumbed to this screen (age: nil → adult target); wiring it
     /// would only raise it for under-18s. One need across every debt surface, agreeing with the engine.
     /// (#242; need-unification from #464 by @vishk23. The descriptive `sleepNeedMin` still drives the
-    /// non-debt "hours vs needed" performance tile.)
+    /// non-debt "hours vs needed" performance tile.) Yoop's scores replace this ledger with WHOOP's own
+    /// debt (`WhoopSleepDebt`), which measures each night against its own need instead.
     static func debtNeedMin<Days: Sequence>(days: Days) -> Double where Days.Element == DailyMetric {
         AnalyticsEngine.Rest.personalizedNeedHours(
             nightlyHours: days.compactMap { $0.totalSleepMin.map { $0 / 60.0 } },
@@ -636,19 +637,24 @@ extension SleepModel {
     /// The sleep the night ending on `wakeDay` needs: the one figure the Sleep Planner sets for it that
     /// evening and Hours vs Needed and Sleep Performance measure it against the next morning. The healthy
     /// minimum (`sleepNeedMin`) + 7.3 min for each point of the previous day's Strain above 10 + the sleep
-    /// debt carried into the night (`sleepDebtSeries`, latest). It reads only the days before `wakeDay`, so
-    /// the night's own sleep, banked by morning, cannot move it. `days` carry each day's Strain as the
-    /// Strain ring shows it (`Repository.strainDays`, effort ratings included).
+    /// debt carried into the night. With Yoop's scores on that debt is WHOOP's (`WhoopSleepDebt`: half of
+    /// the last night's shortfall against that night's own need); otherwise it is the NOOP ledger's
+    /// (`sleepDebtSeries`, latest). It reads only the days before `wakeDay`, so the night's own sleep,
+    /// banked by morning, cannot move it. `days` carry each day's Strain as the Strain ring shows it
+    /// (`Repository.strainDays`, effort ratings included).
     static func nightNeed(wakeDay: String, days: [DailyMetric],
                           importedSleep: [String: ImportedSleepFigures]) -> NightNeed {
-        nightNeed(wakeDay: wakeDay, prior: days.filter { $0.day < wakeDay }.sorted { $0.day < $1.day }[...],
-                  importedSleep: importedSleep)
+        if PuffinExperiment.whoopScoresEnabled {
+            return WhoopSleepDebt.need(endingOn: wakeDay, days: days, importedSleep: importedSleep)
+        }
+        return nightNeed(wakeDay: wakeDay, prior: days.filter { $0.day < wakeDay }.sorted { $0.day < $1.day }[...],
+                         importedSleep: importedSleep)
     }
 
-    /// `nightNeed` over `prior`, the days before the wake day, oldest first. The debt is the latest value of
-    /// `sleepDebtSeries(days: prior)`, which depends only on the last 14 nights with sleep (its window) and
-    /// the need of the whole history, so it is worked out over that tail alone: a long history costs one
-    /// pass for the need, not one ledger per night.
+    /// `nightNeed` over `prior`, the days before the wake day, oldest first, with the NOOP ledger's debt
+    /// (Yoop's scores off). The debt is the latest value of `sleepDebtSeries(days: prior)`, which depends
+    /// only on the last 14 nights with sleep (its window) and the need of the whole history, so it is
+    /// worked out over that tail alone: a long history costs one pass for the need, not one ledger per night.
     private static func nightNeed(wakeDay: String, prior: ArraySlice<DailyMetric>,
                                   importedSleep: [String: ImportedSleepFigures]) -> NightNeed {
         let previousDay = WeeklyDigestEngine.addDays(wakeDay, -1)
@@ -672,28 +678,25 @@ extension SleepModel {
 
     /// The need each night with sleep in `days` is measured against, by the day it ends on: WHOOP's own
     /// (`sleep_need_min`) for an imported night; with Yoop's scores on (`WhoopScores`), the Sleep Planner's
-    /// need for it (`nightNeed`), whose parts `planned` keeps; else the personal-mean `sleepNeedMin`, as
-    /// before. `only`, when given, limits the work to those nights.
+    /// need for it (`nightNeed`, the nights of `WhoopSleepDebt` resolved as one chain), whose parts
+    /// `planned` keeps; else the personal-mean `sleepNeedMin`, as before. `only`, when given, limits the
+    /// result to those nights, though a night's need always reads the whole history before it.
     static func nightNeeds(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
                            only: Set<String>? = nil) -> (needMin: [String: Double], planned: [String: NightNeed]) {
-        let fallbackNeed = sleepNeedMin(days: days)
-        let plannerNeeds = PuffinExperiment.whoopScoresEnabled
-        let ordered = days.sorted { $0.day < $1.day }
         var needMin: [String: Double] = [:]
         var planned: [String: NightNeed] = [:]
-        var firstOfDay = 0   // the days before the one being read: ordered[..<firstOfDay]
-        for (i, d) in ordered.enumerated() {
-            if i > 0, ordered[i - 1].day != d.day { firstOfDay = i }
-            guard (d.totalSleepMin ?? 0) > 0, only.map({ $0.contains(d.day) }) ?? true else { continue }
-            if let imported = importedSleep[d.day]?.needMin {
-                needMin[d.day] = imported
-            } else if plannerNeeds {
-                let need = nightNeed(wakeDay: d.day, prior: ordered[..<firstOfDay], importedSleep: importedSleep)
-                needMin[d.day] = need.needMin
-                planned[d.day] = need
-            } else {
-                needMin[d.day] = fallbackNeed
+        if PuffinExperiment.whoopScoresEnabled {
+            for night in WhoopSleepDebt.nights(days: days, importedSleep: importedSleep)
+            where only.map({ $0.contains(night.day) }) ?? true {
+                needMin[night.day] = night.needMin
+                if !night.hasImportedNeed { planned[night.day] = night.planned }
             }
+            return (needMin, planned)
+        }
+        let fallbackNeed = sleepNeedMin(days: days)
+        for d in days.sorted(by: { $0.day < $1.day }) {
+            guard (d.totalSleepMin ?? 0) > 0, only.map({ $0.contains(d.day) }) ?? true else { continue }
+            needMin[d.day] = importedSleep[d.day]?.needMin ?? fallbackNeed
         }
         return (needMin, planned)
     }
@@ -712,9 +715,15 @@ extension SleepModel {
     }
 
     /// Sleep debt (minutes): imported `sleep_debt_min` remains export-verbatim. Otherwise use
-    /// the same recency-weighted ledger as the card, including nap credit and its 14-night window.
+    /// the same recency-weighted ledger as the card, including nap credit and its 14-night window. With
+    /// Yoop's scores on it is WHOOP's debt instead (`whoopDebtSeries`), and `napSleepMinByDay` and
+    /// `needMin` play no part.
     static func sleepDebtSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
                                 napSleepMinByDay: [String: Double], needMin: Double? = nil) -> Metric {
+        if PuffinExperiment.whoopScoresEnabled {
+            let series = whoopDebtSeries(days: days, importedSleep: importedSleep).map(\.value)
+            return (series.last, nil, mean(series), series)
+        }
         // #242: normative need, not the self-referential mean. `needMin` lets a caller that passes only the
         // tail of the history (`nightNeed`) keep the need of the whole of it.
         let need = needMin ?? debtNeedMin(days: days)
@@ -732,6 +741,22 @@ extension SleepModel {
         return (series.last, nil, mean(series), series)
     }
 
+    /// Yoop: the sleep debt each day of `days` ends with, oldest first, in WHOOP's terms (`WhoopSleepDebt`):
+    /// half of the night's shortfall against its own need, which is the debt the next night starts with. So
+    /// the latest value is the debt tonight's plan carries (`nightNeed`, `WhoopSleepPlan.debtMin`), and the
+    /// Sleep Debt tile and the ledger read it from here and nowhere else. An imported WHOOP debt for a day
+    /// stays export-verbatim for that day (WHOOP's figure for the night, what it started with); a day
+    /// with no sleep total and no imported debt has no value.
+    static func whoopDebtSeries(days: [DailyMetric],
+                                importedSleep: [String: ImportedSleepFigures]) -> [(day: String, value: Double)] {
+        let left = Dictionary(WhoopSleepDebt.nights(days: days, importedSleep: importedSleep).map { ($0.day, $0.leftMin) },
+                              uniquingKeysWith: { _, newer in newer })
+        return days.compactMap { d -> (day: String, value: Double)? in
+            guard let value = importedSleep[d.day]?.debtMin ?? left[d.day] else { return nil }
+            return (d.day, value)
+        }
+    }
+
     // MARK: Trend points
 
     /// Trailing total-sleep trend, plotted in HOURS. Single source of truth shared with the Today
@@ -745,8 +770,22 @@ extension SleepModel {
     /// The 14-night recency-weighted estimate from cached daily metrics. It measures against the
     /// normative `debtNeedMin` (the engine's `personalizedNeedHours`) — the SAME need and recurrence
     /// the local "Sleep Debt" tile uses — and credits actual asleep minutes from separate naps. (#242)
-    static func debtLedger(days: [DailyMetric], napSleepMinByDay: [String: Double]) -> SleepDebtLedger {
-        SleepDebt.ledger(
+    ///
+    /// With Yoop's scores on the balance is the Sleep Debt tile's own latest value (`whoopDebtSeries`), so
+    /// the two cannot differ: the bars are each night's sleep against the healthy minimum (`sleepNeedMin`),
+    /// which is the figure the footer names, and a nap earns no credit, as WHOOP gives none.
+    static func debtLedger(days: [DailyMetric], napSleepMinByDay: [String: Double],
+                           importedSleep: [String: ImportedSleepFigures] = [:]) -> SleepDebtLedger {
+        if PuffinExperiment.whoopScoresEnabled {
+            let healthyMin = sleepNeedMin(days: days)
+            let nights = days.compactMap { d -> SleepDebtNight? in
+                guard let slept = d.totalSleepMin, slept > 0 else { return nil }
+                return SleepDebtNight(day: d.day, sleptMin: slept, deltaMin: slept - healthyMin)
+            }.suffix(SleepDebt.defaultWindowNights)
+            let debt = whoopDebtSeries(days: days, importedSleep: importedSleep).last?.value ?? 0
+            return SleepDebtLedger(balanceMin: debt > 0 ? -debt : 0, nights: Array(nights), needMin: healthyMin)
+        }
+        return SleepDebt.ledger(
             series: days.map { day in
                 (day: day.day, totalSleepMin: SleepDebt.creditedSleepMin(
                     mainSleepMin: day.totalSleepMin,
@@ -811,6 +850,7 @@ extension SleepModel {
             typicalRemMin: typicalStageMin(days: inputs.days, \.remMin),
             typicalLightMin: typicalStageMin(days: inputs.days, \.lightMin),
             trendPoints: durationTrendPoints(days: inputs.days),
-            sleepDebtLedger: debtLedger(days: inputs.days, napSleepMinByDay: napSleepMinByDay))
+            sleepDebtLedger: debtLedger(days: inputs.days, napSleepMinByDay: napSleepMinByDay,
+                                        importedSleep: inputs.importedSleep))
     }
 }

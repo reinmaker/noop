@@ -7,7 +7,9 @@ import WhoopStore
 /// need): sleep need = the healthy minimum (7:30, or more for a long sleeper) + 7.3 min for each point of
 /// today's Strain above 10 + sleep debt (`SleepModel.nightNeed`, the need the next morning's Hours vs
 /// Needed measures the night against); time in bed = need / the usual sleep efficiency; bedtime = wake
-/// time - time in bed. With an 8:30 alarm this gives WHOOP's own 00:29 for 7 Oct 2026.
+/// time - time in bed. With an 8:30 alarm this gives WHOOP's own 00:29 for 7 Oct 2026. The sleep debt is
+/// half of the last night's shortfall against that night's own need (`WhoopSleepDebt`, fitted to the same
+/// export), the figure the Sleep Debt tile and the ledger show.
 ///
 /// Where the time in bed goes. The need says how long to be in bed, not when. Absent an alarm the plan puts
 /// that time on the user's circadian anchor, the usual middle of their night (the median mid-sleep of the

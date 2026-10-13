@@ -701,13 +701,15 @@ final class IntelligenceEngine: ObservableObject {
     }
 
     /// Yoop: set once the recent window has been rescored with each night measured against its own need
-    /// (`SleepModel.nightNeed`).
-    static let nightNeedRescoreFlagKey = "yoop.nightNeedRescore.v1.done"
+    /// (`SleepModel.nightNeed`), whose sleep debt is WHOOP's (`WhoopSleepDebt`). v1 was the pass that first
+    /// measured each night against its own need, with the NOOP ledger's debt in it; v2 is the pass after the
+    /// debt became WHOOP's, so a device that ran v1 scores its recent nights once more.
+    static let nightNeedRescoreFlagKey = "yoop.nightNeedRescore.v2.done"
 
-    /// Yoop: rescores the recent window once after the update that measures each night against the need
-    /// the Sleep Planner set for it, so the stored Sleep Performance Home, Trends and the Coach read is the
-    /// corrected one without waiting for new heart rate (the idle tick skips while the raw streams are
-    /// unchanged). Only with Yoop's scores on; the flag is set once the pass has stored its scores.
+    /// Yoop: rescores the recent window once after an update that changes the need each night is measured
+    /// against (`nightNeedRescoreFlagKey`), so the stored Sleep Performance Home, Trends and the Coach read
+    /// is the corrected one without waiting for new heart rate (the idle tick skips while the raw streams
+    /// are unchanged). Only with Yoop's scores on; the flag is set once the pass has stored its scores.
     func runNightNeedRescoreIfNeeded() async {
         guard PuffinExperiment.whoopScoresEnabled,
               !UserDefaults.standard.bool(forKey: Self.nightNeedRescoreFlagKey),
