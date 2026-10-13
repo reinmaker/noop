@@ -49,7 +49,7 @@ final class WhoopDayCurveBook {
     /// What a day's curve was computed from: its stored totals, its window and the rules that counted it.
     static func signature(_ row: DailyMetric, window: (from: Int, to: Int)) -> String {
         "\(row.steps ?? -1)|\(Int(((row.activeKcalEst ?? -1) * 10).rounded()))|\(window.from)|\(window.to)"
-            + "|\(WhoopDayMinutes.onsetDay)|\(PuffinExperiment.whoopScoresEnabled)"
+            + "|\(WhoopDayMinutes.onsetDay)|\(PuffinExperiment.whoopScoresEnabled)|energy=whoopfit1"
     }
 
     /// The by-now normals for the open day `todayKey`, read at `asOf`. Reads and keeps any prior day's
@@ -77,9 +77,6 @@ final class WhoopDayCurveBook {
         let markers = Dictionary((await repo.exploreSeries(key: DayCycleIntelligenceIntegration.onsetKey,
                                                            source: "my-whoop")).map { ($0.day, Int($0.value)) },
                                  uniquingKeysWith: { _, last in last })
-        let primary = Dictionary((await repo.exploreSeries(key: "rhr_primary_session", source: "my-whoop"))
-            .map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
-        let logged = await repo.workoutRows(days: 4000)
         var changed = false
         for row in rows {
             let window = WhoopDayFigures.window(day: row.day, markers: markers)
@@ -90,10 +87,7 @@ final class WhoopDayCurveBook {
             let steps = await WhoopDayMinutes.steps(repo: repo, profile: profile, from: window.from, to: window.to)
             var energy: WhoopDayMinutes.Energy?
             if PuffinExperiment.whoopScoresEnabled {
-                energy = await WhoopDayMinutes.activeKcal(repo: repo, profile: profile, day: row.day,
-                                                          from: window.from, to: window.to,
-                                                          stepsByMinute: steps?.perMinute ?? [:],
-                                                          primaryResting: primary, workouts: logged)
+                energy = await WhoopDayMinutes.activeKcal(repo: repo, from: window.from, to: window.to)
             }
             let recordedFromStart = { (first: Int?) -> Bool in
                 first.map { $0 - window.from <= 3_600 } ?? false

@@ -1056,18 +1056,11 @@ public enum AnalyticsEngine {
         let activeKcalEst: Double?
         if Calories.yoopEnergyEnabled, let first = dayHrFiltered.map(\.ts).min(),
            let last = dayHrFiltered.map(\.ts).max() {
-            // Yoop: ACTIVE energy only, steps pricing the walking minutes (`estimateYoopDayEnergy`). This
-            // calendar-day value stands only where no sleep-onset cycle replaces it, so it takes the night's
-            // resting HR as given here rather than the main-sleep mean the app's cycle path uses.
-            let inDay = (daySteps ?? steps).filter { tsInDay($0.ts) }.sorted { $0.ts < $1.ts }
-            let counter = SleepAwareStepCounter.Accumulator(
-                sleepSessions: [], hasActivityClasses: StepsCounter.hasActivityClasses(inDay), recordsMinutes: true)
-            _ = counter.acceptPage(inDay).finish()
-            let ticksPerStep = max(profile.stepTicksPerStep, 0.5)
+            // Yoop: ACTIVE energy only, priced minute by minute from heart rate by the one WHOOP-fitted line
+            // (`estimateYoopDayEnergy`). This calendar-day value stands only where no sleep-onset cycle
+            // replaces it.
             activeKcalEst = Calories.estimateYoopDayEnergy(
-                dayHrFiltered, stepsByMinute: counter.acceptedTicksByMinute.mapValues { Double($0) / ticksPerStep },
-                windowSeconds: last - first + 1, profile: profile, hrmax: effMaxHR,
-                restingHR: restingHRDaily.map(Double.init)).activeKcal
+                dayHrFiltered, windowSeconds: last - first + 1, profile: profile).activeKcal
         } else {
             activeKcalEst = dayHrFiltered.isEmpty ? nil : Calories.estimateDayCalories(
                 dayHrFiltered, profile: profile, hrmax: effMaxHR,
