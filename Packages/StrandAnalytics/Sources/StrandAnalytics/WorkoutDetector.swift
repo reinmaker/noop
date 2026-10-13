@@ -654,12 +654,12 @@ public enum Calories {
     static let dayMaxObservedSpanS: Double = 86_400.0
     static let workoutDivisor = 251.04  // 60 s/min × 4.184 kJ/kcal
 
-    /// Yoop: the day stores ACTIVE energy only (`estimateYoopDayEnergy`); resting energy is added where a
-    /// total is shown, as `mifflinStJeorKcalPerDay` over the day's window. Set by the app; off keeps the
-    /// NOOP whole-day total in `DailyMetric.activeKcalEst`.
+    /// Yoop: the day stores ACTIVE energy only (`estimateYoopDayEnergy`) and so does each activity
+    /// (`estimateBoutCalories`), both priced by the one WHOOP-fitted heart-rate line
+    /// (`yoopActiveKcalPerBpm`); resting energy is added where a total is shown, as
+    /// `mifflinStJeorKcalPerDay` over the day's window. Set by the app; off keeps the NOOP whole-day total in
+    /// `DailyMetric.activeKcalEst` and the NOOP gross estimate for a bout.
     public static var yoopEnergyEnabled = false
-    /// Yoop: the HR-flex point, in bpm above resting heart rate (see `estimateYoopDayEnergy`).
-    public static var yoopFlexAboveRestingBPM = 40.0
 
     static func resolveCoeffs(_ sex: String) -> Coeffs {
         switch sex.lowercased() {
@@ -704,7 +704,10 @@ public enum Calories {
         return max(0.0, eeKjMin) / workoutDivisor
     }
 
-    /// Estimate (kcal, kJ) for a workout bout. Each sample is weighted by the ELAPSED time
+    /// Estimate (kcal, kJ) for a workout bout. With `yoopEnergyEnabled` it is instead the ACTIVE energy of the
+    /// minutes the samples span, priced by the Yoop heart-rate line (`yoopActivityKcal`).
+    ///
+    /// Each sample is weighted by the ELAPSED time
     /// to the next sample (capped at `WorkoutDetector.mergeGapS`), so a sparse, non-1 Hz
     /// stream is counted over real seconds rather than undercounted as one second per sample.
     ///
@@ -717,6 +720,15 @@ public enum Calories {
                                             profile: UserProfile,
                                             hrmax: Double?,
                                             restingHR: Double?) -> (Double, Double) {
+        // Yoop: an activity's energy is the active energy of the minutes it spans, priced by the one
+        // heart-rate line every Yoop calorie figure uses (`yoopActiveKcalPerBpm`), not gross energy with
+        // resting energy in it. `profile`, `hrmax` and `restingHR` do not enter it: they enter the basal
+        // rate alone. Off by default, so the NOOP estimate below is untouched.
+        if yoopEnergyEnabled {
+            guard let first = hrSamples.map(\.ts).min(), let last = hrSamples.map(\.ts).max() else { return (0, 0) }
+            let kcal = yoopActivityKcal(hrSamples, from: first, to: last + 1)
+            return (kcal, kcal * 4.184)
+        }
         let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
         let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
         let age = profile.age > 0 ? profile.age : 30.0
@@ -879,115 +891,79 @@ public enum Calories {
         return max(0, 10 * weightKg + 6.25 * heightCm - 5 * age + sexTerm)
     }
 
+    /// Yoop: WHOOP's own energy line, an EMPIRICAL FIT to the wearer's own WHOOP export, not a published
+    /// equation. Over the 110 workouts of 10 minutes or more in that export (34 weightlifting, 22 tennis,
+    /// 10 running, 10 walking, 8 parenting and others), WHOOP's reported energy per minute is a straight line
+    /// in the workout's average heart rate, whatever the activity: kcal per minute = -16.43 + 0.1988 x
+    /// average bpm, r squared 0.992, root-mean-square error 0.39 kcal per minute (about 8 % of a typical
+    /// rate). It is an ACTIVE-energy line: it reaches zero at 82.6 bpm and carries no resting energy.
+    ///
+    /// Read it for what it is. It is one member's data, so it has no weight, height, age or sex terms, and
+    /// those enter Yoop's energy only through the basal rate (`mifflinStJeorKcalPerDay`). The workouts' average
+    /// heart rates ran from 82 to 177 bpm, so the line is least certain at the ends of that range and
+    /// beyond it. Keytel et al. 2005 (J Sports Sci 23:289), which Yoop used before, is calibrated at 57 to
+    /// 90 % of maximum heart rate and reads about twice as high as this line at the moderate heart rates of
+    /// walking, lifting and everyday activity.
+    public static let yoopActiveKcalPerBpm = 0.1988
+    /// The line's intercept, in kcal per minute (see `yoopActiveKcalPerBpm`).
+    public static let yoopActiveKcalIntercept = -16.43
+
+    /// Yoop: the active energy of one minute at `meanHR` bpm, in kcal: `yoopActiveKcalPerBpm` x `meanHR` +
+    /// `yoopActiveKcalIntercept`, never below zero. The one price every Yoop figure for calories is built
+    /// from: the day, its hours, each activity and the Health export.
+    public static func yoopActiveKcalPerMinute(meanHR: Double) -> Double {
+        max(0.0, yoopActiveKcalPerBpm * meanHR + yoopActiveKcalIntercept)
+    }
+
     /// Yoop: a day's energy split into resting and active. `activeKcal` is what the day stores.
     ///
     /// Resting is the Mifflin-St Jeor BMR over `windowSeconds`, the whole day window: metabolism does not
-    /// stop between heart-rate samples or across a dropout.
-    ///
-    /// Active is priced minute by minute (`ts / 60`), each minute once:
-    /// - A minute with steps is priced by their walking cost, the ACSM walking equation's horizontal term
-    ///   (0.1 mL O2 per kg per metre above rest) over a step of 0.415 x height for men, 0.413 for women,
-    ///   at 5 kcal per litre of O2: 0.0005 x weight kg x step length m kcal per step, 0.031 kcal for 82 kg
-    ///   and 183 cm. Heart rate is not used for these minutes because Keytel overstates walking: at 95 bpm
-    ///   it gives that profile 7.1 kcal a minute where the equation prices 120 steps a minute at 5.2.
-    /// - If the minute's mean heart rate reached half the heart-rate reserve (`dayActiveHRRFraction`), as
-    ///   in running, hills, stairs or carrying a load, the heart-rate price below wins when it is higher.
-    /// - A minute without steps is priced by heart rate, HR-flex style (Spurr et al. 1988, Am J Clin Nutr
-    ///   48:552): each second at or above the flex point carries the Keytel 2005 energy above BMR (the
-    ///   fitness-adjusted form when `restingHR` gives an Uth VO2max), and a second below it carries none,
-    ///   since resting energy already covers it. The flex point is `restingHR` +
-    ///   `yoopFlexAboveRestingBPM`. The classic flex point, the mean of the highest resting and the lowest
-    ///   exercise heart rate, needs a calibration Yoop does not have; on this strap awake still and walking
-    ///   heart rates overlap (still 90th percentile 82 bpm, walking 10th percentile 72 bpm on 9 Oct 2026).
-    ///
-    /// `stepsByMinute` holds steps, already divided by `stepTicksPerStep`. Heart-rate samples carry time
-    /// to the next sample capped at the inferred cadence, as `estimateDayEnergy` does. `heartPricedMinutes`
-    /// are minutes priced by heart rate alone (see `yoopActiveKcalByMinute`); empty prices every minute as
-    /// above. APPROXIMATE: an estimate from heart rate and steps, not calorimetry, not medical advice.
-    public static func estimateYoopDayEnergy(_ hrSamples: [HRSample], stepsByMinute: [Int: Double],
-                                             windowSeconds: Int, profile: UserProfile, hrmax: Double?,
-                                             restingHR: Double?,
-                                             heartPricedMinutes: Set<Int> = []) -> DayEnergyEstimate {
-        let byMinute = yoopActiveKcalByMinute(hrSamples, stepsByMinute: stepsByMinute, profile: profile,
-                                              hrmax: hrmax, restingHR: restingHR,
-                                              heartPricedMinutes: heartPricedMinutes)
-        // Summed in minute order, the order the day's active energy has always been summed in.
+    /// stop between heart-rate samples or across a dropout. Active is `yoopActiveKcalByMinute` summed in
+    /// minute order, the one price of every minute of the day: an empirical fit to the wearer's own WHOOP
+    /// export (see `yoopActiveKcalPerBpm`), the same for walking, lifting, sport and sitting, with no steps
+    /// and no special cases. APPROXIMATE: an estimate from heart rate, not calorimetry, not medical advice.
+    public static func estimateYoopDayEnergy(_ hrSamples: [HRSample], windowSeconds: Int,
+                                             profile: UserProfile) -> DayEnergyEstimate {
+        let byMinute = yoopActiveKcalByMinute(hrSamples)
+        // Summed in minute order, the order the day's active energy is always summed in.
         let activeKcal = byMinute.keys.sorted().reduce(0.0) { $0 + (byMinute[$1] ?? 0) }
         let bmrPerS = mifflinStJeorKcalPerDay(profile) / 86_400.0
         let window = Double(max(0, windowSeconds))
         return DayEnergyEstimate(restingKcal: bmrPerS * window, activeKcal: activeKcal, observedSeconds: window)
     }
 
-    /// Yoop: the active energy `estimateYoopDayEnergy` stores for a day, minute by minute (`ts / 60`),
-    /// priced as that function documents. The day's `activeKcal` is exactly these values summed in minute
-    /// order, so a screen that splits the day by hour or by activity states a split that adds up to the
-    /// number the day carries. `stepsByMinute` holds steps, already divided by `stepTicksPerStep`.
-    ///
-    /// `heartPricedMinutes` (keyed `ts / 60`) are minutes where the strap's step counter is not counting
-    /// steps, such as inside a logged strength session, where it ticks with arm motion: their ticks are never
-    /// priced as walking, and the minute carries its heart price alone. Every other minute is priced exactly
-    /// as with none, so a day without such minutes is unchanged to the last bit.
-    public static func yoopActiveKcalByMinute(_ hrSamples: [HRSample], stepsByMinute: [Int: Double],
-                                              profile: UserProfile, hrmax: Double?,
-                                              restingHR: Double?,
-                                              heartPricedMinutes: Set<Int> = []) -> [Int: Double] {
-        let weightKg = profile.weightKg > 0 ? profile.weightKg : 70.0
-        let heightCm = profile.heightCm > 0 ? profile.heightCm : 170.0
-        let age = profile.age > 0 ? profile.age : 30.0
-        let coeffs = resolveCoeffs(profile.sex)
-        let effHRmax = hrmax ?? 220.0
-        let effResting = restingHR ?? 60.0
-        let flex = effResting + yoopFlexAboveRestingBPM
-        let vigorous = effResting + dayActiveHRRFraction * (effHRmax - effResting)
-        let bmrPerS = mifflinStJeorKcalPerDay(profile) / 86_400.0
-        let vo2max = vo2maxFor(hrmax: effHRmax, restingHR: restingHR)
-        let stepLengthRatio: Double
-        switch profile.sex.lowercased() {
-        case "male": stepLengthRatio = 0.415
-        case "female": stepLengthRatio = 0.413
-        default: stepLengthRatio = 0.414
-        }
-        let kcalPerStep = 0.0005 * weightKg * stepLengthRatio * heightCm / 100.0
-
-        let ordered = hrSamples.sorted { $0.ts != $1.ts ? $0.ts < $1.ts : $0.bpm > $1.bpm }
-        let positiveGaps = zip(ordered, ordered.dropFirst())
-            .map { pair in Double(pair.1.ts - pair.0.ts) }
-            .filter { $0 > 0 }
-            .sorted()
-        var nominalSampleS = 1.0
-        if !positiveGaps.isEmpty {
-            let mid = positiveGaps.count / 2
-            let median = positiveGaps.count.isMultiple(of: 2)
-                ? (positiveGaps[mid - 1] + positiveGaps[mid]) / 2.0 : positiveGaps[mid]
-            nominalSampleS = min(median, dayMaxObservedGapS)
-        }
-        var heartKcal: [Int: Double] = [:]
-        var bpmSum: [Int: Double] = [:], bpmCount: [Int: Double] = [:]
-        for i in ordered.indices {
-            let durationS: Double
-            if i < ordered.count - 1 {
-                let gap = Double(ordered[i + 1].ts - ordered[i].ts)
-                durationS = gap > 0 ? min(gap, nominalSampleS) : 0.0
-            } else {
-                durationS = nominalSampleS
-            }
-            let minute = ordered[i].ts / 60
-            let bpm = Double(ordered[i].bpm)
-            bpmSum[minute, default: 0] += bpm
-            bpmCount[minute, default: 0] += 1
-            guard bpm >= flex else { continue }
-            let gross = activeKcalPerS(coeffs, hr: bpm, hrmax: effHRmax, weightKg: weightKg, age: age,
-                                       vo2max: vo2max)
-            heartKcal[minute, default: 0] += max(0.0, gross - bmrPerS) * durationS
+    /// Yoop: the active energy of each minute (`ts / 60`) that has heart rate: `yoopActiveKcalPerMinute` at the
+    /// mean of the minute's readings. A minute with any reading counts whole at their mean, because the strap
+    /// drops readings inside a hard effort (a game of basketball lost some in over forty of its minutes) and
+    /// the readings it kept still describe the minute. A minute with no reading carries nothing: a gap is
+    /// evidence of a missing sensor, never of exercise, and is not filled. The day's active energy is exactly
+    /// these values summed in minute order, so a screen that splits the day by hour or by activity states a
+    /// split that adds up to the number the day carries.
+    public static func yoopActiveKcalByMinute(_ hrSamples: [HRSample]) -> [Int: Double] {
+        var sums: [Int: Double] = [:], counts: [Int: Double] = [:]
+        for sample in hrSamples {
+            let minute = sample.ts / 60
+            sums[minute, default: 0] += Double(sample.bpm)
+            counts[minute, default: 0] += 1
         }
         var byMinute: [Int: Double] = [:]
-        for minute in Set(heartKcal.keys).union(stepsByMinute.keys) {
-            let heart = heartKcal[minute] ?? 0
-            if heartPricedMinutes.contains(minute) { byMinute[minute] = heart; continue }
-            let walking = max(0.0, stepsByMinute[minute] ?? 0) * kcalPerStep
-            let meanBpm = (bpmSum[minute] ?? 0) / max(bpmCount[minute] ?? 0, 1)
-            byMinute[minute] = walking > 0 && meanBpm < vigorous ? walking : max(walking, heart)
+        for (minute, count) in counts {
+            byMinute[minute] = yoopActiveKcalPerMinute(meanHR: (sums[minute] ?? 0) / count)
         }
         return byMinute
+    }
+
+    /// Yoop: the active energy of one activity, in kcal: the minutes (`yoopActiveKcalByMinute`) that
+    /// overlap `[from, to]`, each counted whole. This is the rule the Calories page splits the day by (a
+    /// minute belongs to the activity it overlaps), so an activity's page, the workout list and its share of
+    /// the day state the same number. `hrSamples` should cover the whole of the first and last minute (from
+    /// the start of the minute holding `from` to the end of the one holding `to`); a window shorter than a
+    /// minute still holds the minute it falls in.
+    public static func yoopActivityKcal(_ hrSamples: [HRSample], from: Int, to: Int) -> Double {
+        let byMinute = yoopActiveKcalByMinute(hrSamples)
+        let end = max(to, from + 1)
+        return byMinute.keys.sorted().reduce(0.0) { sum, minute in
+            minute * 60 + 60 > from && minute * 60 < end ? sum + (byMinute[minute] ?? 0) : sum
+        }
     }
 }

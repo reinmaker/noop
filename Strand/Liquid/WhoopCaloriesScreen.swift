@@ -13,7 +13,6 @@ struct WhoopCaloriesScreen: View {
     let figures: WhoopRowFigures
 
     @EnvironmentObject private var repo: Repository
-    @EnvironmentObject private var profile: ProfileStore
 
     /// What one read of the day's minutes produced.
     private struct Breakdown {
@@ -28,6 +27,14 @@ struct WhoopCaloriesScreen: View {
         /// Its share of the day's active energy, in whole kcal.
         let kcal: Int
         var id: String { "\(row.startTs)|\(row.sport)|\(row.source)" }
+
+        /// The calories its own page states, when they are not the share: an activity Yoop priced states the
+        /// share (the one heart-rate line prices both), one imported from another app keeps its own figure.
+        var ownKcal: Int? {
+            guard let own = row.energyKcal, own > 0 else { return nil }
+            let whole = Int(own.rounded())
+            return abs(whole - kcal) > 1 ? whole : nil
+        }
     }
 
     @State private var breakdown: Breakdown?
@@ -192,7 +199,7 @@ struct WhoopCaloriesScreen: View {
                     }
                     .padding(.vertical, NoopMetrics.space3)
                 }
-                Text("Each share is the part of the day's active calories that fell inside that activity. An activity's own page works out its calories separately from its heart rate, so the two can differ.")
+                Text("Each share is the part of the day's active calories that fell inside that activity. An activity imported from another app keeps the calories it came with, so its own page can differ.")
                     .font(WhoopStyle.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -216,8 +223,8 @@ struct WhoopCaloriesScreen: View {
                 Text(windowText(item.row))
                     .font(WhoopStyle.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
-                if let own = item.row.energyKcal, own > 0 {
-                    Text("On its own page: \(Int(own.rounded()).formatted()) kcal, with resting energy")
+                if let own = item.ownKcal {
+                    Text("On its own page: \(own.formatted()) kcal")
                         .font(WhoopStyle.caption)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -274,8 +281,8 @@ struct WhoopCaloriesScreen: View {
         guard splitsEnergy else {
             return [String(localized: "This is your strap's heart-rate estimate for the whole day, resting and active energy together. It is not a lab measurement.")]
         }
-        var lines = [String(localized: "Active energy is worked out minute by minute from your steps and heart rate. A minute of walking is priced by its steps, and a minute of harder effort by your heart rate.")]
-        lines.append(String(localized: "During a strength session the strap's step counter follows your arm movement, so those minutes are priced by heart rate, never as walking."))
+        var lines = [String(localized: "Active energy is worked out minute by minute from your heart rate. A minute is priced by its average heart rate, the same for walking, lifting or sport.")]
+        lines.append(String(localized: "Calibrated against your WHOOP workouts."))
         lines.append(String(localized: "Basal energy is the energy your body uses at rest, estimated from your age, height, weight and sex (Mifflin-St Jeor), over the hours of this day."))
         lines.append(String(localized: "Both are estimates, not lab measurements."))
         return lines
@@ -297,11 +304,7 @@ struct WhoopCaloriesScreen: View {
 
         let sleeps = repo.sleeps
         let logged = await repo.workoutRows(days: 4000)
-        let steps = await WhoopDayMinutes.steps(repo: repo, profile: profile, from: from, to: toExclusive)
-        guard let energy = await WhoopDayMinutes.activeKcal(repo: repo, profile: profile, day: figures.day,
-                                                            from: from, to: toExclusive,
-                                                            stepsByMinute: steps?.perMinute ?? [:],
-                                                            workouts: logged) else {
+        guard let energy = await WhoopDayMinutes.activeKcal(repo: repo, from: from, to: toExclusive) else {
             breakdown = nil
             return
         }

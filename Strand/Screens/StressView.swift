@@ -118,21 +118,19 @@ struct StressView: View {
         let tz = TimeZone.current.secondsFromGMT(for: Date())
 
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-        // Yoop: WHOOP-style stress, the whole day against the resting heart rate. The Advanced HRV
-        // readouts are not part of this layout, so they are not computed.
+        // Yoop: WHOOP-style stress, the whole day, from the one resolver every surface reads
+        // (`WhoopStressDay`). The Advanced HRV readouts are not part of this layout, so they are not
+        // computed.
         if let restHR = StressDayCurve.whoopRestingHR(repo) {
             sleepSpans = repo.sleeps.compactMap { s in
                 let lo = max(s.effectiveStartTs, from), hi = min(s.endTs, to)
                 return lo < hi ? lo...hi : nil
             }
-            activitySpans = await repo.workoutRows(days: 2).compactMap { w in
-                let lo = max(w.startTs, from), hi = min(w.endTs, to)
-                return lo < hi ? lo...hi : nil
-            }
-            let reference = await StressDayCurve.whoopStressReference(repo, to: to)
-            daytime = await runUnescalated(priority: .userInitiated) {
-                WhoopStressCurve.analyze(hr: hr, restingHR: restHR, tzOffsetSeconds: tz, reference: reference)
-            }
+            let scored = await WhoopStressDay.score(repo: repo, hr: hr, from: from, to: to, restingHR: restHR)
+            // The activities shown are the ones left out of the score: the line and the marker cannot
+            // disagree about which minutes were an activity.
+            activitySpans = WhoopStressCurve.activitySpans(scored)
+            daytime = scored
             stressIndex = nil
             freqHRV = nil
             return
@@ -229,6 +227,15 @@ struct StressView: View {
             WhoopStressHero(daytime: daytime, dailyScore: model.score, sleepSpans: sleepSpans,
                             activitySpans: activitySpans, onBreathe: { showBreathe = true })
                 .staggeredAppear(index: 0)
+
+            // Yoop: say plainly what the number is (`WhoopStressCurve` has the method).
+            if PuffinExperiment.whoopStressEnabled {
+                Text("Yoop's own estimate from your heart rate and, where the beats are clean, your heart rate variability, against your own 14-day baseline. Workouts are left out. It was compared with WHOOP's published description and your WHOOP readings. It is not WHOOP's algorithm.")
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .staggeredAppear(index: 1)
+            }
 
             // Yoop shows WHOOP's layout only: the hero and its breakdown cards.
             if !PuffinExperiment.whoopStressEnabled {

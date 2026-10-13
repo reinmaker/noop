@@ -62,26 +62,38 @@ final class NightNeedTests: XCTestCase {
         try body()
     }
 
+    /// Runs `body` with Yoop's scores off, then on: what the NOOP ledger and WHOOP's debt both have to get right.
+    @MainActor
+    private func inBothModes(_ body: (Bool) throws -> Void) rethrows {
+        for on in [false, true] { try withYoopScores(on) { try body(on) } }
+    }
+
     // MARK: The need
 
     /// The planner's arithmetic: the healthy minimum + 7.3 min per point of the previous day's Strain above
-    /// 10 + the sleep debt the Sleep Debt series carries out of the previous night.
+    /// 10 + the sleep debt the Sleep Debt series carries out of the previous night. Without Yoop's scores
+    /// the debt is the NOOP ledger's; with them it is WHOOP's, and the same two readouts agree.
+    @MainActor
     func testNeedIsTheHealthyMinimumPlusStrainAboveTenPlusTheCarriedDebt() {
-        let need = SleepModel.nightNeed(wakeDay: "2026-10-11", days: evening, importedSleep: [:])
-        XCTAssertEqual(need.baselineMin, 450, "7-hour nights sit under the 7:30 floor")
-        XCTAssertEqual(need.strainMin, 7.3 * 8, accuracy: 1e-9)
-        let carried = SleepModel.sleepDebtSeries(days: evening, importedSleep: [:], napSleepMinByDay: [:]).latest
-        XCTAssertEqual(need.debtMin, carried)
-        XCTAssertGreaterThan(need.debtMin, 0)
-        XCTAssertEqual(need.needMin, 450 + 7.3 * 8 + need.debtMin, accuracy: 1e-9)
+        for yoop in [false, true] {
+            withYoopScores(yoop) {
+                let need = SleepModel.nightNeed(wakeDay: "2026-10-11", days: evening, importedSleep: [:])
+                XCTAssertEqual(need.baselineMin, 450, "7-hour nights sit under the 7:30 floor")
+                XCTAssertEqual(need.strainMin, 7.3 * 8, accuracy: 1e-9)
+                let carried = SleepModel.sleepDebtSeries(days: evening, importedSleep: [:], napSleepMinByDay: [:]).latest
+                XCTAssertEqual(need.debtMin, carried, "yoop \(yoop)")
+                XCTAssertGreaterThan(need.debtMin, 0)
+                XCTAssertEqual(need.needMin, 450 + 7.3 * 8 + need.debtMin, accuracy: 1e-9)
+            }
+        }
     }
 
-    /// The debt is the latest value of the full Sleep Debt series over the days before the night, whatever
-    /// the history holds: gaps, a day with no sleep, an imported debt for the latest day. (The resolver
-    /// reads only the last 14 nights with sleep, to stay linear on a long history.)
+    /// Without Yoop's scores the debt is the latest value of the full NOOP ledger series over the days
+    /// before the night, whatever the history holds: gaps, a day with no sleep, an imported debt for the
+    /// latest day. (The resolver reads only the last 14 nights with sleep, to stay linear on a long history.)
     @MainActor
-    func testTheDebtMatchesTheFullSeriesOnALongAwkwardHistory() {
-        withYoopScores(true) {
+    func testTheNoopLedgerDebtMatchesTheFullSeriesOnALongAwkwardHistory() {
+        withYoopScores(false) {
             var rows: [DailyMetric] = []
             for i in 0..<120 {
                 let key = WeeklyDigestEngine.addDays("2026-06-01", i)
@@ -97,8 +109,34 @@ final class NightNeedTests: XCTestCase {
                     let need = SleepModel.nightNeed(wakeDay: wakeDay, days: rows, importedSleep: imported)
                     XCTAssertEqual(need.debtMin, max(0, full ?? 0), "debt for \(wakeDay)")
                     XCTAssertEqual(need.baselineMin, SleepModel.sleepNeedMin(days: prior), "minimum for \(wakeDay)")
+                }
+            }
+        }
+    }
+
+    /// With Yoop's scores on, one night's need from the single-night resolver and from the batch one are the
+    /// same figure, on a long history with gaps, nights without a sleep total and an imported night.
+    @MainActor
+    func testTheSingleNightAndTheBatchResolveOneNeedOnALongAwkwardHistory() {
+        withYoopScores(true) {
+            var rows: [DailyMetric] = []
+            for i in 0..<120 {
+                let key = WeeklyDigestEngine.addDays("2026-06-01", i)
+                if i % 17 == 5 { continue }                                              // a missing day
+                rows.append(day(key, asleep: i % 11 == 3 ? nil : 330 + Double((i * 29) % 170), strain21: Double(i % 21)))
+            }
+            let importedFigures: [[String: ImportedSleepFigures]] = [
+                [:], ["2026-09-12": ImportedSleepFigures(performancePct: nil, consistencyPct: nil, needMin: 520, debtMin: 77)]]
+            for imported in importedFigures {
+                let all = SleepModel.nightNeeds(days: rows, importedSleep: imported)
+                for wakeDay in ["2026-06-20", "2026-08-01", "2026-09-12", "2026-09-13", "2026-09-27"] {
+                    let need = SleepModel.nightNeed(wakeDay: wakeDay, days: rows, importedSleep: imported)
+                    let prior = rows.filter { $0.day < wakeDay }
+                    XCTAssertEqual(need.baselineMin, SleepModel.sleepNeedMin(days: prior), "minimum for \(wakeDay)")
                     let batch = SleepModel.nightNeeds(days: rows, importedSleep: imported, only: [wakeDay])
-                    if rows.contains(where: { $0.day == wakeDay && ($0.totalSleepMin ?? 0) > 0 }) {
+                    XCTAssertEqual(batch.needMin[wakeDay], all.needMin[wakeDay], "only: limits the work, not the answer")
+                    XCTAssertEqual(batch.planned[wakeDay], all.planned[wakeDay])
+                    if rows.contains(where: { $0.day == wakeDay && ($0.totalSleepMin ?? 0) > 0 }), imported[wakeDay]?.needMin == nil {
                         XCTAssertEqual(batch.planned[wakeDay], need, "the batch and the single night agree for \(wakeDay)")
                     }
                 }
@@ -108,23 +146,36 @@ final class NightNeedTests: XCTestCase {
 
     /// The night's own sleep, and anything after it, cannot move its need: the morning resolves the
     /// evening's figure.
+    @MainActor
     func testOnlyTheDaysBeforeTheNightCount() {
-        let later = morning + [day("2026-10-12", asleep: 300, strain21: 20)]
-        XCTAssertEqual(SleepModel.nightNeed(wakeDay: "2026-10-11", days: later, importedSleep: [:]),
-                       SleepModel.nightNeed(wakeDay: "2026-10-11", days: evening, importedSleep: [:]))
+        inBothModes { yoop in
+            let later = morning + [day("2026-10-12", asleep: 300, strain21: 20)]
+            XCTAssertEqual(SleepModel.nightNeed(wakeDay: "2026-10-11", days: later, importedSleep: [:]),
+                           SleepModel.nightNeed(wakeDay: "2026-10-11", days: evening, importedSleep: [:]), "yoop \(yoop)")
+        }
     }
 
     /// Strain counts from the day before the night only; a day under 10 adds nothing.
+    @MainActor
     func testStrainIsThePreviousDaysAndOnlyAboveTen() {
-        let restDay = evening.dropLast() + [day("2026-10-10", asleep: 430, strain21: 9.5)]
-        XCTAssertEqual(SleepModel.nightNeed(wakeDay: "2026-10-11", days: Array(restDay), importedSleep: [:]).strainMin, 0)
-        // No row for 10 Oct: the 18.0 of 9 Oct belongs to an earlier night.
-        let gap = evening.dropLast(2) + [day("2026-10-09", asleep: 420, strain21: 18)]
-        XCTAssertEqual(SleepModel.nightNeed(wakeDay: "2026-10-11", days: Array(gap), importedSleep: [:]).strainMin, 0)
+        inBothModes { yoop in
+            let restDay = evening.dropLast() + [day("2026-10-10", asleep: 430, strain21: 9.5)]
+            XCTAssertEqual(SleepModel.nightNeed(wakeDay: "2026-10-11", days: Array(restDay), importedSleep: [:]).strainMin, 0, "yoop \(yoop)")
+            // No row for 10 Oct: the 18.0 of 9 Oct belongs to an earlier night.
+            let gap = evening.dropLast(2) + [day("2026-10-09", asleep: 420, strain21: 18)]
+            XCTAssertEqual(SleepModel.nightNeed(wakeDay: "2026-10-11", days: Array(gap), importedSleep: [:]).strainMin, 0, "yoop \(yoop)")
+        }
     }
 
     /// Effort ratings reach the need: it reads Strain off the days as the Strain ring resolves them.
+    @MainActor
     func testARatedLiftRaisesTheNeedThroughTheStrainFunnel() {
+        inBothModes { yoop in
+            ratedLiftRaisesTheNeed(yoop: yoop)
+        }
+    }
+
+    private func ratedLiftRaisesTheNeed(yoop: Bool) {
         let start = 1_760_000_000
         let lift = WorkoutRow(startTs: start, endTs: start + 45 * 60, sport: "Weightlifting", source: "manual",
                               durationS: 45 * 60, energyKcal: nil, avgHr: nil, maxHr: nil, strain: stored(11),
@@ -135,7 +186,7 @@ final class NightNeedTests: XCTestCase {
                                                    scale: .whoop)
         XCTAssertGreaterThan(ringStrain, 18)
         let need = SleepModel.nightNeed(wakeDay: "2026-10-11", days: resolved, importedSleep: [:])
-        XCTAssertEqual(need.strainMin, 7.3 * (ringStrain - 10), accuracy: 1e-9)
+        XCTAssertEqual(need.strainMin, 7.3 * (ringStrain - 10), accuracy: 1e-9, "yoop \(yoop)")
     }
 
     // MARK: One resolver for the plan and the morning's scores

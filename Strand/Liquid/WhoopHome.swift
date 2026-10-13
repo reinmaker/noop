@@ -137,8 +137,9 @@ struct WhoopInsightCard: View {
         let strain = repo.dayStrain(d).map { String(Int(AICoachEngine.strain21($0) / 2)) } ?? "-"
         // Tonight's planned bedtime and wake time in steps of 10 minutes: the card quotes the plan, and
         // the plan moves with the day's Strain, so a bedtime that has moved is written again (on 12 Oct
-        // the card said 01:08 while Tonight's Sleep said 01:31).
-        return "v4|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.sleepPlanToken)|\(coach.isConfigured)|\(coach.dataConsent)"
+        // the card said 01:08 while Tonight's Sleep said 01:31). v5: the need's sleep debt became WHOOP's, so
+        // a card written about the old plan's figures is written again.
+        return "v5|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.sleepPlanToken)|\(coach.isConfigured)|\(coach.dataConsent)"
     }
 
     var body: some View {

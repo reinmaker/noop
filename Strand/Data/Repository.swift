@@ -3412,7 +3412,7 @@ final class Repository: ObservableObject {
     /// it), with the wrist's motion to place the warm-up, never over a sleep or a saved workout other than
     /// those whose start time is in `ignoring`. Only bouts that have ended (no raised minute in the last
     /// five): one still going is added once it finishes, with its full length.
-    private func yoopActivityBouts(daysBack: Int, ignoring: Set<Int>) async -> [DetectedWorkout] {
+    func yoopActivityBouts(daysBack: Int, ignoring: Set<Int>) async -> [DetectedWorkout] {
         let now = Int(Date().timeIntervalSince1970)
         let from = now - daysBack * 86_400
         let samples = await hrSamples(from: from, to: now, limit: 200_000)

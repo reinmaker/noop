@@ -145,16 +145,31 @@ final class WhoopHourlyTests: XCTestCase {
         let man = UserProfile(weightKg: 82, heightCm: 183, age: 42, sex: "male")
         let base = 1_800_000_000 - 1_800_000_000 % 3_600
         let hr = (0..<10_800).map { HRSample(ts: base + $0, bpm: $0 < 3_000 ? 60 : ($0 < 7_000 ? 112 : 150)) }
-        let steps: [Int: Double] = [(base + 3_600) / 60: 110, (base + 3_660) / 60: 118.5]
-        let byMinute = Calories.yoopActiveKcalByMinute(hr, stepsByMinute: steps, profile: man, hrmax: 178.6,
-                                                       restingHR: 56.243)
-        let day = Calories.estimateYoopDayEnergy(hr, stepsByMinute: steps, windowSeconds: 10_800, profile: man,
-                                                 hrmax: 178.6, restingHR: 56.243)
+        let byMinute = Calories.yoopActiveKcalByMinute(hr)
+        let day = Calories.estimateYoopDayEnergy(hr, windowSeconds: 10_800, profile: man)
         let counted = Int(byMinute.keys.sorted().reduce(0.0) { $0 + (byMinute[$1] ?? 0) }.rounded())
         let split = WhoopHourly.split(valueByMinute: byMinute, from: base, toExclusive: base + 10_800,
                                       total: counted, asleep: [], timeZone: utc)
         XCTAssertEqual(counted, Int(day.activeKcal.rounded()))
         XCTAssertEqual(split.placed, Int(day.activeKcal.rounded()))
         XCTAssertEqual(split.bars.count, 3)
+    }
+
+    func testAnActivitysOwnEnergyIsItsShareOfTheDaysActiveEnergy() {
+        // The activity page, the workout list and the Calories page's share price the same minutes with the
+        // same line, so they state one number, to the whole kcal the share is rounded to.
+        let man = UserProfile(weightKg: 82, heightCm: 183, age: 42, sex: "male")
+        let base = 1_800_000_000 - 1_800_000_000 % 3_600
+        let hr = (0..<10_800).map { HRSample(ts: base + $0, bpm: 70 + ($0 / 90) % 70 + $0 % 5) }
+        let byMinute = Calories.yoopActiveKcalByMinute(hr)
+        let day = Calories.estimateYoopDayEnergy(hr, windowSeconds: 10_800, profile: man)
+        let counted = Int(day.activeKcal.rounded())
+        let first = (start: base + 1_234, end: base + 3_100), second = (start: base + 5_000, end: base + 6_660)
+        let shares = WhoopHourly.shares(valueByMinute: byMinute, windows: [first, second], total: counted)
+        for (index, window) in [first, second].enumerated() {
+            let own = Calories.yoopActivityKcal(hr, from: window.start, to: window.end)
+            XCTAssertEqual(Double(shares.windows[index]), own, accuracy: 1.5)
+        }
+        XCTAssertEqual(shares.windows.reduce(0, +) + shares.rest, counted)
     }
 }

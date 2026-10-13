@@ -474,7 +474,7 @@ final class WhoopSleepPlanTests: XCTestCase {
     func testTheInsightCardKeyIncludesThePlan() throws {
         let home = try XCTUnwrap(Dictionary(uniqueKeysWithValues: try Self.strandSources())["Liquid/WhoopHome.swift"])
         XCTAssertTrue(home.contains("\\(coach.sleepPlanToken)"), "the insight's cache key must carry tonight's plan")
-        XCTAssertTrue(home.contains("\"v4|"), "the key version moves with it, so an old cache is written again once")
+        XCTAssertTrue(home.contains("\"v5|"), "the key version moves with it, so an old cache is written again once")
     }
 
     // MARK: The armed alarm
@@ -534,7 +534,7 @@ final class WhoopSleepPlanTests: XCTestCase {
     // MARK: Source access
 
     /// Every Swift file under `Strand/`, as (path relative to it, text).
-    private static func strandSources(file: StaticString = #filePath) throws -> [(String, String)] {
+    static func strandSources(file: StaticString = #filePath) throws -> [(String, String)] {
         var dir = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
         for _ in 0..<4 {
             let strand = dir.appendingPathComponent("Strand")

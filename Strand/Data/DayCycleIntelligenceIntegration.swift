@@ -35,14 +35,12 @@ import WhoopStore
     fileprivate struct CachedCycle {
         let key: String; let count: SleepAwareStepCounter.Count
         let pages: Int; let samples: Int; let evaluated: Bool
-        /// Accepted ticks by minute, kept only for the Yoop energy estimate.
-        var minuteTicks: [Int: Int] = [:]
     }
     /// A cycle's Effort and calories, with the key of the inputs they were computed from.
     fileprivate struct CachedLoad {
         let key: String; let strain: Double?; let calories: Double?
     }
-    /// Yoop: a cycle's energy split, with the key of the heart rate, steps and profile it came from.
+    /// Yoop: a cycle's energy split, with the key of the heart rate and profile it came from.
     fileprivate struct CachedEnergy {
         let key: String; let energy: Calories.DayEnergyEstimate
     }
@@ -102,7 +100,6 @@ import WhoopStore
                         now: Int, offsetSec: Int, habitualMidsleepSec: Int?, ticksPerStep: Double,
                         mode: DayCycleMode, cache: Cache,
                         profile: UserProfile, maxHROverride: Double?, effortMethod: StrainScorer.Method,
-                        energyRestingHRByDay: [String: Double] = [:],
                         recoveryReader: BoundaryRecoveryReader? = nil,
                         trace: ((String) -> Void)? = nil) async -> Result {
         guard mode == .sleepOnset else {
@@ -187,7 +184,8 @@ import WhoopStore
         cache.cycles = cache.cycles.filter { entry in windows.contains(where: { $0.sleepId == entry.key }) }
         cache.loads = cache.loads.filter { entry in windows.contains(where: { $0.sleepId == entry.key }) }
         cache.energies = cache.energies.filter { entry in windows.contains(where: { $0.sleepId == entry.key }) }
-        // Yoop: the day stores ACTIVE energy, priced from heart rate and steps (`estimateYoopDayEnergy`).
+        // Yoop: the day stores ACTIVE energy, priced from heart rate alone by the one WHOOP-fitted line
+        // (`estimateYoopDayEnergy`).
         let yoopEnergy = Calories.yoopEnergyEnabled
         let priorities = Dictionary(candidates.map { ($0.owner, $0.priority) }, uniquingKeysWith: min)
         let witnesses = Dictionary(uniqueKeysWithValues: nights.map { night in
@@ -280,33 +278,32 @@ import WhoopStore
             }
             let segments = PhysiologicalSteps.ownerSegmentsFromCoverage(
                 window, coverage: coverage, fallbackOwner: fallback)
-            // Yoop: the cycle's energy from its heart rate and the minute ticks the step count accepted.
-            // Resting covers the whole window, onset to its end (or now for the open cycle).
-            let energyRHR = energyRestingHRByDay[day] ?? restingHR
-            // Yoop: the minutes of a logged strength session are priced by heart rate alone, since the strap's
-            // step counter ticks with arm motion in one (`WhoopDayMinutes`, which the pages price by too).
-            let strengthWindows = WhoopDayMinutes.strengthWindows(workouts: workouts, from: window.onset,
-                                                                 to: window.endExclusive)
-            let strengthKey = strengthWindows.map { "\($0.start)-\($0.end)" }.joined(separator: ",")
-            let yoopEnergyFor: ([Int: Int], String) async -> Calories.DayEnergyEstimate? = { ticks, stepKey in
-                let energyKey = "\(loadKey)|steps=\(stepKey)|energyRHR=\(energyRHR)|strength=\(strengthKey)"
-                if let hit = cache.energies[window.sleepId], hit.key == energyKey, !hrUnread { return hit.energy }
-                let cycleHR: [HRSample]
-                if let readHR { cycleHR = readHR } else { cycleHR = await readCycleHR() }
-                guard !cycleHR.isEmpty else { return nil }
-                let perStep = max(ticksPerStep, 0.5)
-                let energy = Calories.estimateYoopDayEnergy(
-                    cycleHR, stepsByMinute: ticks.mapValues { Double($0) / perStep },
-                    windowSeconds: window.endExclusive - window.onset, profile: profile,
-                    hrmax: effectiveMaxHR, restingHR: energyRHR,
-                    heartPricedMinutes: WhoopDayMinutes.heartPricedMinutes(strengthWindows))
-                cache.energies[window.sleepId] = CachedEnergy(key: energyKey, energy: energy)
-                return energy
+            // Yoop: the cycle's energy from its heart rate alone, the same minute-by-minute line the Calories page
+            // splits by hour and by activity. Resting covers the whole window, onset to its end (or now for
+            // the open cycle).
+            if yoopEnergy {
+                let energyKey = "\(loadKey)|energy=whoopfit1"
+                var energy: Calories.DayEnergyEstimate?
+                if let hit = cache.energies[window.sleepId], hit.key == energyKey, !hrUnread {
+                    energy = hit.energy
+                } else {
+                    let cycleHR: [HRSample]
+                    if let readHR { cycleHR = readHR } else { cycleHR = await readCycleHR() }
+                    if !cycleHR.isEmpty {
+                        let fresh = Calories.estimateYoopDayEnergy(
+                            cycleHR, windowSeconds: window.endExclusive - window.onset, profile: profile)
+                        cache.energies[window.sleepId] = CachedEnergy(key: energyKey, energy: fresh)
+                        energy = fresh
+                    }
+                }
+                if let energy {
+                    calories[day] = energy.activeKcal
+                    trace?("energyCycle wakeDay=\(day) windowS=\(window.endExclusive - window.onset) "
+                        + "restingKcal=\(Int(energy.restingKcal.rounded())) "
+                        + "activeKcal=\(Int(energy.activeKcal.rounded()))")
+                }
             }
-            guard !segments.isEmpty else {
-                if yoopEnergy, let energy = await yoopEnergyFor([:], "none") { calories[day] = energy.activeKcal }
-                continue
-            }
+            guard !segments.isEmpty else { continue }
             let active = window.endExclusive == now
             let identity = segments.enumerated().map { index, segment in
                 "\(segment.owner):\(segment.onset)-\(active && index == segments.count - 1 ? 0 : segment.endExclusive)"
@@ -328,16 +325,15 @@ import WhoopStore
                 .map { "\($0)=\(witnesses[$0] ?? "")" }.joined(separator: "|")
             let key = "\(identity)|\(window.sleepId)|\(window.onset)|\(active ? 0 : window.endExclusive)"
                 + "|stepRevision=\(revisions.joined(separator: "|"))|sleepContext=\(contextSignature)"
-                + "|days=\(dayWitness)|yoopSteps=\(StepsCounter.yoopCountingEnabled)|minutes=\(yoopEnergy)"
+                + "|days=\(dayWitness)|yoopSteps=\(StepsCounter.yoopCountingEnabled)"
             var cached = cache.cycles[window.sleepId]
             if cached?.key != key {
                 var count = SleepAwareStepCounter.Count.empty, pages = 0, samples = 0, evaluated = false
-                var minuteTicks: [Int: Int] = [:]
                 for (index, segment) in segments.enumerated() {
                     let hasClasses = try await store.hasStepActivityClasses(
                         deviceId: segment.owner, from: segment.onset, to: segment.endExclusive)
                     let accumulator = SleepAwareStepCounter.Accumulator(
-                        sleepSessions: sleepContexts, hasActivityClasses: hasClasses, recordsMinutes: yoopEnergy)
+                        sleepSessions: sleepContexts, hasActivityClasses: hasClasses)
                     var segmentSamples = 0
                     if index == 0, let predecessor = try await store.stepSampleBefore(
                         deviceId: segment.owner, before: segment.onset) {
@@ -358,20 +354,9 @@ import WhoopStore
                     accumulator.observeMotion(gravityCount: motion?.gravity ?? 0, auxCount: motion?.aux ?? 0)
                     if segmentSamples >= 2 { evaluated = true }
                     count = count.adding(accumulator.finish())
-                    minuteTicks.merge(accumulator.acceptedTicksByMinute, uniquingKeysWith: +)
                 }
-                cached = CachedCycle(key: key, count: count, pages: pages, samples: samples, evaluated: evaluated,
-                                     minuteTicks: minuteTicks)
+                cached = CachedCycle(key: key, count: count, pages: pages, samples: samples, evaluated: evaluated)
                 cache.cycles[window.sleepId] = cached
-            }
-            if yoopEnergy {
-                let ticks = cached?.evaluated == true ? cached?.minuteTicks ?? [:] : [:]
-                if let energy = await yoopEnergyFor(ticks, cached?.key ?? "none") {
-                    calories[day] = energy.activeKcal
-                    trace?("energyCycle wakeDay=\(day) windowS=\(window.endExclusive - window.onset) "
-                        + "restingHR=\(energyRHR) restingKcal=\(Int(energy.restingKcal.rounded())) "
-                        + "activeKcal=\(Int(energy.activeKcal.rounded())) strengthWindows=\(strengthWindows.count)")
-                }
             }
             guard let result = cached, result.evaluated else { continue }
             let scaled = Int((Double(result.count.totalTicks) / max(ticksPerStep, 0.5)).rounded())

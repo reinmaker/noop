@@ -23,8 +23,9 @@ import Foundation
 ///    sleeping heart rate, which is lower than the resting rate it was built on, so it reads high. The band is
 ///    `uthSigma`, wider than its published error (Yoop's assumption).
 ///
-/// The Keytel calorie path still takes the Uth figure, on purpose; `Vo2Resolver.load` exposes this choice and its
-/// source so that path can adopt it when that is decided.
+/// The NOOP Keytel calorie path still takes the Uth figure, on purpose; `Vo2Resolver.load` exposes this choice and
+/// its source so that path can adopt it when that is decided. Yoop's calorie estimate takes no VO2 max at all: it
+/// is the heart-rate line fitted to the wearer's WHOOP workouts (`Calories.yoopActiveKcalPerBpm`).
 struct Vo2Choice: Equatable {
     enum Source: String, Equatable { case whoopApp, appleHealth, nes, uth }
 

@@ -701,13 +701,15 @@ final class IntelligenceEngine: ObservableObject {
     }
 
     /// Yoop: set once the recent window has been rescored with each night measured against its own need
-    /// (`SleepModel.nightNeed`).
-    static let nightNeedRescoreFlagKey = "yoop.nightNeedRescore.v1.done"
+    /// (`SleepModel.nightNeed`), whose sleep debt is WHOOP's (`WhoopSleepDebt`). v1 was the pass that first
+    /// measured each night against its own need, with the NOOP ledger's debt in it; v2 is the pass after the
+    /// debt became WHOOP's, so a device that ran v1 scores its recent nights once more.
+    static let nightNeedRescoreFlagKey = "yoop.nightNeedRescore.v2.done"
 
-    /// Yoop: rescores the recent window once after the update that measures each night against the need
-    /// the Sleep Planner set for it, so the stored Sleep Performance Home, Trends and the Coach read is the
-    /// corrected one without waiting for new heart rate (the idle tick skips while the raw streams are
-    /// unchanged). Only with Yoop's scores on; the flag is set once the pass has stored its scores.
+    /// Yoop: rescores the recent window once after an update that changes the need each night is measured
+    /// against (`nightNeedRescoreFlagKey`), so the stored Sleep Performance Home, Trends and the Coach read
+    /// is the corrected one without waiting for new heart rate (the idle tick skips while the raw streams
+    /// are unchanged). Only with Yoop's scores on; the flag is set once the pass has stored its scores.
     func runNightNeedRescoreIfNeeded() async {
         guard PuffinExperiment.whoopScoresEnabled,
               !UserDefaults.standard.bool(forKey: Self.nightNeedRescoreFlagKey),
@@ -2207,8 +2209,6 @@ final class IntelligenceEngine: ObservableObject {
             profile: up,
             maxHROverride: maxHR,
             effortMethod: effortMethodGlobal,
-            // Yoop: the HR-flex point sits above the resting rate Yoop shows, the main sleep's mean.
-            energyRestingHRByDay: Calories.yoopEnergyEnabled ? primarySessionRHRByDay : [:],
             trace: stepsTraceActive ? { self.diagnosticSink?($0, .steps) } : nil)
         // #299: `editsByStart` is now built PER DAY inside the scoring loop (scoped to the day each edit
         // belongs to), NOT window-wide here. sleepEditedDaily folds any edited row that isn't a twin of THIS
@@ -3115,6 +3115,8 @@ final class IntelligenceEngine: ObservableObject {
         let measuredResting = out.first(where: { $0.rhr != nil })?.rhr.map(Double.init)
         await rescoreManualWorkouts(store: store, profile: up, restingHR: measuredResting,
                                     effortMethod: effortMethodGlobal)
+        // Yoop: the activities Yoop recorded or detected carry the one heart-rate line's active energy.
+        await repriceOwnActivityEnergy(store: store)
 
         results = out
         note = out.isEmpty
@@ -3328,6 +3330,57 @@ final class IntelligenceEngine: ObservableObject {
                 steps: row.steps))
         }
         if !updated.isEmpty { _ = try? await store.upsertWorkouts(updated, deviceId: deviceId) }
+    }
+
+    /// Set once the first full sweep of `repriceOwnActivityEnergy` has run over every logged activity.
+    private static let activityEnergySweepKey = "yoop.activityEnergy.whoopFit.v1"
+
+    /// Yoop: the energy of each activity Yoop recorded or detected (a `manual` row) is the active energy of the
+    /// minutes it overlaps, priced from the strap's heart rate by the one WHOOP-fitted line
+    /// (`Calories.yoopActivityKcal`), the very minutes the Calories page splits the day by. Earlier versions
+    /// stored gross energy from Keytel's equation, resting energy included, so the first pass after
+    /// the change prices every activity again; later passes keep to the last 14 days, where the strap's banked
+    /// heart rate can still arrive late. It replaces a number typed in by hand when the strap has the heart
+    /// rate of that window, as the manual rescore already does when the strap's figure is higher. An activity
+    /// with no strap heart rate, or imported from another app, keeps the energy it has. Idempotent.
+    private func repriceOwnActivityEnergy(store: WhoopStore) async {
+        guard Calories.yoopEnergyEnabled else { return }
+        let now = Int(Date().timeIntervalSince1970)
+        let swept = UserDefaults.standard.bool(forKey: Self.activityEnergySweepKey)
+        guard let rows = try? await store.workouts(deviceId: deviceId, from: swept ? now - 14 * 86_400 : 0,
+                                                   to: now, limit: 5_000) else { return }
+        let id = deviceId
+        let updated = await Self.repricedActivities(rows) { from, to in
+            (try? await store.hrSamples(deviceId: id, from: from, to: to, limit: 200_000)) ?? []
+        }
+        if !updated.isEmpty, (try? await store.upsertWorkouts(updated, deviceId: id)) == nil { return }
+        if !swept { UserDefaults.standard.set(true, forKey: Self.activityEnergySweepKey) }
+    }
+
+    /// The rows of `rows` whose energy `repriceOwnActivityEnergy` changes, with the new energy: each `manual`
+    /// row that has at least two strap heart-rate readings in its minutes, priced by `Calories.yoopActivityKcal`
+    /// (nil when that is nothing). Rows from other sources, rows with no heart rate, and rows already at their
+    /// price are left out, so a second run over the result returns nothing. `hrSamples` reads the strap's heart
+    /// rate between two epoch seconds, inclusive.
+    nonisolated static func repricedActivities(_ rows: [WorkoutRow],
+                                               hrSamples: (_ from: Int, _ to: Int) async -> [HRSample]) async -> [WorkoutRow] {
+        var updated: [WorkoutRow] = []
+        for row in rows where row.source == "manual" {
+            // Whole minutes at both ends, the way the Calories page counts the minutes an activity overlaps.
+            let from = row.startTs / 60 * 60
+            let to = max(row.endTs - 1, row.startTs) / 60 * 60 + 59
+            let samples = await hrSamples(from, to)
+            guard samples.count >= 2 else { continue }
+            let kcal = Calories.yoopActivityKcal(samples, from: row.startTs, to: row.endTs)
+            let priced: Double? = kcal > 0 ? kcal : nil
+            guard abs((priced ?? 0) - (row.energyKcal ?? 0)) >= 0.01 else { continue }
+            updated.append(WorkoutRow(
+                startTs: row.startTs, endTs: row.endTs, sport: row.sport, source: row.source,
+                durationS: row.durationS, energyKcal: priced, avgHr: row.avgHr, maxHr: row.maxHr,
+                strain: row.strain, distanceM: row.distanceM, zonesJSON: row.zonesJSON, notes: row.notes,
+                steps: row.steps))
+        }
+        return updated
     }
 
     /// Pass 1 has no seeded skin baseline. Attach the deviation before scoring so the score,
