@@ -1080,12 +1080,16 @@ final class AICoachEngine: ObservableObject {
         clock.timeZone = timeZone
         clock.dateFormat = "HH:mm"
         let level = String(format: "%.1f", latest.level)
-        let parts = [
+        var parts = [
             "Today's stress so far (0-3 scale: low under 1, medium 1-2, high 2 and up), as the Stress screen shows it:",
             "current level \(level) (\(word)) at \(clock.string(from: latest.time));",
             "time in low \(hrMin(bands[0])), medium \(hrMin(bands[1])), high \(hrMin(bands[2])).",
-            "Say durations in hours and minutes, never as a count of minutes.",
         ]
+        // Yoop's stress leaves workouts unscored (`WhoopStressCurve`); the hourly read does not say so.
+        if PuffinExperiment.whoopStressEnabled {
+            parts.append("Workouts are left out of the score, so none of their minutes are in these bands.")
+        }
+        parts.append("Say durations in hours and minutes, never as a count of minutes.")
         return parts.joined(separator: " ")
     }
 
