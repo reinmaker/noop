@@ -1361,9 +1361,13 @@ final class AICoachEngine: ObservableObject {
                 "the limiter tonight and what it will cost tomorrow, one action with a time (such as a bedtime) " +
                 "and why, then one question."
         default:
-            focus = "In three short sentences (under 65 words): the most notable thing on that screen with the " +
-                "number against their normal, what it means for them, and one specific action backed by their own " +
-                "data; end with one short question."
+            // After WHOOP's own message on a score screen (read 15 Oct 2026): a verdict with their name, the
+            // cause in plain words from yesterday's training, last night's sleep and what they logged, one
+            // small thing to do, one open question. Exact figures wait until they ask for them.
+            focus = "In three short paragraphs (about 65 words in all): a verdict that opens with their first " +
+                "name; the cause in plain words, from what they did yesterday, how they slept and anything " +
+                "they logged, with at most one number; then one small thing to do tonight. End with one open " +
+                "question. Keep the exact figures and comparisons for when they ask."
         }
         return "The user just opened the Coach while looking at their \(screen.describedForCoach). Write the " +
             "Coach's opening message. \(focus) Then the special lines."
@@ -1584,8 +1588,8 @@ final class AICoachEngine: ObservableObject {
     func screenSummary(_ screen: CoachScreen) async -> String? {
         await headlessReply("""
         In one or two sentences (under 30 words), give the headline of my \(screen.describedForCoach) \
-        for today: the key number against my normal and what it means for me. Speak to me directly, \
-        plain text, at most one emoji, and leave out the special lines.
+        for today the way a coach would say it: the verdict and its main cause in plain words, at most one \
+        number. Speak to me directly, plain text, at most one emoji, and leave out the special lines.
         """)
     }
 

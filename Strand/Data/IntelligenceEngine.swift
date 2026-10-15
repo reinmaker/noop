@@ -703,8 +703,9 @@ final class IntelligenceEngine: ObservableObject {
     /// Yoop: set once the recent window has been rescored with each night measured against its own need
     /// (`SleepModel.nightNeed`), whose sleep debt is WHOOP's (`WhoopSleepDebt`). v1 was the pass that first
     /// measured each night against its own need, with the NOOP ledger's debt in it; v2 is the pass after the
-    /// debt became WHOOP's, so a device that ran v1 scores its recent nights once more.
-    static let nightNeedRescoreFlagKey = "yoop.nightNeedRescore.v2.done"
+    /// debt became WHOOP's; v3 is the pass after the Strain term was refitted (`WhoopSleepDebt.needMinPerStrainPoint`),
+    /// so a device that ran an earlier one scores its recent nights once more.
+    static let nightNeedRescoreFlagKey = "yoop.nightNeedRescore.v3.done"
 
     /// Yoop: rescores the recent window once after an update that changes the need each night is measured
     /// against (`nightNeedRescoreFlagKey`), so the stored Sleep Performance Home, Trends and the Coach read

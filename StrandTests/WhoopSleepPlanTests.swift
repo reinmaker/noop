@@ -149,7 +149,8 @@ final class WhoopSleepPlanTests: XCTestCase {
         XCTAssertEqual(easy.wakeSource, .recommended)
         XCTAssertEqual(hard.wakeSource, .recommended)
         let extra = hard.timeInBedMin - easy.timeInBedMin
-        XCTAssertEqual(extra, SleepModel.needMinPerStrainPoint * 10 / 0.9, accuracy: 1e-6, "10 points of Strain above the floor")
+        XCTAssertEqual(extra, WhoopSleepDebt.needMinPerStrainPoint * (20 - WhoopSleepDebt.needStrainFloor) / 0.9, accuracy: 1e-6,
+                       "the points of Strain above the floor")
         XCTAssertEqual(minutes(easy.bedtime, hard.bedtime), extra / 2, accuracy: 1e-6, "the bedtime moves earlier")
         XCTAssertEqual(minutes(hard.wake, easy.wake), extra / 2, accuracy: 1e-6, "the wake time moves later")
         let easyMiddle = easy.bedtime.addingTimeInterval(easy.timeInBedMin * 30)
