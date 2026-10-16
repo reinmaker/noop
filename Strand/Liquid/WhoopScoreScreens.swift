@@ -34,7 +34,7 @@ struct WhoopCoachPill: View {
         parts.append(sleep.map { String(Int($0)) } ?? "")
         parts.append(strain.map { String(Int($0)) } ?? "")
         if !figure.isEmpty { parts.append(figure) }
-        return "whoopStyle.pill2." + screen.rawValue + "." + parts.joined(separator: "|")
+        return "whoopStyle.pill3." + screen.rawValue + "." + parts.joined(separator: "|")
     }
 
     var body: some View {

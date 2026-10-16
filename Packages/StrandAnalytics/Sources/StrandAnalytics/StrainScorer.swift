@@ -151,20 +151,29 @@ public enum StrainScorer {
 
     // MARK: - WHOOP-calibrated curve
 
-    // Fitted to a WHOOP export: 65 cardio workouts with WHOOP's zone breakdown and Activity Strain, and
-    // 77 days with Day Strain (strength sessions left out, since WHOOP adds muscular load to those).
-    // Each minute adds x * e^(b * x) above a sitting floor, where x is %HRR against a fixed 190 bpm
-    // yardstick, and Strain on WHOOP's axis is A * ln(1 + load / c), capped at 21. RMSE 0.9 Strain per
-    // workout and 1.3 per day. The floor is why a desk day stays near zero: WHOOP's export puts this
-    // user's waking heart rate around 64 bpm, which Banister's per-minute rate kept counting all day.
+    // Fitted to a WHOOP export: 75 workouts that are not strength, with WHOOP's zone breakdown and Activity
+    // Strain, and 45 days with Day Strain (strength sessions left out, since WHOOP adds muscular load to
+    // those). Each minute adds x * e^(b * x) above a sitting floor, where x is %HRR against a fixed 190 bpm
+    // yardstick, and Strain on WHOOP's axis is A * ln(1 + load / c), capped at 21. RMSE 1.3 Strain per
+    // workout and 1.5 per day, with a zone's heart rate taken as its typical value. The floor is why a desk
+    // day stays near zero: WHOOP's export puts this user's waking heart rate around 64 bpm, which Banister's
+    // per-minute rate kept counting all day.
+    //
+    // Refitted on 15 Oct 2026. The first fit read 1.1 Strain too high on the user's 22 tennis sessions (a
+    // 2 h 15 min session at an average of 107 bpm: WHOOP 10.2, the first curve 11.9 to 12.3) and 1.3 too
+    // high on sessions at an average of 115 to 130 bpm in general. The refit weights the running sessions
+    // up so they hold, and keeps three full days of the user's own heart rate within 0.5 Strain of the
+    // first curve, so a desk day does not move. In the same sample tennis is now +0.4 (rmse 0.7), 115 to
+    // 130 bpm +0.5, running +0.1 (rmse 0.6), and walking reads 1.2 low (it was 0.6 low); the 2 h 15 min
+    // session reads 11.0 against WHOOP's 10.2. A fit to one export, with zone heart rates taken as typical.
 
     /// The HRmax yardstick the curve was fitted against. Part of the model, so it is not the profile's.
     public static let whoopCurveMaxHR: Double = 190
-    static let whoopCurveB: Double = 3.647
+    static let whoopCurveB: Double = 4.025
     /// %HRR (0-1) below which a minute adds nothing: sitting and standing.
-    static let whoopCurveFloor: Double = 0.20
-    static let whoopCurveA: Double = 3.4514
-    static let whoopCurveC: Double = 6.202
+    static let whoopCurveFloor: Double = 0.1735
+    static let whoopCurveA: Double = 3.584
+    static let whoopCurveC: Double = 11.48
 
     /// Accumulated load over the series for the WHOOP-calibrated curve.
     static func whoopLoad(_ hr: [HRSample], restingHR: Double, durations: [Double]) -> Double {

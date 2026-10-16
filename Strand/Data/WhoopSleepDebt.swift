@@ -9,9 +9,8 @@ import WhoopStore
 /// `debt(t) = 0.5 x max(0, need(t-1) - asleep(t-1))`. Against WHOOP's own Sleep debt column this one-night
 /// rule has an RMSE of 5.7 minutes, and the best decayed sum of up to four nights (scale 0.50, decay 0.05,
 /// which is one night in effect) 5.0, where a constant debt of the median is 29 off. A need is the healthy
-/// minimum + 7.3 min for each point of the previous day's Strain above 10 + that debt, so the rule runs
-/// recursively over a night's own need: over the 121 nights the recursion has a need RMSE of 32 minutes
-/// against 44 for a constant need. The NOOP ledger it replaces here (`SleepDebt`: 55% carried over 14
+/// minimum + the Strain term below + that debt, so the rule runs recursively over a night's own need: over
+/// the 121 nights the recursion has a need RMSE of 32 minutes against 44 for a constant need. The NOOP ledger it replaces here (`SleepDebt`: 55% carried over 14
 /// nights against a need of 8 h or more) overstated the same debt by about 70 minutes.
 ///
 /// Only a night with a sleep total counts, and a night without one is skipped, never filled with zero.
@@ -19,6 +18,14 @@ import WhoopStore
 enum WhoopSleepDebt {
     /// The share of a night's shortfall that is carried into the next night.
     static let carryShare = 0.5
+
+    /// Minutes of need each point of the previous day's Strain above `needStrainFloor` adds. A least
+    /// absolute deviation fit to the 121 nights of the user's WHOOP export (median miss 2 min) and to two
+    /// readouts of the WHOOP app on 14 and 15 Oct 2026 (a Strain of about 10.2 added 12 min, 11.1 added
+    /// 16), which the 7.3 min above a floor of 10 that this replaces on the Yoop path read as 0 and 8.
+    static let needMinPerStrainPoint = 5.45
+    /// The Strain, on WHOOP's 0-21 axis, above which a day adds to the next night's need.
+    static let needStrainFloor = 8.2
 
     /// The debt a night hands to the next one, in minutes: `carryShare` of how far the sleep fell short of
     /// the night's own need, and none when it met it.
@@ -71,14 +78,15 @@ enum WhoopSleepDebt {
         }
 
         /// The need of the night ending on `wakeDay` from what the chain has taken in, which must all be
-        /// from earlier days: the healthy minimum + 7.3 min for each point of the previous day's Strain
-        /// above 10 + the debt the last night with sleep left.
+        /// from earlier days: the healthy minimum + the Strain term (`WhoopSleepDebt.needMinPerStrainPoint`
+        /// for each point of the previous day's Strain above `needStrainFloor`) + the debt the last night
+        /// with sleep left.
         mutating func need(endingOn wakeDay: String) -> NightNeed {
             bank(before: wakeDay)
             let strain = strainByDay[WeeklyDigestEngine.addDays(wakeDay, -1)] ?? 0
             let baseline = count > 0 ? Swift.max(450, sum / Double(count)) : 450
             return NightNeed(baselineMin: baseline,
-                             strainMin: SleepModel.needMinPerStrainPoint * Swift.max(0, strain - SleepModel.needStrainFloor),
+                             strainMin: WhoopSleepDebt.needMinPerStrainPoint * Swift.max(0, strain - WhoopSleepDebt.needStrainFloor),
                              debtMin: last.map { WhoopSleepDebt.carried(needMin: $0.needMin, asleepMin: $0.asleepMin) } ?? 0)
         }
 

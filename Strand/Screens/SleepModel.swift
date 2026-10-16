@@ -629,7 +629,8 @@ extension SleepModel {
 
     // MARK: One night's sleep need
 
-    /// Minutes of need each point of the previous day's Strain above `needStrainFloor` adds.
+    /// Minutes of need each point of the previous day's Strain above `needStrainFloor` adds, on the NOOP
+    /// ledger's path; with Yoop's scores on the need uses `WhoopSleepDebt.needMinPerStrainPoint`.
     static let needMinPerStrainPoint = 7.3
     /// The Strain, on WHOOP's 0-21 axis, above which a day adds to the next night's need.
     static let needStrainFloor = 10.0

@@ -62,7 +62,7 @@ final class StrainWhoopCurveTests: XCTestCase {
         XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: 0), 0)
         XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: 25),
                        StrainScorer.whoopInverseLoad(strain: StrainScorer.whoopMaxStrain))
-        XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: 11.0), 144.0, accuracy: 0.5)
+        XCTAssertEqual(StrainScorer.whoopInverseLoad(strain: 11.0), 235.6, accuracy: 0.5)
     }
 
     /// The curve uses its own HRmax yardstick, so a profile max does not move it.

@@ -70,8 +70,8 @@ final class NightNeedTests: XCTestCase {
 
     // MARK: The need
 
-    /// The planner's arithmetic: the healthy minimum + 7.3 min per point of the previous day's Strain above
-    /// 10 + the sleep debt the Sleep Debt series carries out of the previous night. Without Yoop's scores
+    /// The planner's arithmetic: the healthy minimum + the Strain term (7.3 min per point of the previous day's
+    /// Strain above 10; with Yoop's scores WHOOP's `WhoopSleepDebt.needMinPerStrainPoint` above its floor) + the sleep debt the Sleep Debt series carries out of the previous night. Without Yoop's scores
     /// the debt is the NOOP ledger's; with them it is WHOOP's, and the same two readouts agree.
     @MainActor
     func testNeedIsTheHealthyMinimumPlusStrainAboveTenPlusTheCarriedDebt() {
@@ -79,11 +79,12 @@ final class NightNeedTests: XCTestCase {
             withYoopScores(yoop) {
                 let need = SleepModel.nightNeed(wakeDay: "2026-10-11", days: evening, importedSleep: [:])
                 XCTAssertEqual(need.baselineMin, 450, "7-hour nights sit under the 7:30 floor")
-                XCTAssertEqual(need.strainMin, 7.3 * 8, accuracy: 1e-9)
+                let strainMin = yoop ? WhoopSleepDebt.needMinPerStrainPoint * (18 - WhoopSleepDebt.needStrainFloor) : 7.3 * 8
+                XCTAssertEqual(need.strainMin, strainMin, accuracy: 1e-9)
                 let carried = SleepModel.sleepDebtSeries(days: evening, importedSleep: [:], napSleepMinByDay: [:]).latest
                 XCTAssertEqual(need.debtMin, carried, "yoop \(yoop)")
                 XCTAssertGreaterThan(need.debtMin, 0)
-                XCTAssertEqual(need.needMin, 450 + 7.3 * 8 + need.debtMin, accuracy: 1e-9)
+                XCTAssertEqual(need.needMin, 450 + strainMin + need.debtMin, accuracy: 1e-9)
             }
         }
     }
@@ -155,11 +156,11 @@ final class NightNeedTests: XCTestCase {
         }
     }
 
-    /// Strain counts from the day before the night only; a day under 10 adds nothing.
+    /// Strain counts from the day before the night only; a day under the floor adds nothing.
     @MainActor
-    func testStrainIsThePreviousDaysAndOnlyAboveTen() {
+    func testStrainIsThePreviousDaysAndOnlyAboveTheFloor() {
         inBothModes { yoop in
-            let restDay = evening.dropLast() + [day("2026-10-10", asleep: 430, strain21: 9.5)]
+            let restDay = evening.dropLast() + [day("2026-10-10", asleep: 430, strain21: 8.0)]
             XCTAssertEqual(SleepModel.nightNeed(wakeDay: "2026-10-11", days: Array(restDay), importedSleep: [:]).strainMin, 0, "yoop \(yoop)")
             // No row for 10 Oct: the 18.0 of 9 Oct belongs to an earlier night.
             let gap = evening.dropLast(2) + [day("2026-10-09", asleep: 420, strain21: 18)]
@@ -186,7 +187,9 @@ final class NightNeedTests: XCTestCase {
                                                    scale: .whoop)
         XCTAssertGreaterThan(ringStrain, 18)
         let need = SleepModel.nightNeed(wakeDay: "2026-10-11", days: resolved, importedSleep: [:])
-        XCTAssertEqual(need.strainMin, 7.3 * (ringStrain - 10), accuracy: 1e-9, "yoop \(yoop)")
+        let expected = yoop ? WhoopSleepDebt.needMinPerStrainPoint * (ringStrain - WhoopSleepDebt.needStrainFloor)
+                          : 7.3 * (ringStrain - 10)
+        XCTAssertEqual(need.strainMin, expected, accuracy: 1e-9, "yoop \(yoop)")
     }
 
     // MARK: One resolver for the plan and the morning's scores

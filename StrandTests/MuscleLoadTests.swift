@@ -49,7 +49,7 @@ final class MuscleLoadTests: XCTestCase {
     func testRatedLoadIsMinutesAtTheRatingsReserveOnStrainsCurve() {
         let perMinute = StrainScorer.whoopMinuteLoad(reserve: 0.775)
         XCTAssertEqual(MuscleLoad.ratedLoad(effort: 7, minutes: 45), 45 * perMinute, accuracy: 1e-9)
-        XCTAssertEqual(MuscleLoad.ratedLoad(effort: 7, minutes: 45), 570.2, accuracy: 0.5)
+        XCTAssertEqual(MuscleLoad.ratedLoad(effort: 7, minutes: 45), 773.6, accuracy: 0.5)
         XCTAssertEqual(MuscleLoad.ratedLoad(effort: 0, minutes: 45), 0)
         XCTAssertEqual(MuscleLoad.ratedLoad(effort: 7, minutes: 0), 0)
         let loads = (0...10).map { MuscleLoad.ratedLoad(effort: $0, minutes: 45) }
@@ -57,8 +57,8 @@ final class MuscleLoadTests: XCTestCase {
     }
 
     func testHeartLoadIsTheLoadBehindTheStoredStrain() {
-        XCTAssertEqual(MuscleLoad.heartLoad(storedStrain: stored(11.0)), 144.0, accuracy: 0.5)
-        XCTAssertEqual(MuscleLoad.heartLoad(storedStrain: stored(17.7)), 1040, accuracy: 1)
+        XCTAssertEqual(MuscleLoad.heartLoad(storedStrain: stored(11.0)), 235.6, accuracy: 0.5)
+        XCTAssertEqual(MuscleLoad.heartLoad(storedStrain: stored(17.7)), 1590.9, accuracy: 1)
         XCTAssertEqual(MuscleLoad.heartLoad(storedStrain: nil), 0)
         XCTAssertEqual(MuscleLoad.heartLoad(storedStrain: 0), 0)
     }
@@ -112,7 +112,7 @@ final class MuscleLoadTests: XCTestCase {
     }
 
     func testNoMuscleLoadWhenHeartRateAlreadyCoversTheRating() {
-        // Rated 4 ("somewhat hard") for 45 minutes is a rated load of about 121, under the 144 heart rate measured.
+        // Rated 4 ("somewhat hard") for 45 minutes is a rated load of about 153, under the 236 heart rate measured.
         let lift = row(now - 3_600, sport: "Weightlifting")
         let book = StrainBook.build(rows: [lift], efforts: [lift.startTs: 4], now: now, dayKey: dayKey)
         XCTAssertEqual(book.splits[lift.startTs]?.muscleLoad, 0)
@@ -147,23 +147,23 @@ final class MuscleLoadTests: XCTestCase {
 
     // MARK: Sanity numbers: the 45 minute lifting session of 2026-10-10
 
-    /// The session scored 11.0 from heart rate (a load of about 144) on a day of 17.7 (about 1040). The
-    /// brief expected a rating of 7 to land near 14 and the day at 18.3 to 18.5; on the specified table those
-    /// are a rating of 6's figures, since 7 sits at 0.775 of the reserve. Both are pinned so a change to
-    /// the table or the curve shows here.
+    /// The session scored 11.0 from heart rate (a load of about 236) on a day of 17.7 (about 1590). The
+    /// brief expected a rating of 7 to land near 14 and the day at 18.3 to 18.5; on the specified table a
+    /// rating of 6 is the nearer (13.7 and 18.3 on the refitted curve of 15 Oct 2026, 14.3 and 18.4 on the
+    /// first), since 7 sits at 0.775 of the reserve. Both are pinned so a change to the table or the curve
+    /// shows here.
     func testSanityNumbersOfThe10OctLiftingSession() {
         let lift = row(now - 3_600, sport: "Weightlifting")
         let day = stored(17.7)
 
         let six = StrainBook.build(rows: [lift], efforts: [lift.startTs: 6], now: now, dayKey: dayKey)
-        XCTAssertEqual(shown(six.activityStrain(lift)) ?? 0, 14.3, accuracy: 0.1)
+        XCTAssertEqual(shown(six.activityStrain(lift)) ?? 0, 13.7, accuracy: 0.1)
         let daySix = shown(six.dayStrain(day: "2026-10-10", stored: day, live: nil)) ?? 0
-        XCTAssertGreaterThanOrEqual(daySix, 18.3)
-        XCTAssertLessThanOrEqual(daySix, 18.5)
+        XCTAssertEqual(daySix, 18.27, accuracy: 0.05)
 
         let seven = StrainBook.build(rows: [lift], efforts: [lift.startTs: 7], now: now, dayKey: dayKey)
-        XCTAssertEqual(shown(seven.activityStrain(lift)) ?? 0, 15.6, accuracy: 0.1)
-        XCTAssertEqual(shown(seven.dayStrain(day: "2026-10-10", stored: day, live: nil)) ?? 0, 18.9, accuracy: 0.1)
+        XCTAssertEqual(shown(seven.activityStrain(lift)) ?? 0, 15.1, accuracy: 0.1)
+        XCTAssertEqual(shown(seven.dayStrain(day: "2026-10-10", stored: day, live: nil)) ?? 0, 18.7, accuracy: 0.1)
 
         // The split adds up: heart 11.0 plus the muscle part is the activity's Strain.
         let split = six.splits[lift.startTs]
@@ -268,8 +268,8 @@ final class MuscleLoadTests: XCTestCase {
 
             await repo.setActivityEffort(6, for: lift)
             XCTAssertEqual(repo.activityEffort(lift), 6)
-            XCTAssertEqual(shown(repo.activityStrain(lift)) ?? 0, 14.3, accuracy: 0.1)
-            XCTAssertEqual(shown(repo.dayStrain(day: key, stored: stored(17.7))) ?? 0, 18.4, accuracy: 0.1)
+            XCTAssertEqual(shown(repo.activityStrain(lift)) ?? 0, 13.7, accuracy: 0.1)
+            XCTAssertEqual(shown(repo.dayStrain(day: key, stored: stored(17.7))) ?? 0, 18.3, accuracy: 0.1)
             XCTAssertEqual(repo.strainBook.splits[lift.startTs]?.effort, 6)
 
             // A re-save under a new start (an edit, or a detected bout moved) takes the rating along.
