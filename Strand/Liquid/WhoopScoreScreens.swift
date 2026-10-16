@@ -319,6 +319,11 @@ struct WhoopRecoveryScreen: View {
     /// SLEEP PERFORMANCE row states the same number.
     @State private var storedSleep: [String: Double] = [:]
 
+    /// The mean of a 30-day history, nil with fewer than three days (as the contributor rows read it).
+    private static func usual(_ values: [Double]) -> Double? {
+        values.count < 3 ? nil : values.reduce(0, +) / Double(values.count)
+    }
+
     var body: some View {
         // Each day's Strain as the Strain ring shows it, which a night's need reads (`SleepModel.nightNeed`).
         let shown = WhoopSelectedDay.split(repo.strainDays)
@@ -327,6 +332,7 @@ struct WhoopRecoveryScreen: View {
         let prior = shown.prior
         let sleepPerf = SleepModel.performanceSeries(days: days, importedSleep: repo.importedSleep,
                                                      sleeps: repo.sleeps, stored: storedSleep)
+        let sleepHistory = Array(sleepPerf.series.dropLast().suffix(30))
         let rows = [
             WhoopContributorMath.make(id: "hrv", label: String(localized: "HEART RATE VARIABILITY"),
                                       icon: "waveform.path.ecg", today: today?.avgHrv,
@@ -338,11 +344,20 @@ struct WhoopRecoveryScreen: View {
                                       today: today?.respRateBpm, history: prior.compactMap(\.respRateBpm),
                                       decimals: 1, higherIsBetter: false),
             WhoopContributorMath.make(id: "sleep", label: String(localized: "SLEEP PERFORMANCE"), icon: "moon",
-                                      today: sleepPerf.latest, history: Array(sleepPerf.series.dropLast().suffix(30)),
+                                      today: sleepPerf.latest, history: sleepHistory,
                                       suffix: "%", higherIsBetter: true),
         ]
         let recovery = today?.recovery
         let week = WhoopSelectedDay.lastWeek(days)
+        // The sentence is about the latest day only: it speaks of today.
+        let isLatest = today?.day != nil && today?.day == days.last?.day && today?.day == repo.strainDays.last?.day
+        let readings: [WhoopScoreInsightText.Reading] = [
+            .init(driver: .hrv, today: today?.avgHrv, usual: Self.usual(prior.compactMap(\.avgHrv))),
+            .init(driver: .restingHr, today: today?.restingHr.map(Double.init),
+                  usual: Self.usual(prior.compactMap { $0.restingHr.map(Double.init) })),
+            .init(driver: .respiratory, today: today?.respRateBpm, usual: Self.usual(prior.compactMap(\.respRateBpm))),
+            .init(driver: .sleep, today: sleepPerf.latest, usual: Self.usual(sleepHistory)),
+        ]
 
         ScrollView {
             VStack(spacing: NoopMetrics.space4) {
@@ -351,6 +366,15 @@ struct WhoopRecoveryScreen: View {
                                diameter: 230, lineWidth: 16, caption: String(localized: "RECOVERY"))
                     .padding(.top, NoopMetrics.space4)
                 WhoopContributorsCard(rows: rows)
+                if isLatest, let recovery {
+                    WhoopOutlineInsightCard(
+                        text: WhoopScoreInsightText.recoverySentence(recovery: recovery, readings: readings),
+                        linkTitle: String(localized: "EXPLORE RECOVERY INSIGHTS"),
+                        prompt: "Explain today's Recovery of \(Int(recovery.rounded()))%: what is behind it in my HRV, "
+                            + "resting heart rate, breathing rate and last night's sleep against my normal, and what "
+                            + "I should do today.")
+                }
+                if let day = today?.day { WhoopRecoveryBehaviorsCard(day: day) }
                 Text("Weekly Trends")
                     .font(WhoopStyle.sectionTitle)
                     .foregroundStyle(StrandPalette.textPrimary)
@@ -370,6 +394,20 @@ struct WhoopRecoveryScreen: View {
                                     }
                                 },
                                 maxValue: max(1, week.compactMap(\.avgHrv).max() ?? 1))
+                WhoopWeeklyBars(title: String(localized: "RESTING HEART RATE"),
+                                points: week.compactMap { d in
+                                    d.restingHr.map { r -> (day: String, value: Double, label: String, color: Color) in
+                                        (WhoopDays.short(d.day), Double(r), "\(r)", WhoopStyle.stressLow)
+                                    }
+                                },
+                                maxValue: max(1, week.compactMap { $0.restingHr.map(Double.init) }.max() ?? 1))
+                WhoopWeeklyBars(title: String(localized: "RESPIRATORY RATE"),
+                                points: week.compactMap { d in
+                                    d.respRateBpm.map { r -> (day: String, value: Double, label: String, color: Color) in
+                                        (WhoopDays.short(d.day), r, String(format: "%.1f", r), WhoopStyle.stressMedium)
+                                    }
+                                },
+                                maxValue: max(1, week.compactMap(\.respRateBpm).max() ?? 1))
             }
             .padding(.horizontal, NoopMetrics.space4)
             .padding(.bottom, NoopMetrics.space10)
@@ -391,9 +429,34 @@ struct WhoopRecoveryScreen: View {
 
 struct WhoopStrainScreen: View {
     @EnvironmentObject private var repo: Repository
-    @State private var activityMinutes: Double?
-    @State private var workoutCount = 0
+    /// The shown day's logged activities, newest last.
+    @State private var workouts: [WorkoutRow] = []
+    /// Time in zones and in strength activity for each of the last days (`WhoopStrainFigures`).
+    @State private var figures: [String: WhoopDayActivityFigures] = [:]
     @State private var appleSteps: [String: Double] = [:]
+    @State private var figuresSignature = ""
+
+    /// One contributor row of a time figure (hours and minutes) against its 30-day usual.
+    private static func timeRow(id: String, label: String, icon: String, minutes: Double,
+                                usual: Double?) -> WhoopContributor {
+        var direction = 0
+        if let usual, abs(minutes - usual) > max(1, usual * 0.01) { direction = minutes > usual ? 1 : -1 }
+        return WhoopContributor(id: id, label: label, icon: icon, value: WhoopStrainFigures.hoursAndMinutes(minutes),
+                                average: usual.map(WhoopStrainFigures.hoursAndMinutes), direction: direction,
+                                higherIsBetter: true)
+    }
+
+    /// What the Coach is asked from the Strain screen's link.
+    private static func strainPrompt(strain: Double, band: ClosedRange<Int>?) -> String {
+        var text = "Explain my Strain so far today (" + String(format: "%.1f", strain) + ") against my optimal range"
+        if let band { text += " of \(band.lowerBound) to \(band.upperBound)" }
+        return text + ": what drove it, and what should I do for the rest of the day?"
+    }
+
+    /// A compact count for a bar's label: 18762 as "18.8K".
+    private static func thousands(_ value: Double) -> String {
+        value >= 1000 ? String(format: "%.1fK", value / 1000) : "\(Int(value.rounded()))"
+    }
 
     var body: some View {
         // Strain through the one funnel (`Repository.strainDays`): the ring, the contributor row and the
@@ -404,27 +467,26 @@ struct WhoopStrainScreen: View {
         let prior = shown.prior
         let strain = today?.strain.map(AICoachEngine.strain21)
         let band = CoupledView.optimalStrainRange(recovery: today?.recovery)
+        let key = today?.day ?? ""
+        let figure = figures[key] ?? WhoopDayActivityFigures()
+        let isLatest = !key.isEmpty && key == repo.strainDays.last?.day
         let rows = [
-            WhoopContributor(id: "activity", label: String(localized: "ACTIVITY TIME"), icon: "stopwatch",
-                             value: activityMinutes.map { String(format: "%d:%02d", Int($0) / 60, Int($0) % 60) } ?? "0:00",
-                             average: workoutCount == 1 ? String(localized: "1 activity")
-                                                        : String(localized: "\(workoutCount) activities"),
-                             direction: 0, higherIsBetter: true),
+            Self.timeRow(id: "z13", label: String(localized: "HEART RATE ZONES 1-3"), icon: "heart",
+                         minutes: figure.zones13Min,
+                         usual: WhoopStrainFigures.usual(figures, before: key, knownDays: prior.count) { $0.zones13Min }),
+            Self.timeRow(id: "z45", label: String(localized: "HEART RATE ZONES 4-5"), icon: "heart.fill",
+                         minutes: figure.zones45Min,
+                         usual: WhoopStrainFigures.usual(figures, before: key, knownDays: prior.count) { $0.zones45Min }),
+            Self.timeRow(id: "strength", label: String(localized: "Strength Activity Time").uppercased(),
+                         icon: "figure.strengthtraining.traditional", minutes: figure.strengthMin,
+                         usual: WhoopStrainFigures.usual(figures, before: key, knownDays: prior.count) { $0.strengthMin }),
             // Steps: the strap's count first, else the iPhone's, as on Home.
             WhoopContributorMath.make(id: "steps", label: String(localized: "STEPS"), icon: "shoeprints.fill",
                                       today: today?.steps.map(Double.init) ?? today.flatMap { appleSteps[$0.day] },
                                       history: prior.compactMap { $0.steps.map(Double.init) ?? appleSteps[$0.day] },
                                       floor: 1000, higherIsBetter: true),
-            // Yoop stores ACTIVE energy (`Calories.yoopEnergyEnabled`); NOOP stores the whole-day total.
-            WhoopContributorMath.make(id: "kcal", label: PuffinExperiment.whoopScoresEnabled
-                                          ? String(localized: "ACTIVE CALORIES") : String(localized: "CALORIES"),
-                                      icon: "flame",
-                                      today: today?.activeKcalEst, history: prior.compactMap(\.activeKcalEst),
-                                      floor: 100, higherIsBetter: true),
-            WhoopContributorMath.make(id: "strain", label: String(localized: "DAY STRAIN"), icon: "bolt",
-                                      today: strain, history: prior.compactMap { $0.strain.map(AICoachEngine.strain21) },
-                                      decimals: 1, higherIsBetter: true),
         ]
+        let week = WhoopSelectedDay.lastWeek(days)
 
         ScrollView {
             VStack(spacing: NoopMetrics.space4) {
@@ -439,19 +501,65 @@ struct WhoopStrainScreen: View {
                         .foregroundStyle(StrandPalette.textSecondary)
                 }
                 WhoopContributorsCard(rows: rows)
+                if isLatest, let strain {
+                    let state = WhoopScoreInsightText.strainState(
+                        strain: strain, band: band.map { (Double($0.lowerBound), Double($0.upperBound)) })
+                    WhoopOutlineInsightCard(
+                        text: WhoopScoreInsightText.strainSentence(state),
+                        linkTitle: String(localized: "EXPLORE YOUR STRAIN INSIGHTS"),
+                        prompt: Self.strainPrompt(strain: strain, band: band))
+                }
+                if !workouts.isEmpty {
+                    Text(isLatest ? String(localized: "Today's Activities")
+                                  : String(localized: "ACTIVITIES").localizedCapitalized)
+                        .font(WhoopStyle.sectionTitle)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, NoopMetrics.space2)
+                    VStack(spacing: NoopMetrics.space2) {
+                        ForEach(workouts, id: \.startTs) { w in
+                            NavigationLink(value: TabRoute.activity(WhoopActivityRoute(row: w))) {
+                                WhoopActivityRowView(
+                                    icon: sportSymbol(w.sport),
+                                    chip: repo.activityStrain(w).map { String(format: "%.1f", AICoachEngine.strain21($0)) } ?? "–",
+                                    chipColor: StrandPalette.effortColor,
+                                    name: WorkoutSource.displaySport(w.sport).uppercased(),
+                                    start: Date(timeIntervalSince1970: TimeInterval(w.startTs)),
+                                    end: Date(timeIntervalSince1970: TimeInterval(w.endTs)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
                 Text("Weekly Trends")
                     .font(WhoopStyle.sectionTitle)
                     .foregroundStyle(StrandPalette.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, NoopMetrics.space2)
                 WhoopWeeklyBars(title: String(localized: "STRAIN"),
-                                points: WhoopSelectedDay.lastWeek(days).compactMap { d in
+                                points: week.compactMap { d in
                                     d.strain.map { s -> (day: String, value: Double, label: String, color: Color) in
                                         let v = AICoachEngine.strain21(s)
                                         return (WhoopDays.short(d.day), v, String(format: "%.1f", v), StrandPalette.effortColor)
                                     }
                                 },
                                 maxValue: 21)
+                WhoopWeeklyBars(title: String(localized: "STEPS"),
+                                points: week.compactMap { d in
+                                    (d.steps.map(Double.init) ?? appleSteps[d.day]).map { v -> (day: String, value: Double, label: String, color: Color) in
+                                        (WhoopDays.short(d.day), v, Self.thousands(v), StrandPalette.restColor)
+                                    }
+                                },
+                                maxValue: max(1, week.compactMap { $0.steps.map(Double.init) ?? appleSteps[$0.day] }.max() ?? 1))
+                // Yoop stores ACTIVE energy (`Calories.yoopEnergyEnabled`); NOOP stores the whole-day total.
+                WhoopWeeklyBars(title: PuffinExperiment.whoopScoresEnabled
+                                    ? String(localized: "ACTIVE CALORIES") : String(localized: "CALORIES"),
+                                points: week.compactMap { d in
+                                    d.activeKcalEst.map { v -> (day: String, value: Double, label: String, color: Color) in
+                                        (WhoopDays.short(d.day), v, "\(Int(v.rounded()))", WhoopStyle.stressHigh)
+                                    }
+                                },
+                                maxValue: max(1, week.compactMap(\.activeKcalEst).max() ?? 1))
             }
             .padding(.horizontal, NoopMetrics.space4)
             .padding(.bottom, NoopMetrics.space10)
@@ -462,19 +570,25 @@ struct WhoopStrainScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .safeAreaInset(edge: .bottom, spacing: 0) { WhoopCoachPill(screen: .strain) }
-        .task {
+        .task(id: "\(repo.refreshSeq)|\(key)") {
             // Activities on the shown day.
             let dayStart = (today.flatMap { WhoopDays.parser.date(from: $0.day) })
                 .map { Calendar.current.startOfDay(for: $0) } ?? Calendar.current.startOfDay(for: Date())
             let start = dayStart.timeIntervalSince1970
             let end = start + 24 * 3600
-            let rows = await repo.workoutRows(days: 40).filter {
-                TimeInterval($0.startTs) >= start && TimeInterval($0.startTs) < end
-            }
-            workoutCount = rows.count
+            let all = await repo.workoutRows(days: 40)
+            workouts = all
+                .filter { TimeInterval($0.startTs) >= start && TimeInterval($0.startTs) < end }
+                .sorted { $0.startTs < $1.startTs }
             appleSteps = Dictionary((await repo.appleDailyRows(days: 40)).compactMap { r in r.steps.map { (r.day, Double($0)) } },
                                     uniquingKeysWith: { a, b in max(a, b) })
-            activityMinutes = rows.reduce(0) { $0 + Double($1.endTs - $1.startTs) / 60 }
+            // The zone figures read heart rate for each activity, so they are worked out again only when the
+            // activities themselves have changed, not on every data refresh.
+            let signature = "\(all.count)|\(all.map(\.endTs).max() ?? 0)"
+            if signature != figuresSignature {
+                figures = await WhoopStrainFigures.load(repo: repo, rows: all)
+                figuresSignature = signature
+            }
         }
     }
 }
