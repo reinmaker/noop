@@ -80,6 +80,8 @@ private struct WhoopBlobParticles: View {
 struct WhoopAgeBubble: View {
     let snapshot: WhoopAgeSnapshot?
     var diameter: CGFloat = 220
+    /// The folded header's small bubble: the age alone.
+    var compact = false
 
     var body: some View {
         let result = snapshot?.isUnlocked == true ? snapshot?.result : nil
@@ -102,14 +104,14 @@ struct WhoopAgeBubble: View {
                     .foregroundStyle(StrandPalette.textPrimary)
                     .monospacedDigit()
                 Text("WHOOP AGE")
-                    .font(WhoopStyle.smallLabel)
+                    .font(compact ? WhoopStyle.chevron : WhoopStyle.smallLabel)
                     .foregroundStyle(StrandPalette.textSecondary)
-                if let result {
+                if let result, !compact {
                     Text(WhoopAgeText.delta(yearsYounger: result.yearsYounger).localizedLowercase)
                         .font(WhoopStyle.detail)
                         .foregroundStyle(tint)
                         .multilineTextAlignment(.center)
-                } else if snapshot != nil {
+                } else if snapshot != nil, result == nil, !compact {
                     Text("CALIBRATING")
                         .font(WhoopStyle.detail)
                         .foregroundStyle(StrandPalette.textSecondary)
@@ -121,6 +123,49 @@ struct WhoopAgeBubble: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(result.map { String(localized: "WHOOP Age \(String(format: "%.1f", $0.whoopAge)), \(WhoopAgeText.delta(yearsYounger: $0.yearsYounger))") }
                                  ?? String(localized: "WHOOP Age is calibrating")))
+    }
+}
+
+// MARK: - The folded header
+
+/// The scroll offset of the Healthspan page's content, read to know when the bubble has left the screen.
+struct WhoopScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// What WHOOP's Healthspan page keeps at the top once the bubble has scrolled away: the years younger on the left,
+/// a small bubble in the middle and the pace on the right.
+struct WhoopHealthspanCompactHeader: View {
+    let snapshot: WhoopAgeSnapshot?
+
+    var body: some View {
+        let result = snapshot?.isUnlocked == true ? snapshot?.result : nil
+        let younger = (result?.yearsYounger ?? 0) >= 0
+        HStack(alignment: .center) {
+            VStack(spacing: 2) {
+                Text(result.map { String(format: "%.1f", abs($0.yearsYounger)) } ?? "--")
+                    .font(WhoopStyle.number(20))
+                    .foregroundStyle(younger ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
+                Text(younger ? String(localized: "YEARS YOUNGER") : String(localized: "YEARS OLDER"))
+                    .font(WhoopStyle.chevron)
+                    .foregroundStyle(StrandPalette.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            WhoopAgeBubble(snapshot: snapshot, diameter: 92, compact: true)
+            VStack(spacing: 2) {
+                Text(WhoopAgeText.paceNumber(snapshot?.pace))
+                    .font(WhoopStyle.number(20))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text("PACE OF AGING")
+                    .font(WhoopStyle.chevron)
+                    .foregroundStyle(StrandPalette.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, NoopMetrics.space4)
+        .padding(.vertical, NoopMetrics.space1)
+        .background(StrandPalette.surfaceBase.opacity(0.96))
     }
 }
 

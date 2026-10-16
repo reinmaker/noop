@@ -404,7 +404,7 @@ struct WhoopAgeHealthCardContent: View {
         VStack(spacing: NoopMetrics.space4) {
             NavigationLink(value: TabRoute.whoopAge) {
                 VStack(spacing: NoopMetrics.space3) {
-                    WhoopAgeBubble(snapshot: snapshot, diameter: 270)
+                    WhoopAgeBubble(snapshot: snapshot, diameter: 240)
                     WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact)
                 }
                 .frame(maxWidth: .infinity)

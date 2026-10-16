@@ -281,11 +281,36 @@ struct WhoopAgePage: View {
     var onOpenSettings: (() -> Void)?
     var onAddBirthDate: (() -> Void)?
 
+    /// The bubble has scrolled out of sight: WHOOP folds it into the top bar then.
+    @State private var collapsed = false
+
     var body: some View {
-        WhoopDayPage(title: String(localized: "HEALTHSPAN")) {
-            WhoopAgeContent(snapshot: snapshot, lastWeekPace: lastWeekPace, calendarAge: calendarAge, ageIsExact: ageIsExact,
-                            onAddWaist: onAddWaist, onOpenSettings: onOpenSettings, onAddBirthDate: onAddBirthDate)
+        ScrollView {
+            VStack(spacing: NoopMetrics.space4) {
+                WhoopAgeContent(snapshot: snapshot, lastWeekPace: lastWeekPace, calendarAge: calendarAge,
+                                ageIsExact: ageIsExact, onAddWaist: onAddWaist, onOpenSettings: onOpenSettings,
+                                onAddBirthDate: onAddBirthDate)
+            }
+            .padding(.horizontal, NoopMetrics.space4)
+            .padding(.top, NoopMetrics.space2)
+            .padding(.bottom, NoopMetrics.space10)
+            .background(GeometryReader { geo in
+                Color.clear.preference(key: WhoopScrollOffsetKey.self, value: geo.frame(in: .named("healthspanScroll")).minY)
+            })
         }
+        .coordinateSpace(name: "healthspanScroll")
+        .onPreferenceChange(WhoopScrollOffsetKey.self) { offset in
+            let past = offset < -360
+            if past != collapsed { withAnimation(.easeOut(duration: 0.2)) { collapsed = past } }
+        }
+        .overlay(alignment: .top) {
+            if collapsed { WhoopHealthspanCompactHeader(snapshot: snapshot) }
+        }
+        .background(StrandPalette.surfaceBase.ignoresSafeArea())
+        .navigationTitle(Text("HEALTHSPAN"))
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
@@ -305,7 +330,7 @@ struct WhoopAgeContent: View {
     var body: some View {
         VStack(spacing: NoopMetrics.space4) {
             VStack(spacing: NoopMetrics.space3) {
-                WhoopAgeBubble(snapshot: snapshot, diameter: 280)
+                WhoopAgeBubble(snapshot: snapshot, diameter: 350)
                 WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact)
             }
             .frame(maxWidth: .infinity)
