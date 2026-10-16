@@ -147,49 +147,7 @@ enum WhoopAgeText {
     }
 }
 
-// MARK: - The bubble
-
-/// The big WHOOP Age number against the calendar age, on the Health tab and at the top of the page.
-struct WhoopAgeBubble: View {
-    let snapshot: WhoopAgeSnapshot?
-    var diameter: CGFloat = 220
-
-    var body: some View {
-        let result = snapshot?.isUnlocked == true ? snapshot?.result : nil
-        let younger = (result?.yearsYounger ?? 0) >= 0
-        let tint = result == nil ? StrandPalette.textTertiary : (younger ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
-        ZStack {
-            Circle()
-                .fill(RadialGradient(colors: [tint.opacity(0.5), tint.opacity(0.07)], center: .center,
-                                     startRadius: diameter * 0.05, endRadius: diameter * 0.55))
-            Circle().strokeBorder(tint.opacity(0.7), lineWidth: 2)
-            VStack(spacing: NoopMetrics.space1) {
-                Text(verbatim: result.map { String(format: "%.1f", $0.whoopAge) } ?? "--")
-                    .font(WhoopStyle.number(diameter * 0.24))
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .monospacedDigit()
-                Text("WHOOP AGE")
-                    .font(WhoopStyle.smallLabel)
-                    .foregroundStyle(StrandPalette.textPrimary)
-                if let result {
-                    Text(WhoopAgeText.delta(yearsYounger: result.yearsYounger))
-                        .font(WhoopStyle.detail)
-                        .foregroundStyle(tint)
-                        .multilineTextAlignment(.center)
-                } else if snapshot != nil {
-                    Text("CALIBRATING")
-                        .font(WhoopStyle.detail)
-                        .foregroundStyle(StrandPalette.textSecondary)
-                }
-            }
-            .padding(.horizontal, NoopMetrics.space4)
-        }
-        .frame(width: diameter, height: diameter)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(result.map { String(localized: "WHOOP Age \(String(format: "%.1f", $0.whoopAge)), \(WhoopAgeText.delta(yearsYounger: $0.yearsYounger))") }
-                                 ?? String(localized: "WHOOP Age is calibrating")))
-    }
-}
+// MARK: - The caption
 
 /// The line under the bubble: calendar age, typical error and the unlock count while calibrating.
 struct WhoopAgeCaption: View {
@@ -227,205 +185,6 @@ struct WhoopAgeCaption: View {
     }
 }
 
-// MARK: - Pace of Aging
-
-/// The Pace of Aging speedometer: a 270 degree arc from -1.0x to 3.0x, with 1.0x in the middle, as WHOOP draws it.
-struct WhoopPaceGauge: View {
-    let pace: Double?
-    var diameter: CGFloat = 210
-
-    private static let range = WhoopAge.paceRange
-
-    private var fraction: Double {
-        guard let pace else { return 0 }
-        return (min(Self.range.upperBound, max(Self.range.lowerBound, pace)) - Self.range.lowerBound)
-            / (Self.range.upperBound - Self.range.lowerBound)
-    }
-
-    private func color(_ state: WhoopAge.PaceState) -> Color {
-        switch state {
-        case .reversing, .slowing: return WhoopStyle.rangeGreen
-        case .steady: return WhoopStyle.sufficientGray
-        case .accelerated: return WhoopStyle.rangeAmber
-        }
-    }
-
-    var body: some View {
-        let state = pace.map(WhoopAge.paceState)
-        ZStack {
-            Circle()
-                .trim(from: 0, to: 0.75)
-                .stroke(AngularGradient(colors: [WhoopStyle.rangeGreen, WhoopStyle.sufficientGray, WhoopStyle.rangeAmber],
-                                        center: .center, startAngle: .degrees(0), endAngle: .degrees(270)),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                .rotationEffect(.degrees(135))
-                .frame(width: diameter, height: diameter)
-            if pace != nil {
-                Capsule()
-                    .fill(StrandPalette.textPrimary)
-                    .frame(width: 5, height: 24)
-                    .offset(y: -diameter / 2)
-                    .rotationEffect(.degrees(-135 + 270 * fraction))
-            }
-            VStack(spacing: NoopMetrics.space1) {
-                Text(WhoopAgeText.paceNumber(pace))
-                    .font(WhoopStyle.number(diameter * 0.27))
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .monospacedDigit()
-                if let state {
-                    Text(WhoopAgeText.paceWord(state)).font(WhoopStyle.label).foregroundStyle(color(state))
-                }
-            }
-            HStack {
-                Text(WhoopAgeText.paceScaleMin)
-                Spacer()
-                Text(WhoopAgeText.paceScaleMax)
-            }
-            .font(WhoopStyle.caption)
-            .foregroundStyle(StrandPalette.textTertiary)
-            .frame(width: diameter * 0.78)
-            .offset(y: diameter * 0.43)
-        }
-        .frame(width: diameter, height: diameter)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(pace.map { String(localized: "Pace of Aging \(String(format: "%.1f", $0)) times, \(WhoopAgeText.paceWord(WhoopAge.paceState($0)))") }
-                                 ?? String(localized: "Pace of Aging is calibrating")))
-    }
-}
-
-// MARK: - Contributors
-
-/// A bar from the middle: left for years taken off (green), right for years added (amber). A range, where the
-/// figure is one (VO2 max), is the lighter band behind it.
-private struct WhoopYearsBar: View {
-    let years: Double
-    /// The years a full half-bar stands for.
-    let scale: Double
-    /// The younger end and the older end of a range, in years.
-    var band: ClosedRange<Double>?
-
-    static let height: CGFloat = 8
-
-    var body: some View {
-        GeometryReader { geo in
-            let half = geo.size.width / 2
-            let x: (Double) -> CGFloat = { y in half + CGFloat(max(-scale, min(scale, y)) / max(scale, 0.0001)) * half }
-            ZStack(alignment: .leading) {
-                Capsule().fill(WhoopStyle.ringTrack)
-                if let band {
-                    Capsule()
-                        .fill(StrandPalette.textTertiary.opacity(0.4))
-                        .frame(width: max(x(band.upperBound) - x(band.lowerBound), Self.height), height: Self.height)
-                        .offset(x: x(band.lowerBound))
-                }
-                if abs(years) >= 0.05 {
-                    Capsule()
-                        .fill(years < 0 ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
-                        .frame(width: max(abs(x(years) - half), Self.height), height: Self.height)
-                        .offset(x: years < 0 ? x(years) : half)
-                }
-                Rectangle().fill(StrandPalette.textTertiary).frame(width: 1, height: Self.height).offset(x: half)
-            }
-        }
-        .frame(height: Self.height)
-    }
-}
-
-/// The nine contributors, the largest first, each with the wearer's six-month value, the target and the years it
-/// adds or takes off.
-struct WhoopAgeContributorsCard: View {
-    let result: WhoopAge.Result
-    /// The VO2 max the page used, for its range and its "rough" label.
-    var vo2: Vo2Choice?
-
-    var body: some View {
-        let scale = max(1, result.impacts.map { abs($0.years) }.max() ?? 1)
-        WhoopTitledCard(title: String(localized: "WHAT MOVES YOUR WHOOP AGE"), showsChevron: false) {
-            HStack {
-                Text("YOUNGER").font(WhoopStyle.chevron)
-                Spacer()
-                Text("OLDER").font(WhoopStyle.chevron)
-            }
-            .foregroundStyle(StrandPalette.textTertiary)
-            VStack(spacing: 0) {
-                ForEach(Array(result.impacts.enumerated()), id: \.element.id) { index, impact in
-                    row(impact, scale: scale)
-                    if index < result.impacts.count - 1 {
-                        Rectangle().fill(WhoopStyle.cardStroke).frame(height: 1)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func row(_ impact: WhoopAge.Impact, scale: Double) -> some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-            HStack(spacing: NoopMetrics.space3) {
-                Image(systemName: WhoopAgeText.icon(impact.key))
-                    .font(WhoopStyle.icon)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .frame(width: 24)
-                Text(WhoopAgeText.label(impact.key))
-                    .font(WhoopStyle.smallLabel)
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                if impact.key == .vo2max, vo2?.isRough == true {
-                    Text("ROUGH")
-                        .font(WhoopStyle.chevron)
-                        .foregroundStyle(WhoopStyle.rangeAmber)
-                        .padding(.horizontal, NoopMetrics.space2)
-                        .padding(.vertical, NoopMetrics.space1)
-                        .background(Capsule().fill(WhoopStyle.rangeAmber.opacity(0.18)))
-                }
-                Spacer(minLength: NoopMetrics.space1)
-                if impact.value != nil {
-                    Text(WhoopAgeText.years(impact.years))
-                        .font(WhoopStyle.number(20))
-                        .foregroundStyle(impact.years < -0.05 ? WhoopStyle.rangeGreen
-                                         : (impact.years > 0.05 ? WhoopStyle.rangeAmber : StrandPalette.textPrimary))
-                }
-            }
-            if let value = impact.value, let target = impact.target {
-                let range = impact.key == .vo2max ? result.vo2YearsRange : nil
-                WhoopYearsBar(years: impact.years, scale: scale,
-                              band: range.map { min($0.older, $0.younger)...max($0.older, $0.younger) })
-                HStack(alignment: .firstTextBaseline) {
-                    if impact.key == .vo2max, let vo2 {
-                        Text(WhoopAgeText.vo2RangeWithUnit(vo2))
-                            .font(WhoopStyle.detail)
-                            .foregroundStyle(StrandPalette.textPrimary)
-                    } else {
-                        Text(WhoopAgeText.value(impact.key, value))
-                            .font(WhoopStyle.detail)
-                            .foregroundStyle(StrandPalette.textPrimary)
-                    }
-                    Spacer(minLength: NoopMetrics.space2)
-                    Text("TARGET \(WhoopAgeText.target(impact.key, target))")
-                        .font(WhoopStyle.caption)
-                        .foregroundStyle(StrandPalette.textTertiary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                if let range {
-                    Text(WhoopAgeText.yearsBetween(older: range.older, younger: range.younger))
-                        .font(WhoopStyle.caption)
-                        .foregroundStyle(StrandPalette.textTertiary)
-                }
-            } else {
-                Text(impact.key == .leanBodyMass
-                     ? String(localized: "Yoop holds no lean body mass, so this adds nothing, as in WHOOP.")
-                     : String(localized: "Needs 14 days of strap data in the window."))
-                    .font(WhoopStyle.caption)
-                    .foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.vertical, NoopMetrics.space3)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 // MARK: - The page
 
 /// The screen: loads the snapshot, hands it to the page.
@@ -433,11 +192,13 @@ struct WhoopAgeScreen: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
     @State private var snapshot: WhoopAgeSnapshot?
+    @State private var lastWeekPace: Double?
     @State private var showSettings = false
     @State private var showBirthDate = false
 
     var body: some View {
-        WhoopAgePage(snapshot: snapshot, calendarAge: profile.decimalAge, ageIsExact: profile.dateOfBirthIsEntered,
+        WhoopAgePage(snapshot: snapshot, lastWeekPace: lastWeekPace, calendarAge: profile.decimalAge,
+                     ageIsExact: profile.dateOfBirthIsEntered,
                      onAddWaist: profile.waistCm > 0 ? nil : { showSettings = true },
                      onOpenSettings: { showSettings = true },
                      onAddBirthDate: profile.dateOfBirthIsEntered ? nil : { showBirthDate = true })
@@ -446,6 +207,9 @@ struct WhoopAgeScreen: View {
                 snapshot = await WhoopAgeLoader.load(repo: repo, age: profile.decimalAge,
                                                      ageSigma: profile.dateOfBirthIsEntered ? 0 : ProfileStore.unknownBirthdayFractionSigma,
                                                      sex: profile.sex)
+                lastWeekPace = await WhoopAgeLoader.paceLastWeek(
+                    repo: repo, age: profile.decimalAge,
+                    ageSigma: profile.dateOfBirthIsEntered ? 0 : ProfileStore.unknownBirthdayFractionSigma, sex: profile.sex)
             }
             // The profile card, where the waist and a WHOOP app VO2 max are entered; the estimate is read again when
             // it is closed.
@@ -510,23 +274,50 @@ struct WhoopBirthDateSheet: View {
 /// The page itself, from a snapshot alone, so it can be rendered without a repository.
 struct WhoopAgePage: View {
     let snapshot: WhoopAgeSnapshot?
+    var lastWeekPace: Double?
     let calendarAge: Double
     var ageIsExact = true
     var onAddWaist: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onAddBirthDate: (() -> Void)?
 
+    /// The bubble has scrolled out of sight: WHOOP folds it into the top bar then.
+    @State private var collapsed = false
+
     var body: some View {
-        WhoopDayPage(title: String(localized: "WHOOP AGE")) {
-            WhoopAgeContent(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact,
-                            onAddWaist: onAddWaist, onOpenSettings: onOpenSettings, onAddBirthDate: onAddBirthDate)
+        ScrollView {
+            VStack(spacing: NoopMetrics.space4) {
+                WhoopAgeContent(snapshot: snapshot, lastWeekPace: lastWeekPace, calendarAge: calendarAge,
+                                ageIsExact: ageIsExact, onAddWaist: onAddWaist, onOpenSettings: onOpenSettings,
+                                onAddBirthDate: onAddBirthDate)
+            }
+            .padding(.horizontal, NoopMetrics.space4)
+            .padding(.top, NoopMetrics.space2)
+            .padding(.bottom, NoopMetrics.space10)
+            .background(GeometryReader { geo in
+                Color.clear.preference(key: WhoopScrollOffsetKey.self, value: geo.frame(in: .named("healthspanScroll")).minY)
+            })
         }
+        .coordinateSpace(name: "healthspanScroll")
+        .onPreferenceChange(WhoopScrollOffsetKey.self) { offset in
+            let past = offset < -360
+            if past != collapsed { withAnimation(.easeOut(duration: 0.2)) { collapsed = past } }
+        }
+        .overlay(alignment: .top) {
+            if collapsed { WhoopHealthspanCompactHeader(snapshot: snapshot) }
+        }
+        .background(StrandPalette.surfaceBase.ignoresSafeArea())
+        .navigationTitle(Text("HEALTHSPAN"))
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
 /// What the page holds, top to bottom.
 struct WhoopAgeContent: View {
     let snapshot: WhoopAgeSnapshot?
+    var lastWeekPace: Double?
     let calendarAge: Double
     var ageIsExact = true
     /// Opens the profile for the waist; nil when it is entered.
@@ -539,7 +330,7 @@ struct WhoopAgeContent: View {
     var body: some View {
         VStack(spacing: NoopMetrics.space4) {
             VStack(spacing: NoopMetrics.space3) {
-                WhoopAgeBubble(snapshot: snapshot)
+                WhoopAgeBubble(snapshot: snapshot, diameter: 350)
                 WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact)
             }
             .frame(maxWidth: .infinity)
@@ -547,7 +338,7 @@ struct WhoopAgeContent: View {
             if calendarAge > 0, let onAddBirthDate { birthDateCard(onAddBirthDate) }
             if let snapshot, snapshot.isUnlocked, let result = snapshot.result {
                 paceCard(snapshot)
-                WhoopAgeContributorsCard(result: result, vo2: snapshot.vo2)
+                WhoopHealthspanSections(result: result, recent: snapshot.recent, vo2: snapshot.vo2)
                 leverCard(snapshot)
                 certaintyCard(result, snapshot: snapshot)
                 if let vo2 = snapshot.vo2 {
@@ -575,21 +366,19 @@ struct WhoopAgeContent: View {
     }
 
     private func paceCard(_ snapshot: WhoopAgeSnapshot) -> some View {
-        WhoopTitledCard(title: String(localized: "PACE OF AGING"), showsChevron: false) {
-            VStack(spacing: NoopMetrics.space3) {
-                WhoopPaceGauge(pace: snapshot.pace)
-                if let pace = snapshot.pace {
-                    Text(WhoopAgeText.paceSentence(WhoopAge.paceState(pace)))
-                        .font(WhoopStyle.body)
-                        .foregroundStyle(StrandPalette.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text("The last 30 days against the last 6 months")
-                    .font(WhoopStyle.caption)
-                    .foregroundStyle(StrandPalette.textTertiary)
+        VStack(spacing: NoopMetrics.space2) {
+            WhoopPaceCard(pace: snapshot.pace, lastWeek: lastWeekPace, opensHealthspan: false)
+            if let pace = snapshot.pace {
+                Text(WhoopAgeText.paceSentence(WhoopAge.paceState(pace)))
+                    .font(WhoopStyle.body)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity)
+            Text("The last 30 days against the last 6 months")
+                .font(WhoopStyle.caption)
+                .foregroundStyle(StrandPalette.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

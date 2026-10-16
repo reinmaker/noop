@@ -24,6 +24,22 @@ enum WhoopAgeLoader {
         return snapshot
     }
 
+    private static var lastWeekCache: (key: String, pace: Double?)?
+
+    /// The Pace of Aging as it stood a week ago, for the Health tab's "faster or slower vs. last week": the same
+    /// window read as of seven days before today, nil while it was still calibrating then.
+    static func paceLastWeek(repo: Repository, age: Double, ageSigma: Double = 0, sex: String) async -> Double? {
+        let today = Repository.logicalDayKey(Date())
+        guard age > 0, let weekAgo = WhoopAge.dayKeys(endingOn: today, count: 8).first else { return nil }
+        let typed = ProfileStore.storedWhoopAppVo2().map { "\($0.value)@\($0.date.timeIntervalSince1970)" } ?? "-"
+        let key = "\(repo.refreshSeq)|\(weekAgo)|\(String(format: "%.3f", age))|\(ageSigma)|\(sex)|\(typed)"
+        if let lastWeekCache, lastWeekCache.key == key { return lastWeekCache.pace }
+        let snapshot = await build(repo: repo, today: weekAgo, age: age, ageSigma: ageSigma, sex: sex)
+        let pace = snapshot.isUnlocked ? snapshot.pace : nil
+        lastWeekCache = (key, pace)
+        return pace
+    }
+
     /// The profile the Coach holds (UserDefaults), for callers without a `ProfileStore`: the same decimal age.
     static func load(repo: Repository, defaults: UserDefaults = .standard) async -> WhoopAgeSnapshot {
         let stored = ProfileStore.storedAge(defaults: defaults)
