@@ -218,6 +218,22 @@ struct WhoopActivitiesCard: View {
 
     private func row(icon: String, chip: String, chipColor: Color, name: String,
                      start: Date?, end: Date?) -> some View {
+        WhoopActivityRowView(icon: icon, chip: chip, chipColor: chipColor, name: name, start: start, end: end)
+    }
+}
+
+/// One activity as WHOOP lists it: a coloured chip with the icon and the figure (its Strain, or the time
+/// slept), the name, and the start and end times. Shared by Home's ACTIVITIES card and the Strain screen's
+/// "Today's Activities".
+struct WhoopActivityRowView: View {
+    let icon: String
+    let chip: String
+    let chipColor: Color
+    let name: String
+    let start: Date?
+    let end: Date?
+
+    var body: some View {
         HStack(spacing: NoopMetrics.space3) {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(WhoopStyle.icon)
