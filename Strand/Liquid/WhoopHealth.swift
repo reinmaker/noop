@@ -372,68 +372,46 @@ struct WhoopLiveHeartRateView: View {
     }
 }
 
-// MARK: - Stress
-
-/// The Stress Monitor chart with Home's 0 to 3 score.
-struct WhoopHealthStressSection: View {
-    @EnvironmentObject private var repo: Repository
-    @State private var stress: Double?
-
-    var body: some View {
-        WhoopStressChartCard(currentStress: stress)
-            .task(id: repo.refreshSeq) {
-                // The same 0-3 score Home's Stress Monitor shows.
-                let stored = await repo.series(key: "stress", source: "my-whoop")
-                stress = StressModel(days: repo.days, stored: stored)?.score
-            }
-    }
-}
-
 // MARK: - WHOOP Age on the tab
 
-/// The Health tab's headline: WHOOP Age against the calendar age, with Pace of Aging, opening the full page.
+/// The Health tab's headline: WHOOP Age on its own, then Pace of Aging, each opening the Healthspan page.
 struct WhoopAgeHealthCard: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
     @State private var snapshot: WhoopAgeSnapshot?
+    @State private var lastWeekPace: Double?
 
     var body: some View {
-        WhoopAgeHealthCardContent(snapshot: snapshot, calendarAge: profile.decimalAge, ageIsExact: profile.dateOfBirthIsEntered)
+        WhoopAgeHealthCardContent(snapshot: snapshot, lastWeekPace: lastWeekPace, calendarAge: profile.decimalAge,
+                                  ageIsExact: profile.dateOfBirthIsEntered)
             .task(id: "\(repo.refreshSeq)|\(profile.dateOfBirth.timeIntervalSince1970)|\(profile.dateOfBirthIsEntered)") {
-                snapshot = await WhoopAgeLoader.load(repo: repo, age: profile.decimalAge,
-                                                     ageSigma: profile.dateOfBirthIsEntered ? 0 : ProfileStore.unknownBirthdayFractionSigma,
-                                                     sex: profile.sex)
+                let sigma = profile.dateOfBirthIsEntered ? 0 : ProfileStore.unknownBirthdayFractionSigma
+                snapshot = await WhoopAgeLoader.load(repo: repo, age: profile.decimalAge, ageSigma: sigma, sex: profile.sex)
+                lastWeekPace = await WhoopAgeLoader.paceLastWeek(repo: repo, age: profile.decimalAge, ageSigma: sigma,
+                                                                 sex: profile.sex)
             }
     }
 }
 
-/// The card from a snapshot alone, so it can be rendered without a repository.
+/// The tab's top from a snapshot alone, so it can be rendered without a repository.
 struct WhoopAgeHealthCardContent: View {
     let snapshot: WhoopAgeSnapshot?
+    var lastWeekPace: Double?
     let calendarAge: Double
     var ageIsExact = true
 
     var body: some View {
-        NavigationLink(value: TabRoute.whoopAge) {
-            VStack(spacing: NoopMetrics.space3) {
-                WhoopAgeBubble(snapshot: snapshot, diameter: 200)
-                WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact)
-                if let pace = snapshot?.pace, snapshot?.isUnlocked == true {
-                    HStack(spacing: NoopMetrics.space2) {
-                        Text("PACE OF AGING").font(WhoopStyle.smallLabel).foregroundStyle(StrandPalette.textSecondary)
-                        Text(WhoopAgeText.paceNumber(pace)).font(WhoopStyle.number(20)).foregroundStyle(StrandPalette.textPrimary)
-                        Text(WhoopAgeText.paceWord(WhoopAge.paceState(pace)))
-                            .font(WhoopStyle.smallLabel)
-                            .foregroundStyle(WhoopAge.paceState(pace) == .accelerated ? WhoopStyle.rangeAmber : WhoopStyle.rangeGreen)
-                    }
+        VStack(spacing: NoopMetrics.space4) {
+            NavigationLink(value: TabRoute.whoopAge) {
+                VStack(spacing: NoopMetrics.space3) {
+                    WhoopAgeBubble(snapshot: snapshot, diameter: 270)
+                    WhoopAgeCaption(snapshot: snapshot, calendarAge: calendarAge, ageIsExact: ageIsExact)
                 }
-                WhoopActionButtonLabel(title: String(localized: "SEE WHOOP AGE"), systemImage: "chart.line.uptrend.xyaxis")
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
-            .padding(WhoopStyle.cardPadding)
-            .whoopCard()
+            .buttonStyle(.plain)
+            if let snapshot, snapshot.isUnlocked { WhoopPaceCard(pace: snapshot.pace, lastWeek: lastWeekPace) }
         }
-        .buttonStyle(.plain)
     }
 }
 

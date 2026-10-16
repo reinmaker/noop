@@ -15,11 +15,15 @@ struct HealthView: View {
     // (`WhoopLiveHeartRateCard`, `HealthSyncCard`) own them, so a tick re-renders only those cards.
 
     var body: some View {
-        ScreenScaffold(title: "Health",
-                       subtitle: "Your vitals against your normal.",
+        ScreenScaffold(title: nil,
                        onRefresh: { await repo.refresh() },
                        lazy: true,
-                       topBackground: liquidScaffoldSky()) {
+                       topBackground: AnyView(WhoopHealthGlow())) {
+            // WHOOP's tab header: one small centred word over a green glow.
+            Text(String(localized: "Health").uppercased())
+                .font(WhoopStyle.smallLabel)
+                .foregroundStyle(StrandPalette.textPrimary)
+                .frame(maxWidth: .infinity)
             if repo.days.isEmpty {
                 HealthFirstRunContent()
             } else {
@@ -31,14 +35,16 @@ struct HealthView: View {
 
 // MARK: - Content stacks
 
-/// The page with history: WHOOP Age first, then the vitals, then the rest in the order of how often they are looked at.
+/// The page with history, in WHOOP's order: WHOOP Age with Pace of Aging, Advanced Labs, Health Monitor and Stress
+/// Monitor, then what only Yoop has: the live heart rate, skin temperature, records and the strap's sync.
 private struct HealthSectionsStack: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space4) {
             WhoopAgeHealthCard()
-            WhoopVitalsSection()
+            WhoopAdvancedLabsCard()
+            WhoopHealthMonitorGridCard()
+            WhoopHealthStressCard()
             WhoopLiveHeartRateCard(opensMonitor: true)
-            WhoopHealthStressSection()
             SkinTempSection()
             HealthRecordsSection()
             HealthSyncCard()
