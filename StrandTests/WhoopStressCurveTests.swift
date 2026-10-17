@@ -105,12 +105,15 @@ final class WhoopStressCurveTests: XCTestCase {
         XCTAssertLessThan(result.timeline.first?.level ?? 3, 1.0)
     }
 
-    /// Three hours high in a row is the sustained run, and a workout breaks it.
-    func testSustainedHighNeedsThreeScoredHours() {
+    /// Three hours high in a row is the sustained run. A workout no longer breaks it (WHOOP's line runs on
+    /// through one); a calm window does.
+    func testSustainedHighNeedsThreeHoursInARow() {
         let hard = hr(95, windows: 0..<36)
         XCTAssertTrue(WhoopStressCurve.analyze(hr: hard, restingHR: 50).sustainedHigh)
-        let broken = WhoopStressCurve.analyze(hr: hard, restingHR: 50, excluded: [(t0 + 35 * 300)...(t0 + 36 * 300)])
-        XCTAssertFalse(broken.sustainedHigh)
+        let withWorkout = WhoopStressCurve.analyze(hr: hard, restingHR: 50, excluded: [(t0 + 35 * 300)...(t0 + 36 * 300)])
+        XCTAssertTrue(withWorkout.sustainedHigh)
+        let calmEnd = WhoopStressCurve.analyze(hr: hr(95, windows: 0..<35) + hr(52, windows: 35..<36), restingHR: 50)
+        XCTAssertFalse(calmEnd.sustainedHigh)
     }
 
     func testTooSparseOrNoRestingRateScoresNothing() {
@@ -302,13 +305,15 @@ final class WhoopStressCurveTests: XCTestCase {
                        [(t0 + 300)...(t0 + 3 * 300 - 1), (t0 + 6 * 300)...(t0 + 7 * 300 - 1)])
     }
 
-    /// An all-activity span leaves a result with its points but no level: not an empty day, and not scored.
-    func testADayOfNothingButActivityHasNoMeanAndNoPeak() {
+    /// An all-activity span is scored like any other and flagged: the day has its mean, its peak and its time
+    /// in the high band, as WHOOP's Total Day counts activities.
+    func testADayOfNothingButActivityIsScoredAndFlagged() {
         let result = WhoopStressCurve.analyze(hr: hr(120, windows: 0..<4), restingHR: 50, excluded: [t0...(t0 + 4 * 300)])
         XCTAssertEqual(result.timeline.count, 4)
-        XCTAssertNil(result.dayMean)
-        XCTAssertNil(result.peak)
-        XCTAssertEqual(result.highStressMinutes, 0)
+        XCTAssertTrue(result.timeline.allSatisfy(\.maskedForActivity))
+        XCTAssertGreaterThan(result.dayMean ?? 0, 2)
+        XCTAssertNotNil(result.peak)
+        XCTAssertEqual(result.highStressMinutes, 20)
     }
 
     // MARK: Windows and zones
