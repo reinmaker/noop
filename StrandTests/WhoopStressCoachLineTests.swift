@@ -27,6 +27,6 @@ final class WhoopStressCoachLineTests: XCTestCase {
                        + "current level 1.2 (medium) at 00:10; time in low 0 hr 0 min, medium 0 hr 15 min, high 0 hr 0 min. "
                        + "Say durations in hours and minutes, never as a count of minutes.")
         defaults.set(true, forKey: PuffinExperiment.whoopStressKey)
-        XCTAssertTrue(AICoachEngine.stressContextLine(result, timeZone: utc)?.contains("Workouts are left out") == true)
+        XCTAssertTrue(AICoachEngine.stressContextLine(result, timeZone: utc)?.contains("Workouts are scored like the rest of the day") == true)
     }
 }

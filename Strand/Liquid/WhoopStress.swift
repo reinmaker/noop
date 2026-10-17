@@ -7,15 +7,16 @@ import StrandDesign
 /// sleep shaded and activities marked, a one-line read of time in high stress, and WHOOP's three breakdown
 /// cards (Total Day, Non Activity, Sleep), each a stacked bar of time in Low / Medium / High. The level is
 /// the line's latest reading (the same value Home's Stress Monitor shows); the daily score stands in until
-/// the first reading is scored. An activity is shown, not scored: its windows carry no stress level
-/// (`WhoopStressCurve`), so the line breaks across it.
+/// the first reading is scored. An activity is scored like the rest of the day, as WHOOP does (its Total
+/// Day counts "sleep and activities" and its line runs on through a workout); it is marked on the line and
+/// the Non Activity card leaves it out.
 struct WhoopStressHero: View {
     let daytime: DaytimeStress.Result?
     let dailyScore: Double?
     /// Today's sleep windows (unix seconds), shaded on the line and counted in the Sleep card.
     var sleepSpans: [ClosedRange<Int>] = []
     /// Today's activities (unix seconds), marked on the line and left out of the Non Activity card. They
-    /// are the stretches left unscored (`WhoopStressCurve.activitySpans`).
+    /// are the stretches `WhoopStressCurve` flagged as activity (`WhoopStressCurve.activitySpans`).
     var activitySpans: [ClosedRange<Int>] = []
     let onBreathe: () -> Void
 
@@ -96,7 +97,7 @@ struct WhoopStressHero: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 bandCard(title: String(localized: "TOTAL DAY"), icon: "circle.dashed", minutes: total,
-                         note: String(localized: "Stress experienced throughout the day including sleep, without activities."))
+                         note: String(localized: "Stress experienced throughout the day including sleep and activities."))
                 bandCard(title: String(localized: "NON ACTIVITY"), icon: "figure.stand",
                          minutes: Self.minutesByBand(points) { !inSleep($0) && !inActivity($0) },
                          note: String(localized: "Stress experienced outside of Strain activities and sleep."))

@@ -110,7 +110,7 @@ enum PuffinExperiment {
 
     /// Yoop: score stress the WHOOP way (`WhoopStressCurve`): the whole day, sleep included, each five
     /// minutes' heart rate above the nightly resting rate and, where the beats are clean, heart rate
-    /// variability against the user's own 14-day baseline, with workouts left out. An absolute reading, so
+    /// variability against the user's own 14-day baseline, workouts included as WHOOP's Total Day does. An absolute reading, so
     /// rest reads low, a calm day reads calm and a hard day reads hard. Yoop's own estimate against WHOOP's
     /// published description, not WHOOP's algorithm.
     static let whoopStressKey = "yoopWhoopStress"

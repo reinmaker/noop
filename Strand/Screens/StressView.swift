@@ -127,8 +127,8 @@ struct StressView: View {
                 return lo < hi ? lo...hi : nil
             }
             let scored = await WhoopStressDay.score(repo: repo, hr: hr, from: from, to: to, restingHR: restHR)
-            // The activities shown are the ones left out of the score: the line and the marker cannot
-            // disagree about which minutes were an activity.
+            // The activities marked are the windows `WhoopStressCurve` flagged as activity: the line, the
+            // marker and the Non Activity card cannot disagree about which minutes were an activity.
             activitySpans = WhoopStressCurve.activitySpans(scored)
             daytime = scored
             stressIndex = nil
@@ -230,7 +230,7 @@ struct StressView: View {
 
             // Yoop: say plainly what the number is (`WhoopStressCurve` has the method).
             if PuffinExperiment.whoopStressEnabled {
-                Text("Yoop's own estimate from your heart rate and, where the beats are clean, your heart rate variability, against your own 14-day baseline. Workouts are left out. It was compared with WHOOP's published description and your WHOOP readings. It is not WHOOP's algorithm.")
+                Text("Yoop's own estimate from your heart rate and, where the beats are clean, your heart rate variability, against your own 14-day baseline. Workouts are scored like the rest of the day. It was compared with WHOOP's published description and your WHOOP readings. It is not WHOOP's algorithm.")
                     .font(WhoopStyle.caption)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

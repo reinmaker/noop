@@ -7,9 +7,11 @@ import WhoopProtocol
 // WHAT THIS IS, AND IS NOT. WHOOP publishes that its Stress Monitor compares live heart rate and heart
 // rate variability with the member's own baseline from the past 14 days and their typical resting heart
 // rate, takes motion into account so exercise does not read as stress, and reports 0 (low) to 3 (peak).
-// It publishes no formula and no zone bands. This is Yoop's own estimate built to that description: heart
-// rate above the user's resting rate and, where the beats are clean, heart rate variability against the
-// user's own baseline. It was compared against WHOOP's published description and one user's WHOOP
+// It publishes no formula. Its app explains the bands (0 to 0.9 low, 1 to 1.9 medium, 2 to 3 high) and
+// shows the day as a continuous line that runs through a workout (a hard session reaches 3.0), with a
+// Total Day that counts "sleep and activities" and a Non Activity card for the rest. This is Yoop's own
+// estimate built to that description: heart rate above the user's resting rate and, where the beats are
+// clean, heart rate variability against the user's own baseline. It was compared against WHOOP's published description and one user's WHOOP
 // readouts. It is not WHOOP's algorithm and nothing here claims to reproduce it.
 //
 // THE MEASURE. Each 5-minute window is an ABSOLUTE function of that window's own data, so a calm day can
@@ -30,8 +32,10 @@ import WhoopProtocol
 //      of natural log, capped at `hrvCapLn`. It enters as a shift of delta, so the level stays on 0 to
 //      3 and a window without clean HRV is simply the heart rate term. The weight is set from the
 //      reasoning on `hrvBPMPerLn`, not fitted.
-//   3. Activity is left out. A window that overlaps a saved workout or a detected activity bout is not
-//      scored (`maskedForActivity`, level nil): the activity is shown, not a stress level.
+//   3. Activity is scored like the rest of the day, as WHOOP's Total Day does. A window that overlaps a
+//      saved workout or a detected activity bout keeps its level and is flagged (`maskedForActivity`),
+//      so the marker on the line and the Non Activity card can leave it out; the flag is not a gap. Such a
+//      window has no heart rate variability term (the wrist was not still), so it is the heart rate term.
 //
 // ZONES. low is under 1.0, medium is 1.0 up to (not including) 2.0, high is 2.0 and over
 // (`lowCeiling`, `DaytimeStress.highBandFloor`). WHOOP does not publish its bands; these are the
@@ -193,7 +197,7 @@ enum WhoopStressCurve {
     /// `hrv` are the clean windows (`hrvWindows`) for the span and `baseline` the user's reference for
     /// them; where either is missing a window is scored by heart rate alone. `sleepSpans` say which
     /// baseline a window is compared with. `excluded` are saved workouts and detected activity bouts:
-    /// a window overlapping one is returned unscored and marked `maskedForActivity`.
+    /// a window overlapping one is scored like any other and flagged `maskedForActivity`.
     static func analyze(hr: [HRSample], restingHR: Double, tzOffsetSeconds: Int = 0,
                         hrv: [HRVWindow] = [], baseline: HRVBaseline = .none,
                         sleepSpans: [ClosedRange<Int>] = [],
@@ -207,17 +211,11 @@ enum WhoopStressCurve {
         }
         let hrvByWindow = Dictionary(hrv.map { ($0.startTs, $0) }, uniquingKeysWith: { first, _ in first })
         var points: [DaytimeStress.HourPoint] = []
-        var maskedWindows = 0
         for bucket in sums.keys.sorted() {
             guard let e = sums[bucket], e.count >= minBucketSamples else { continue }
             let mean = e.total / Double(e.count)
             let localSeconds = ((bucket + tzOffsetSeconds) % 86_400 + 86_400) % 86_400
-            if overlaps(bucket, excluded) {
-                maskedWindows += 1
-                points.append(DaytimeStress.HourPoint(hour: localSeconds / 3600, startTs: bucket, level: nil,
-                                                      meanHR: mean, rmssd: nil, maskedForActivity: true))
-                continue
-            }
+            let duringActivity = overlaps(bucket, excluded)
             var shift: Double?
             var rmssd: Double?
             if let w = hrvByWindow[bucket],
@@ -227,10 +225,10 @@ enum WhoopStressCurve {
             }
             points.append(DaytimeStress.HourPoint(hour: localSeconds / 3600, startTs: bucket,
                                                   level: level(meanHR: mean, restingHR: restingHR, hrvShiftLn: shift),
-                                                  meanHR: mean, rmssd: rmssd))
+                                                  meanHR: mean, rmssd: rmssd, maskedForActivity: duringActivity))
         }
         let levels = points.compactMap(\.level)
-        guard !levels.isEmpty || maskedWindows > 0 else { return .empty }
+        guard !levels.isEmpty else { return .empty }
 
         let highCount = levels.filter { $0 >= DaytimeStress.highBandFloor }.count
         // Sustained: the last three hours of windows all high.
@@ -243,13 +241,13 @@ enum WhoopStressCurve {
                                     sustainedRun: sustained ? DaytimeStress.sustainedHours : 0,
                                     dayMean: levels.isEmpty ? nil : levels.reduce(0, +) / Double(levels.count),
                                     peak: peak?.level == nil ? nil : peak,
-                                    activityMaskedHours: Int((Double(maskedWindows) * Double(bucketSeconds) / 3600).rounded()),
+                                    activityMaskedHours: 0,
                                     highStressMinutes: highCount * bucketSeconds / 60,
                                     hrOnlyFallback: !points.contains { $0.rmssd != nil },
                                     timeline: points)
     }
 
-    /// The stretches of the day left out as activity, from a scored result: consecutive masked windows
+    /// The stretches of the day flagged as activity, from a scored result: consecutive flagged windows
     /// merged, each as unix seconds from the first window's start to the last window's end.
     static func activitySpans(_ result: DaytimeStress.Result) -> [ClosedRange<Int>] {
         var spans: [ClosedRange<Int>] = []

@@ -270,25 +270,29 @@ final class WhoopStressCurveTests: XCTestCase {
 
     // MARK: Activities
 
-    func testAnActivityIsShownNotScored() {
+    /// WHOOP's stress line runs through a workout and its Total Day counts activities, so an activity window
+    /// keeps its level and is only flagged, for the marker and the Non Activity card.
+    func testAnActivityIsFlaggedAndScoredLikeTheRest() {
         // Windows 4 to 7 overlap the activity (it starts partway into window 4 and ends inside window 7).
         let span = (t0 + 4 * 300 + 120)...(t0 + 7 * 300 + 60)
         let result = WhoopStressCurve.analyze(hr: hr(95, windows: 0..<12), restingHR: 50, excluded: [span])
         XCTAssertEqual(result.timeline.count, 12)
         let masked = result.timeline.enumerated().filter { $0.element.maskedForActivity }.map(\.offset)
         XCTAssertEqual(masked, [4, 5, 6, 7])
-        XCTAssertTrue(result.timeline.filter(\.maskedForActivity).allSatisfy { $0.level == nil && $0.meanHR != nil })
-        XCTAssertEqual(result.highStressMinutes, 8 * 5, "only the eight scored windows count")
+        XCTAssertTrue(result.timeline.filter(\.maskedForActivity).allSatisfy { $0.level != nil && $0.meanHR != nil })
+        XCTAssertEqual(result.highStressMinutes, 12 * 5, "the activity windows are time in the high band too")
         XCTAssertEqual(shares(result), [0, 0, 1])
-        XCTAssertEqual(result.activityMaskedHours, 0, "20 minutes rounds to no whole hour")
+        XCTAssertEqual(result.scored.count, 12, "no gap in the line")
+        XCTAssertEqual(result.activityMaskedHours, 0, "nothing is left out of the score")
         XCTAssertEqual(WhoopStressCurve.activitySpans(result), [(t0 + 4 * 300)...(t0 + 8 * 300 - 1)])
     }
 
-    func testActivityHoursAreCountedAsWholeHours() {
+    func testNoHoursAreLeftOutForAnActivity() {
         let result = WhoopStressCurve.analyze(hr: hr(95, windows: 0..<24), restingHR: 50,
                                               excluded: [t0...(t0 + 12 * 300)])
-        XCTAssertEqual(result.activityMaskedHours, 1)
-        XCTAssertEqual(result.scored.count, 12)
+        XCTAssertEqual(result.activityMaskedHours, 0)
+        XCTAssertEqual(result.scored.count, 24)
+        XCTAssertEqual(result.timeline.filter(\.maskedForActivity).count, 12, "the flag still marks the stretch")
     }
 
     func testSeparateActivitiesStaySeparateSpans() {

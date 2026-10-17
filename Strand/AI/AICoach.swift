@@ -1083,9 +1083,10 @@ final class AICoachEngine: ObservableObject {
             "current level \(level) (\(word)) at \(clock.string(from: latest.time));",
             "time in low \(hrMin(bands[0])), medium \(hrMin(bands[1])), high \(hrMin(bands[2])).",
         ]
-        // Yoop's stress leaves workouts unscored (`WhoopStressCurve`); the hourly read does not say so.
+        // Yoop's stress scores a workout like the rest of the day, as WHOOP's Total Day does, so a hard
+        // session shows as time in the high band.
         if PuffinExperiment.whoopStressEnabled {
-            parts.append("Workouts are left out of the score, so none of their minutes are in these bands.")
+            parts.append("Workouts are scored like the rest of the day, so a hard session counts as time in the high band.")
         }
         parts.append("Say durations in hours and minutes, never as a count of minutes.")
         return parts.joined(separator: " ")
