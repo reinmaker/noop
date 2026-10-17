@@ -67,6 +67,7 @@ enum WhoopVitalText {
         guard isCurrent else { return String(localized: "NOT COUNTED") }
         switch verdict {
         case .within: return String(localized: "WITHIN RANGE")
+        case .near: return String(localized: "NEAR RANGE")
         case .above: return String(localized: "ABOVE RANGE")
         case .below: return String(localized: "BELOW RANGE")
         case .learning: return String(localized: "LEARNING")
@@ -86,11 +87,18 @@ enum WhoopVitalText {
 
     /// The rule, stated once.
     static var ruleNote: String {
-        String(localized: "Within range means inside your own usual range: the span your last 30 nights say a new night falls in 19 times in 20. It needs 14 nights. A reading that is not from last night is shown with its date and left out of the count.")
+        if PuffinExperiment.whoopScoresEnabled {
+            return String(localized: "Usual is the middle half of your last 30 nights. Inside it is within range, just outside it is near, and both count as fine. Only a reading well past it, in the direction that matters (HRV falling, resting heart rate, respiratory rate or skin temperature rising), is flagged. It needs 14 nights. A reading that is not from last night is shown with its date and left out of the count.")
+        }
+        return String(localized: "Within range means inside your own usual range: the span your last 30 nights say a new night falls in 19 times in 20. It needs 14 nights. A reading that is not from last night is shown with its date and left out of the count.")
     }
 
     static var bloodOxygenNote: String {
         let floor = "\(Int(HealthMonitorRule.bloodOxygenFloor))%"
+        if PuffinExperiment.whoopScoresEnabled {
+            let flag = "\(Int(HealthMonitorRule.bloodOxygenFlagBelow))%"
+            return String(localized: "Blood oxygen is imported, from a WHOOP export or Apple Health. Your strap does not measure it as a percentage, so fixed bands judge it instead of your own range: \(floor) and above is within range, \(flag) and above is near, and under \(flag) is flagged.")
+        }
         return String(localized: "Blood oxygen is imported, from a WHOOP export or Apple Health. Your strap does not measure it as a percentage, so it is judged against the usual lower limit of \(floor) instead of your own range.")
     }
 }
@@ -202,7 +210,7 @@ struct WhoopVitalsCard: View {
     private func tone(_ status: HealthMonitorRule.Status) -> Color {
         guard status.isCurrent else { return StrandPalette.textTertiary }
         switch status.verdict {
-        case .within: return WhoopStyle.rangeGreen
+        case .within, .near: return WhoopStyle.rangeGreen
         case .above, .below: return WhoopStyle.rangeAmber
         case .learning, .noData: return StrandPalette.textTertiary
         }
@@ -231,7 +239,7 @@ struct WhoopVitalsCard: View {
         switch status.verdict {
         case .learning(let nights):
             parts.append(String(localized: "Learning your range, \(nights) of \(HealthMonitorRule.minNights) nights"))
-        case .within, .above, .below, .noData:
+        case .within, .near, .above, .below, .noData:
             if status.vital != .bloodOxygen, let range = WhoopVitalText.range(status, fahrenheit: fahrenheit) {
                 parts.append(String(localized: "Usual \(range)"))
             }

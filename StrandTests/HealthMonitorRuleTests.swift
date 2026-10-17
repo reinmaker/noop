@@ -147,7 +147,7 @@ final class HealthMonitorRuleTests: XCTestCase {
     }
 
     /// Runs `body` with the Yoop switch set, then puts back what was there, an absent key included.
-    private func withYoop(_ on: Bool, _ body: () -> Void) {
+    private func withYoop(_ on: Bool, _ body: () throws -> Void) rethrows {
         let defaults = UserDefaults.standard
         let saved = defaults.object(forKey: PuffinExperiment.whoopScoresKey)
         defaults.set(on, forKey: PuffinExperiment.whoopScoresKey)
@@ -155,7 +155,7 @@ final class HealthMonitorRuleTests: XCTestCase {
             if let saved { defaults.set(saved, forKey: PuffinExperiment.whoopScoresKey) }
             else { defaults.removeObject(forKey: PuffinExperiment.whoopScoresKey) }
         }
-        body()
+        try body()
     }
 
     /// Yoop: once today's night is scored, a reading from the night before is an old one (shown with its date, not
@@ -182,17 +182,78 @@ final class HealthMonitorRuleTests: XCTestCase {
         withYoop(false) { XCTAssertTrue(resp(withTonight).isCurrent) }
     }
 
-    /// Yoop: blood oxygen is shown as a whole percent, so it is judged as one: 94.6 reads 95% and is not "below 95%".
-    func testBloodOxygenShownWholeIsJudgedWhole() {
+    /// Yoop: blood oxygen has fixed bands, as on WHOOP: 95% and above is within range, 90% and above is near, under
+    /// 90% is flagged, judged on the whole percent that is shown (94.6 reads 95%).
+    func testBloodOxygenBandsAreFixed() {
         func verdict(_ value: Double) -> HealthMonitorRule.Verdict {
             HealthMonitorRule.statuses(days: [row("2026-10-12", spo2: value)], todayKey: "2026-10-12")
                 .first { $0.vital == .bloodOxygen }!.verdict
         }
         withYoop(true) {
             XCTAssertEqual(verdict(94.6), .within)
-            XCTAssertEqual(verdict(94.4), .below)
+            XCTAssertEqual(verdict(94.4), .near)
+            XCTAssertEqual(verdict(90.0), .near)
+            XCTAssertEqual(verdict(89.6), .near, "89.6 is shown as 90%")
+            XCTAssertEqual(verdict(89.4), .below)
         }
         withYoop(false) { XCTAssertEqual(verdict(94.6), .below) }
+    }
+
+    /// Yoop: the usual range is the middle half of the nights, which is what WHOOP prints as the "typical range",
+    /// by linear interpolation; the flag limits are two standard deviations either side of the mean.
+    func testTypicalRangeIsTheMiddleHalf() throws {
+        let values = (1...30).map(Double.init)
+        try withYoop(true) {
+            let range = try XCTUnwrap(HealthMonitorRule.interval(of: values))
+            XCTAssertEqual(range.low, 8.25, accuracy: 1e-9)
+            XCTAssertEqual(range.high, 22.75, accuracy: 1e-9)
+            let sd = (30.0 * 31.0 / 12.0).squareRoot()
+            XCTAssertEqual(try XCTUnwrap(range.flagLow), 15.5 - 2 * sd, accuracy: 1e-9)
+            XCTAssertEqual(try XCTUnwrap(range.flagHigh), 15.5 + 2 * sd, accuracy: 1e-9)
+        }
+        try withYoop(false) {
+            let range = try XCTUnwrap(HealthMonitorRule.interval(of: values))
+            XCTAssertNil(range.flagLow)
+            XCTAssertGreaterThan(range.high - range.low, 21, "the prediction interval is wider than the middle half")
+        }
+    }
+
+    /// Yoop: only the harmful side is flagged (HRV falling; resting heart rate, respiratory rate and skin
+    /// temperature rising); just outside the middle half, or on the good side, is near and still fine.
+    func testOnlyTheHarmfulSideIsFlagged() {
+        withYoop(true) {
+            func hrv(_ value: Double) -> HealthMonitorRule.Verdict {
+                HealthMonitorRule.statuses(days: hrvDays(latest: value), todayKey: "2026-10-12")
+                    .first { $0.vital == .hrv }!.verdict
+            }
+            XCTAssertEqual(hrv(80), .within)
+            XCTAssertEqual(hrv(65), .near, "under the middle half, over the flag limit")
+            XCTAssertEqual(hrv(50), .below)
+            XCTAssertEqual(hrv(130), .near, "a high HRV is not a warning")
+
+            let prior = keys("2026-10-11", 30).enumerated().map { i, k in row(k, rhr: i % 2 == 0 ? 48 : 54) }
+            func rhr(_ value: Int) -> HealthMonitorRule.Verdict {
+                HealthMonitorRule.statuses(days: prior + [row("2026-10-12", rhr: value)], todayKey: "2026-10-12")
+                    .first { $0.vital == .restingHr }!.verdict
+            }
+            XCTAssertEqual(rhr(50), .within)
+            XCTAssertEqual(rhr(56), .near)
+            XCTAssertEqual(rhr(60), .above)
+            XCTAssertEqual(rhr(40), .near, "a low resting heart rate is not a warning")
+        }
+    }
+
+    /// Near is a green check: it counts as within in the tally.
+    func testNearCountsAsWithinInTheTally() {
+        withYoop(true) {
+            let prior = keys("2026-10-11", 30).enumerated().map { i, k in row(k, rhr: i % 2 == 0 ? 48 : 54) }
+            let statuses = HealthMonitorRule.statuses(days: prior + [row("2026-10-12", rhr: 56)], todayKey: "2026-10-12")
+            XCTAssertEqual(statuses.first { $0.vital == .restingHr }!.verdict, .near)
+            let tally = HealthMonitorRule.summary(statuses)
+            XCTAssertEqual(tally.counted, 1)
+            XCTAssertEqual(tally.within, 1)
+            XCTAssertTrue(tally.allWithin)
+        }
     }
 
     // MARK: Skin temperature

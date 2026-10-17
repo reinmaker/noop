@@ -14,6 +14,15 @@ import WhoopStore
 /// with fewer there is no verdict, only the count of nights still needed, because a verdict from a fixed adult
 /// band would be a claim about the wearer the data does not support.
 ///
+/// Yoop's own rule (`PuffinExperiment.whoopScoresEnabled`) follows how WHOOP's Health Monitor reads, as found in its
+/// own screens on 17 Oct 2026 and tested on the user's WHOOP export: the "typical range" it prints is the middle half
+/// of the last 30 nights (25th to 75th percentile; it reproduced WHOOP's printed ranges for skin temperature, resting
+/// heart rate and respiratory rate to the digit and HRV's lower end), a reading outside it but not far is "near"
+/// and still a green check, and only a reading well past it on the harmful side is flagged: HRV falling, resting heart
+/// rate, respiratory rate or skin temperature rising. WHOOP does not publish where it draws that line; against the
+/// 30 nights its orange limits sit between about 1.4 and 3.5 standard deviations, so Yoop flags at 2. Blood oxygen
+/// has fixed bands on WHOOP (95% to 100% typical, 90% and above fine, 89% and below flagged), not a personal range.
+///
 /// Exceptions, each stated on the screen: blood oxygen is imported (a WHOOP export or Apple Health), not
 /// measured by the strap, and is judged against the usual lower limit of 95% instead of the wearer's own range;
 /// a reading that is not from the latest night is shown with its date and left out of the count.
@@ -32,6 +41,8 @@ enum HealthMonitorRule {
     static let minNights = 14
     /// The usual lower limit of blood oxygen, in percent (a reading under it is flagged whoever the wearer is).
     static let bloodOxygenFloor = 95.0
+    /// Yoop: under this whole percent blood oxygen is flagged; from it up to the floor it is "near".
+    static let bloodOxygenFlagBelow = 90.0
 
     // MARK: Interval
 
@@ -41,11 +52,16 @@ enum HealthMonitorRule {
         let low: Double
         let high: Double
         let nights: Int
+        /// Yoop: the limits a reading has to pass, on the harmful side, to be flagged (the mean plus or minus
+        /// `flagSDs` standard deviations of the same nights). Nil under the prediction interval rule.
+        var flagLow: Double?
+        var flagHigh: Double?
 
         /// The same range with a value taken off both ends and the mean (skin temperature, shown as a change
         /// from the usual value).
         func shifted(by offset: Double) -> Interval {
-            Interval(mean: mean - offset, low: low - offset, high: high - offset, nights: nights)
+            Interval(mean: mean - offset, low: low - offset, high: high - offset, nights: nights,
+                     flagLow: flagLow.map { $0 - offset }, flagHigh: flagHigh.map { $0 - offset })
         }
     }
 
@@ -56,14 +72,32 @@ enum HealthMonitorRule {
         return z + (z * z * z + z) / (4 * v) + (5 * pow(z, 5) + 16 * pow(z, 3) + 3 * z) / (96 * v * v)
     }
 
-    /// The range a new night is expected to fall in 19 times in 20, from the last `windowNights` of `values`
-    /// (oldest first). Nil under `minNights` values.
+    /// Yoop: how many standard deviations past the mean, on the harmful side, a reading is flagged.
+    static let flagSDs = 2.0
+
+    /// The `p` quantile of `values` by linear interpolation between the sorted values.
+    static func quantile(_ values: [Double], _ p: Double) -> Double {
+        let sorted = values.sorted()
+        guard sorted.count > 1 else { return sorted.first ?? 0 }
+        let position = Double(sorted.count - 1) * p
+        let below = Int(position.rounded(.down))
+        let above = min(below + 1, sorted.count - 1)
+        return sorted[below] + (sorted[above] - sorted[below]) * (position - Double(below))
+    }
+
+    /// The range a new night is expected to fall in 19 times in 20 (Yoop: the middle half of the nights), from the
+    /// last `windowNights` of `values` (oldest first). Nil under `minNights` values.
     static func interval(of values: [Double]) -> Interval? {
         let recent = Array(values.suffix(windowNights))
         let n = recent.count
         guard n >= minNights else { return nil }
         let mean = recent.reduce(0, +) / Double(n)
         let variance = recent.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(n - 1)
+        if PuffinExperiment.whoopScoresEnabled {
+            let sd = variance.squareRoot()
+            return Interval(mean: mean, low: quantile(recent, 0.25), high: quantile(recent, 0.75), nights: n,
+                            flagLow: mean - flagSDs * sd, flagHigh: mean + flagSDs * sd)
+        }
         let reach = tQuantile975(df: n - 1) * (variance.squareRoot()) * (1 + 1 / Double(n)).squareRoot()
         return Interval(mean: mean, low: mean - reach, high: mean + reach, nights: n)
     }
@@ -72,6 +106,8 @@ enum HealthMonitorRule {
 
     enum Verdict: Equatable {
         case within
+        /// Yoop: outside the typical range but not flagged (WHOOP's "near": still a green check).
+        case near
         case above
         case below
         /// Fewer than `minNights` readings; the count so far.
@@ -94,11 +130,14 @@ enum HealthMonitorRule {
         let isDeviation: Bool
         var id: String { vital.rawValue }
 
+        /// Within the range or near it: a green check.
+        var isFine: Bool { verdict == .within || verdict == .near }
+
         /// Whether it is part of the "n of N within range" tally.
         var counts: Bool {
             guard isCurrent else { return false }
             switch verdict {
-            case .within, .above, .below: return true
+            case .within, .near, .above, .below: return true
             case .learning, .noData: return false
             }
         }
@@ -135,13 +174,20 @@ enum HealthMonitorRule {
         let current = isCurrent(latest.day, todayKey: todayKey, tonightIn: tonightIn)
         if vital == .bloodOxygen {
             let v = latest.value
-            // Yoop: the percent is shown whole, so it is judged whole (95% shown is not "below 95%").
-            let judged = PuffinExperiment.whoopScoresEnabled ? v.rounded() : v
             return Status(vital: vital, value: v, day: latest.day, isCurrent: current, interval: nil,
-                          verdict: judged >= bloodOxygenFloor ? .within : .below, isDeviation: false)
+                          verdict: bloodOxygenVerdict(v), isDeviation: false)
         }
         let prior = WhoopDayFigures.normalValues(days: sorted.filter { $0.day < latest.day }, excluding: nil, read)
         return judged(vital, value: latest.value, day: latest.day, current: current, prior: prior, isDeviation: false)
+    }
+
+    /// Blood oxygen against fixed bands. Yoop, as on WHOOP: 95% and above is typical, 90% and above is fine, under
+    /// 90% is flagged, judged on the whole percent that is shown (95% shown is not "below 95%"). Otherwise the
+    /// usual lower limit of 95%.
+    static func bloodOxygenVerdict(_ percent: Double) -> Verdict {
+        guard PuffinExperiment.whoopScoresEnabled else { return percent >= bloodOxygenFloor ? .within : .below }
+        let whole = percent.rounded()
+        return whole >= bloodOxygenFloor ? .within : (whole >= bloodOxygenFlagBelow ? .near : .below)
     }
 
     /// Skin temperature. The stored column holds an absolute temperature (a WHOOP export) or a change from the
@@ -171,9 +217,9 @@ enum HealthMonitorRule {
             if let night = row.flatMap(absolute) {
                 let prior = history.compactMap(absolute).suffix(windowNights).map { $0 }
                 if let range = interval(of: prior) {
-                    let verdict: Verdict = night < range.low ? .below : (night > range.high ? .above : .within)
                     return Status(vital: .skinTemperature, value: shownChange, day: latest.day, isCurrent: current,
-                                  interval: range.shifted(by: range.mean), verdict: verdict, isDeviation: true)
+                                  interval: range.shifted(by: range.mean),
+                                  verdict: rangeVerdict(.skinTemperature, value: night, range: range), isDeviation: true)
                 }
             }
             let prior = history.compactMap(change).map { $0 }
@@ -185,15 +231,28 @@ enum HealthMonitorRule {
                       prior: Array(prior.suffix(windowNights)), isDeviation: false)
     }
 
+    /// Which way a reading is a warning: HRV falling, the others rising.
+    private static func warnsLow(_ vital: Vital) -> Bool { vital == .hrv }
+
+    /// The verdict of `value` against `range`. Under the prediction interval rule, outside is above or below. Yoop:
+    /// inside the typical range is within; outside it is near, unless it is past the flag limit on the harmful side.
+    private static func rangeVerdict(_ vital: Vital, value: Double, range: Interval) -> Verdict {
+        guard PuffinExperiment.whoopScoresEnabled, let flagLow = range.flagLow, let flagHigh = range.flagHigh else {
+            return value < range.low ? .below : (value > range.high ? .above : .within)
+        }
+        if value >= range.low && value <= range.high { return .within }
+        if warnsLow(vital) { return value < flagLow ? .below : .near }
+        return value > flagHigh ? .above : .near
+    }
+
     private static func judged(_ vital: Vital, value: Double, day: String, current: Bool,
                                prior: [Double], isDeviation: Bool) -> Status {
         guard let range = interval(of: prior) else {
             return Status(vital: vital, value: value, day: day, isCurrent: current, interval: nil,
                           verdict: .learning(nights: prior.count), isDeviation: isDeviation)
         }
-        let verdict: Verdict = value < range.low ? .below : (value > range.high ? .above : .within)
         return Status(vital: vital, value: value, day: day, isCurrent: current, interval: range,
-                      verdict: verdict, isDeviation: isDeviation)
+                      verdict: rangeVerdict(vital, value: value, range: range), isDeviation: isDeviation)
     }
 
     /// The reading is from today's night or the one before it, the latest a wearer can have at any hour. With
@@ -238,7 +297,7 @@ enum HealthMonitorRule {
     static func summary(_ statuses: [Status]) -> Summary {
         let counted = statuses.filter(\.counts)
         return Summary(counted: counted.count,
-                       within: counted.filter { $0.verdict == .within }.count,
+                       within: counted.filter(\.isFine).count,
                        notCounted: statuses.filter { !$0.counts && $0.value != nil }.count)
     }
 }
