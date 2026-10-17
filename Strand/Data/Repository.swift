@@ -3103,6 +3103,13 @@ final class Repository: ObservableObject {
     ///  - an IMPORTED row is never passed here as `replacing` (duplicating one is a pure add), so its
     ///    history is never touched.
     func saveManualWorkout(_ row: WorkoutRow, replacing old: WorkoutRow? = nil) async {
+        await writeManualWorkout(row, replacing: old)
+        // A strength session's default muscle load lands at once, not on the next refresh.
+        await rebuildStrainBook()
+    }
+
+    /// The writes behind `saveManualWorkout`.
+    private func writeManualWorkout(_ row: WorkoutRow, replacing old: WorkoutRow? = nil) async {
         guard let store = await ensureStore() else { return }
         if let old, WorkoutSource.classify(old.source) == .detected {
             // Write the replacement first. If that insert fails, the grandfathered source row and its
@@ -3183,7 +3190,11 @@ final class Repository: ObservableObject {
     /// active strap id.
     func deleteWorkout(_ row: WorkoutRow) async {
         await forgetActivityEffort(startTs: row.startTs)
-        if WorkoutSource.classify(row.source) == .detected { await dismissDetected(row); return }
+        if WorkoutSource.classify(row.source) == .detected {
+            await dismissDetected(row)
+            await rebuildStrainBook()
+            return
+        }
         guard let store = await ensureStore() else { return }
         // Sweep every STRAP namespace, not just the active one. A manual row banked under a retained
         // strap or a computed sibling is shown by `workoutRows` and was previously undeletable: the
@@ -3201,6 +3212,8 @@ final class Repository: ObservableObject {
             _ = try? await store.deleteWorkouts(deviceId: id, sport: row.sport,
                                                 from: row.startTs, to: row.startTs)
         }
+        // An unrated strength session's default muscle load leaves with it.
+        await rebuildStrainBook()
     }
 
     /// #64: merge two-or-more overlapping / adjacent MANUAL or DETECTED sessions into ONE manual session
