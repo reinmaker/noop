@@ -111,6 +111,46 @@ final class MuscleLoadTests: XCTestCase {
         XCTAssertEqual(book.dayStrain(day: "2026-10-10", stored: stored(17.7), live: nil), stored(17.7))
     }
 
+    // MARK: The default for an unrated strength session
+
+    /// Yoop: the load grows with the square of the session's length, up to the lengths it was fitted on.
+    func testTheDefaultLoadGrowsWithTheSquareOfTheLengthAndIsCapped() {
+        XCTAssertEqual(MuscleLoad.durationLoad(minutes: 0), 0)
+        XCTAssertEqual(MuscleLoad.durationLoad(minutes: 45), 0.0773 * 45 * 45, accuracy: 1e-9)
+        XCTAssertEqual(MuscleLoad.durationLoad(minutes: 30) * 4, MuscleLoad.durationLoad(minutes: 60), accuracy: 1e-9)
+        XCTAssertEqual(MuscleLoad.durationLoad(minutes: 150), MuscleLoad.durationLoad(minutes: 60), "capped at 60 minutes")
+    }
+
+    /// Fitted to WHOOP's own Activity Strain on this user's 36 lifting sessions: a 47 minute session whose heart
+    /// rate alone gives 6.7 reads about 11.0 (WHOOP's sessions of 44 to 53 minutes read 10.6 to 12.5).
+    func testAnUnratedLiftReadsAboutWhatWHOOPGivesIt() {
+        let lift = row(now - 3_600, sport: "Weightlifting", minutes: 47, strain21: 6.7)
+        let book = StrainBook.build(rows: [lift], efforts: [:], now: now, dayKey: dayKey, unratedStrengthDefault: true)
+        let split = book.splits[lift.startTs]
+        XCTAssertEqual(split?.isEstimate, true)
+        XCTAssertEqual(split?.heartStrain ?? 0, 6.7, accuracy: 1e-6)
+        XCTAssertEqual(shown(book.activityStrain(lift)) ?? 0, 11.0, accuracy: 0.1)
+        XCTAssertGreaterThan(shown(book.dayStrain(day: "2026-10-10", stored: stored(8), live: nil)) ?? 0, 8)
+        XCTAssertEqual(book.muscleByDay["2026-10-10"] ?? 0, MuscleLoad.durationLoad(minutes: 47), accuracy: 1e-9)
+    }
+
+    /// The default is only for Yoop's own unrated strength sessions: not asked for, not a rated one, not an
+    /// import (which already holds WHOOP's own muscular load), not another sport.
+    func testTheDefaultIsOnlyForYoopsOwnUnratedStrength() {
+        let lift = row(now - 3_600, sport: "Weightlifting")
+        XCTAssertEqual(StrainBook.build(rows: [lift], efforts: [:], now: now, dayKey: dayKey), .empty)
+        let run = row(now - 7_200, sport: "Running")
+        let imported = row(now - 10_800, sport: "Weightlifting", source: "my-whoop")
+        let rated = row(now - 14_400, sport: "Weightlifting")
+        let book = StrainBook.build(rows: [lift, run, imported, rated], efforts: [rated.startTs: 8], now: now,
+                                    dayKey: dayKey, unratedStrengthDefault: true)
+        XCTAssertEqual(book.splits[lift.startTs]?.isEstimate, true)
+        XCTAssertNil(book.splits[run.startTs])
+        XCTAssertNil(book.splits[imported.startTs])
+        XCTAssertEqual(book.splits[rated.startTs]?.isEstimate, false, "a rating is used as before")
+        XCTAssertEqual(book.splits[rated.startTs]?.effort, 8)
+    }
+
     func testNoMuscleLoadWhenHeartRateAlreadyCoversTheRating() {
         // Rated 4 ("somewhat hard") for 45 minutes is a rated load of about 153, under the 236 heart rate measured.
         let lift = row(now - 3_600, sport: "Weightlifting")
