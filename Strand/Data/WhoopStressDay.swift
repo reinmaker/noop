@@ -7,12 +7,13 @@ import WhoopProtocol
 /// readouts of the same minutes cannot disagree.
 ///
 /// Yoop's own estimate, not WHOOP's algorithm: heart rate above the resting rate and, where the beats are
-/// clean and the wrist was still, heart rate variability against the user's own 14-day baseline, with
-/// activities left out (`WhoopStressCurve` has the method, its two fitted numbers and the zone bands).
+/// clean and the wrist was still, heart rate variability against the user's own 14-day baseline, activities
+/// scored like the rest of the day and flagged so the Non Activity card can leave them out (`WhoopStressCurve`
+/// has the method, its two fitted numbers and the zone bands).
 ///
 /// This type only gathers what the pure scoring needs: the span's heart rate (passed in by the caller,
 /// which has already read it), the user's sleeps, the saved workouts and detected activity bouts to
-/// leave out, and the clean heart rate variability windows of the last 14 days for the baseline.
+/// flag, and the clean heart rate variability windows of the last 14 days for the baseline.
 @MainActor
 enum WhoopStressDay {
 
@@ -39,10 +40,10 @@ enum WhoopStressDay {
         }
     }
 
-    /// The stretches to leave out as activity: every saved workout from the baseline's days up to now, and
+    /// The stretches to flag as activity: every saved workout from the baseline's days up to now, and
     /// the activity bouts `WhoopActivityDetector` finds in the last two days that were not saved. A
     /// bout still going is not in the list yet (`Repository.yoopActivityBouts` returns finished ones), so
-    /// it is scored until it ends.
+    /// it is not flagged until it ends.
     private static func activitySpans(repo: Repository, from: Int, now: Date) async -> [ClosedRange<Int>] {
         let nowTs = Int(now.timeIntervalSince1970)
         let days = max(WhoopStressCurve.baselineDays + 1, (nowTs - from) / 86_400 + 2)

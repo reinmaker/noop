@@ -105,12 +105,15 @@ final class WhoopStressCurveTests: XCTestCase {
         XCTAssertLessThan(result.timeline.first?.level ?? 3, 1.0)
     }
 
-    /// Three hours high in a row is the sustained run, and a workout breaks it.
-    func testSustainedHighNeedsThreeScoredHours() {
+    /// Three hours high in a row is the sustained run. A workout no longer breaks it (WHOOP's line runs on
+    /// through one); a calm window does.
+    func testSustainedHighNeedsThreeHoursInARow() {
         let hard = hr(95, windows: 0..<36)
         XCTAssertTrue(WhoopStressCurve.analyze(hr: hard, restingHR: 50).sustainedHigh)
-        let broken = WhoopStressCurve.analyze(hr: hard, restingHR: 50, excluded: [(t0 + 35 * 300)...(t0 + 36 * 300)])
-        XCTAssertFalse(broken.sustainedHigh)
+        let withWorkout = WhoopStressCurve.analyze(hr: hard, restingHR: 50, excluded: [(t0 + 35 * 300)...(t0 + 36 * 300)])
+        XCTAssertTrue(withWorkout.sustainedHigh)
+        let calmEnd = WhoopStressCurve.analyze(hr: hr(95, windows: 0..<35) + hr(52, windows: 35..<36), restingHR: 50)
+        XCTAssertFalse(calmEnd.sustainedHigh)
     }
 
     func testTooSparseOrNoRestingRateScoresNothing() {
@@ -270,25 +273,29 @@ final class WhoopStressCurveTests: XCTestCase {
 
     // MARK: Activities
 
-    func testAnActivityIsShownNotScored() {
+    /// WHOOP's stress line runs through a workout and its Total Day counts activities, so an activity window
+    /// keeps its level and is only flagged, for the marker and the Non Activity card.
+    func testAnActivityIsFlaggedAndScoredLikeTheRest() {
         // Windows 4 to 7 overlap the activity (it starts partway into window 4 and ends inside window 7).
         let span = (t0 + 4 * 300 + 120)...(t0 + 7 * 300 + 60)
         let result = WhoopStressCurve.analyze(hr: hr(95, windows: 0..<12), restingHR: 50, excluded: [span])
         XCTAssertEqual(result.timeline.count, 12)
         let masked = result.timeline.enumerated().filter { $0.element.maskedForActivity }.map(\.offset)
         XCTAssertEqual(masked, [4, 5, 6, 7])
-        XCTAssertTrue(result.timeline.filter(\.maskedForActivity).allSatisfy { $0.level == nil && $0.meanHR != nil })
-        XCTAssertEqual(result.highStressMinutes, 8 * 5, "only the eight scored windows count")
+        XCTAssertTrue(result.timeline.filter(\.maskedForActivity).allSatisfy { $0.level != nil && $0.meanHR != nil })
+        XCTAssertEqual(result.highStressMinutes, 12 * 5, "the activity windows are time in the high band too")
         XCTAssertEqual(shares(result), [0, 0, 1])
-        XCTAssertEqual(result.activityMaskedHours, 0, "20 minutes rounds to no whole hour")
+        XCTAssertEqual(result.scored.count, 12, "no gap in the line")
+        XCTAssertEqual(result.activityMaskedHours, 0, "nothing is left out of the score")
         XCTAssertEqual(WhoopStressCurve.activitySpans(result), [(t0 + 4 * 300)...(t0 + 8 * 300 - 1)])
     }
 
-    func testActivityHoursAreCountedAsWholeHours() {
+    func testNoHoursAreLeftOutForAnActivity() {
         let result = WhoopStressCurve.analyze(hr: hr(95, windows: 0..<24), restingHR: 50,
                                               excluded: [t0...(t0 + 12 * 300)])
-        XCTAssertEqual(result.activityMaskedHours, 1)
-        XCTAssertEqual(result.scored.count, 12)
+        XCTAssertEqual(result.activityMaskedHours, 0)
+        XCTAssertEqual(result.scored.count, 24)
+        XCTAssertEqual(result.timeline.filter(\.maskedForActivity).count, 12, "the flag still marks the stretch")
     }
 
     func testSeparateActivitiesStaySeparateSpans() {
@@ -298,13 +305,15 @@ final class WhoopStressCurveTests: XCTestCase {
                        [(t0 + 300)...(t0 + 3 * 300 - 1), (t0 + 6 * 300)...(t0 + 7 * 300 - 1)])
     }
 
-    /// An all-activity span leaves a result with its points but no level: not an empty day, and not scored.
-    func testADayOfNothingButActivityHasNoMeanAndNoPeak() {
+    /// An all-activity span is scored like any other and flagged: the day has its mean, its peak and its time
+    /// in the high band, as WHOOP's Total Day counts activities.
+    func testADayOfNothingButActivityIsScoredAndFlagged() {
         let result = WhoopStressCurve.analyze(hr: hr(120, windows: 0..<4), restingHR: 50, excluded: [t0...(t0 + 4 * 300)])
         XCTAssertEqual(result.timeline.count, 4)
-        XCTAssertNil(result.dayMean)
-        XCTAssertNil(result.peak)
-        XCTAssertEqual(result.highStressMinutes, 0)
+        XCTAssertTrue(result.timeline.allSatisfy(\.maskedForActivity))
+        XCTAssertGreaterThan(result.dayMean ?? 0, 2)
+        XCTAssertNotNil(result.peak)
+        XCTAssertEqual(result.highStressMinutes, 20)
     }
 
     // MARK: Windows and zones
