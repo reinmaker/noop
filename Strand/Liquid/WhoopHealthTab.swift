@@ -564,8 +564,8 @@ struct WhoopHealthMonitorGridCard: View {
 
     /// The tick under a vital: green when within range, amber when not, dashed when it is not counted.
     private func box(_ status: HealthMonitorRule.Status) -> some View {
-        let within = status.counts && status.verdict == .within
-        let outside = status.counts && status.verdict != .within
+        let within = status.counts && status.isFine
+        let outside = status.counts && !status.isFine
         let tint = within ? WhoopStyle.rangeGreen : (outside ? WhoopStyle.rangeAmber : StrandPalette.textTertiary)
         return Image(systemName: within ? "checkmark" : (outside ? "exclamationmark" : "minus"))
             .font(WhoopStyle.detail)
