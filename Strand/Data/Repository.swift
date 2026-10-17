@@ -3689,13 +3689,14 @@ final class Repository: ObservableObject {
         let gen = strainBookGen
         let efforts = activityEffortStore.all
         var book = StrainBook.empty
-        if Self.muscleLoadEnabled, let oldest = efforts.keys.min() {
+        if Self.muscleLoadEnabled {
             let now = Int(Date().timeIntervalSince1970)
+            let oldest = efforts.keys.min() ?? now
             let rows = await workoutRows(days: max(MuscleLoad.calibrationWindowDays, (now - oldest) / 86_400) + 2)
             guard gen == strainBookGen else { return }
-            book = StrainBook.build(rows: rows, efforts: efforts, now: now) {
+            book = StrainBook.build(rows: rows, efforts: efforts, now: now, dayKey: {
                 Self.localDayKey(Date(timeIntervalSince1970: TimeInterval($0)))
-            }
+            }, unratedStrengthDefault: true)
         }
         guard book != strainBook else { return }
         strainBook = book

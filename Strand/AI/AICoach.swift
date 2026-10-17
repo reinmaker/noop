@@ -1902,11 +1902,15 @@ final class AICoachEngine: ObservableObject {
 
     /// What an activity's effort rating did to its Strain, for the coach: the heart and muscle parts of a
     /// rated strength session, the rating of any other rated one, and for an unrated strength session that
-    /// its Strain is heart rate only. Empty for an unrated activity that is not strength.
+    /// its muscle load is estimated from its length. Empty for an unrated activity that is not strength.
     nonisolated static func effortNote(_ split: MuscleSplit?, row: WorkoutRow) -> String {
         guard let split else {
             return MuscleLoad.isRateable(row) && MuscleLoad.isStrength(row.sport)
                 ? " (heart rate only: effort not rated, so no muscle load counted)" : ""
+        }
+        if split.isEstimate {
+            return String(format: " (heart %.1f + muscle %.1f, effort not rated: the muscle part is estimated from the session's length)",
+                          split.heartStrain, split.muscleStrain)
         }
         guard split.isStrength else { return " (effort rated \(split.effort)/10)" }
         return String(format: " (heart %.1f + muscle %.1f, effort rated %d/10)",

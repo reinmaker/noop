@@ -235,8 +235,8 @@ struct WhoopActivityScreen: View {
     /// What the rating adds to this activity, once `Repository.strainBook` has it.
     private var split: MuscleSplit? { repo.strainBook.splits[row.startTs] }
 
-    /// HEART and MUSCLE under a rated strength session's Strain: what heart rate measured, and what the
-    /// rating added on top. The two add up to ACTIVITY STRAIN.
+    /// HEART and MUSCLE under a strength session's Strain: what heart rate measured, and what the rating (or,
+    /// unrated, the session's length) added on top. The two add up to ACTIVITY STRAIN.
     private func strainSplit(_ split: MuscleSplit) -> some View {
         HStack(spacing: NoopMetrics.space4) {
             splitFigure(label: String(localized: "HEART"), value: String(format: "%.1f", split.heartStrain))
@@ -275,7 +275,7 @@ struct WhoopActivityScreen: View {
                 ForEach(0...10, id: \.self) { effortCell($0) }
             }
             Text(unratedStrength
-                 ? String(localized: "Strain from heart rate only. Rate the session so its muscle load counts.")
+                 ? String(localized: "Muscle load is estimated from the session's length. Rate the session to count your own rating instead.")
                  : String(localized: "How hard was the whole session? Rate it about 30 minutes after it ends."))
                 .font(WhoopStyle.caption)
                 .foregroundStyle(unratedStrength ? StrandPalette.textSecondary : StrandPalette.textTertiary)

@@ -25,7 +25,12 @@ import WhoopStore
 ///    so it is exactly the figure its page shows.
 /// 4. Personal calibration k: on a rated session that is not strength, heart rate sees the whole effort,
 ///    so L_hr / L_rpe says how this user's ratings map to their heart load (`calibration`).
-/// 5. A rated strength session's muscle load is max(0, k x L_rpe - L_hr). An unrated one gets none.
+/// 5. A rated strength session's muscle load is max(0, k x L_rpe - L_hr).
+/// 6. An unrated strength session gets a default from its length (`durationLoad`), fitted to WHOOP's own
+///    Activity Strain for this user's lifting sessions rather than taken from a published source: WHOOP's
+///    figure for 36 weightlifting sessions of 22 to 57 minutes sits about 4.4 above what their heart rate
+///    gives, and is matched to 0.18 (leave-one-out 0.19) by adding 0.0773 x minutes squared of load to the
+///    heart load, where heart rate alone is 1.1 off. The exponent fitted freely came out 2.03, so it is 2.
 enum MuscleLoad {
 
     // MARK: Rating to load
@@ -67,6 +72,22 @@ enum MuscleLoad {
     /// An activity's length in minutes, as its page shows it.
     static func minutes(_ row: WorkoutRow) -> Double {
         (row.durationS ?? Double(max(0, row.endTs - row.startTs))) / 60
+    }
+
+    // MARK: Unrated strength sessions
+
+    /// Load added per minute squared of a strength session's length. FITTED to the user's WHOOP export
+    /// (36 weightlifting and powerlifting sessions, 6 Jun to 6 Oct 2026): strain = A ln(1 + (L_hr + k m^2) / c)
+    /// on the shared curve, k 0.075 to 0.079 for resting rates of 50 to 54 bpm. One user, sessions of 22 to
+    /// 57 minutes, so the length is capped at `durationCapMinutes` rather than extrapolated.
+    static let durationLoadPerMinuteSquared = 0.0773
+    /// The longest session the default reads, the top of the lengths it was fitted on.
+    static let durationCapMinutes = 60.0
+
+    /// The muscle load of an unrated strength session of `minutes`, in the unit heart-rate load is counted in.
+    static func durationLoad(minutes: Double) -> Double {
+        let m = min(durationCapMinutes, max(0, minutes))
+        return durationLoadPerMinuteSquared * m * m
     }
 
     // MARK: Personal calibration
@@ -123,10 +144,12 @@ struct MuscleSplit: Equatable {
     let isStrength: Bool
     /// L_hr, from the activity's stored Strain.
     let heartLoad: Double
-    /// L_rpe, before calibration.
+    /// L_rpe, before calibration. Zero for an unrated session (`isEstimate`).
     let ratedLoad: Double
     /// What the rating adds to the heart load; zero unless a strength session rated above what heart rate saw.
     let muscleLoad: Double
+    /// An unrated strength session, whose muscle load is the default from its length, not from a rating.
+    var isEstimate = false
 
     /// The heart's part on WHOOP's 0-21 axis: the Strain heart rate alone gave.
     var heartStrain: Double { StrainScorer.whoopStrain(load: heartLoad) }
@@ -158,9 +181,16 @@ struct StrainBook: Equatable {
 
     /// The book for these activities and ratings (by activity start). `dayKey` names the day an activity
     /// start belongs to; `now` bounds the calibration's window.
-    static func build(rows: [WorkoutRow], efforts: [Int: Int], now: Int, dayKey: (Int) -> String) -> StrainBook {
+    ///
+    /// `unratedStrengthDefault` (Yoop's scores): a strength session of Yoop's own that is not rated gets the
+    /// default muscle load from its length (`MuscleLoad.durationLoad`).
+    static func build(rows: [WorkoutRow], efforts: [Int: Int], now: Int, dayKey: (Int) -> String,
+                      unratedStrengthDefault: Bool = false) -> StrainBook {
         let rated = rows.filter { MuscleLoad.isRateable($0) && efforts[$0.startTs] != nil }
-        guard !rated.isEmpty else { return .empty }
+        let unrated = unratedStrengthDefault
+            ? rows.filter { MuscleLoad.isRateable($0) && efforts[$0.startTs] == nil && MuscleLoad.isStrength($0.sport) }
+            : []
+        guard !rated.isEmpty || !unrated.isEmpty else { return .empty }
         let since = now - MuscleLoad.calibrationWindowDays * 86_400
         let ratios = rated.compactMap { row -> Double? in
             guard !MuscleLoad.isStrength(row.sport), row.startTs >= since, let effort = efforts[row.startTs] else {
@@ -184,6 +214,14 @@ struct StrainBook: Equatable {
             book.splits[row.startTs] = MuscleSplit(effort: effort, isStrength: strength, heartLoad: heartLoad,
                                                    ratedLoad: ratedLoad, muscleLoad: muscle)
             if muscle > 0 { book.muscleByDay[dayKey(row.startTs), default: 0] += muscle }
+        }
+        for row in unrated {
+            let muscle = MuscleLoad.durationLoad(minutes: MuscleLoad.minutes(row))
+            guard muscle > 0 else { continue }
+            book.splits[row.startTs] = MuscleSplit(effort: 0, isStrength: true,
+                                                   heartLoad: MuscleLoad.heartLoad(storedStrain: row.strain),
+                                                   ratedLoad: 0, muscleLoad: muscle, isEstimate: true)
+            book.muscleByDay[dayKey(row.startTs), default: 0] += muscle
         }
         return book
     }
