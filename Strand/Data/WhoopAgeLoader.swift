@@ -103,6 +103,12 @@ enum WhoopAgeLoader {
             }
         }
 
+        // Today's step count is still growing; a part day would drag the average down, so it stays out of the
+        // average once an earlier day can stand in.
+        if today == Repository.logicalDayKey(Date()),
+           days.contains(where: { $0.key != today && ($0.value.steps ?? 0) >= WhoopAge.minStepsForDay }) {
+            days[today]?.steps = nil
+        }
         let all = Array(days.values)
         let coverage = WhoopAge.coverage(days: all, endingOn: today)
         let vo2 = await Vo2Resolver.load(repo: repo, sex: sex)
