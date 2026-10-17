@@ -219,7 +219,7 @@ enum HealthMonitorRule {
                 if let range = interval(of: prior) {
                     return Status(vital: .skinTemperature, value: shownChange, day: latest.day, isCurrent: current,
                                   interval: range.shifted(by: range.mean),
-                                  verdict: verdict(.skinTemperature, value: night, range: range), isDeviation: true)
+                                  verdict: rangeVerdict(.skinTemperature, value: night, range: range), isDeviation: true)
                 }
             }
             let prior = history.compactMap(change).map { $0 }
@@ -236,7 +236,7 @@ enum HealthMonitorRule {
 
     /// The verdict of `value` against `range`. Under the prediction interval rule, outside is above or below. Yoop:
     /// inside the typical range is within; outside it is near, unless it is past the flag limit on the harmful side.
-    private static func verdict(_ vital: Vital, value: Double, range: Interval) -> Verdict {
+    private static func rangeVerdict(_ vital: Vital, value: Double, range: Interval) -> Verdict {
         guard PuffinExperiment.whoopScoresEnabled, let flagLow = range.flagLow, let flagHigh = range.flagHigh else {
             return value < range.low ? .below : (value > range.high ? .above : .within)
         }
@@ -252,7 +252,7 @@ enum HealthMonitorRule {
                           verdict: .learning(nights: prior.count), isDeviation: isDeviation)
         }
         return Status(vital: vital, value: value, day: day, isCurrent: current, interval: range,
-                      verdict: verdict(vital, value: value, range: range), isDeviation: isDeviation)
+                      verdict: rangeVerdict(vital, value: value, range: range), isDeviation: isDeviation)
     }
 
     /// The reading is from today's night or the one before it, the latest a wearer can have at any hour. With
