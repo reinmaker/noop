@@ -146,6 +146,55 @@ final class HealthMonitorRuleTests: XCTestCase {
         XCTAssertNil(fresh.interval)
     }
 
+    /// Runs `body` with the Yoop switch set, then puts back what was there, an absent key included.
+    private func withYoop(_ on: Bool, _ body: () -> Void) {
+        let defaults = UserDefaults.standard
+        let saved = defaults.object(forKey: PuffinExperiment.whoopScoresKey)
+        defaults.set(on, forKey: PuffinExperiment.whoopScoresKey)
+        defer {
+            if let saved { defaults.set(saved, forKey: PuffinExperiment.whoopScoresKey) }
+            else { defaults.removeObject(forKey: PuffinExperiment.whoopScoresKey) }
+        }
+        body()
+    }
+
+    /// Yoop: once today's night is scored, a reading from the night before is an old one (shown with its date, not
+    /// counted), so a vital that night did not produce no longer passes as current. Before the night is scored it
+    /// still counts, and with the switch off nothing changes.
+    func testYesterdaysReadingIsOldOnceTonightIsScored() {
+        let before = keys("2026-10-11", 30).map { row($0, resp: 15) }
+        let withTonight = before + [row("2026-10-12", hrv: 80)]
+        func resp(_ days: [DailyMetric]) -> HealthMonitorRule.Status {
+            HealthMonitorRule.statuses(days: days, todayKey: "2026-10-12").first { $0.vital == .respiratoryRate }!
+        }
+        withYoop(true) {
+            XCTAssertTrue(resp(before).isCurrent, "tonight is not scored yet, so the latest is yesterday's")
+            let late = resp(withTonight)
+            XCTAssertEqual(late.day, "2026-10-11")
+            XCTAssertFalse(late.isCurrent)
+            XCTAssertFalse(late.counts)
+            let nap = before + [DailyMetric(day: "2026-10-12", totalSleepMin: 60, efficiency: nil, deepMin: nil, remMin: nil,
+                                           lightMin: nil, disturbances: nil, restingHr: nil, avgHrv: nil, recovery: nil,
+                                           strain: nil, exerciseCount: nil, spo2Pct: nil, skinTempDevC: nil,
+                                           respRateBpm: nil, skinTempC: nil)]
+            XCTAssertTrue(resp(nap).isCurrent, "a nap is not tonight's night")
+        }
+        withYoop(false) { XCTAssertTrue(resp(withTonight).isCurrent) }
+    }
+
+    /// Yoop: blood oxygen is shown as a whole percent, so it is judged as one: 94.6 reads 95% and is not "below 95%".
+    func testBloodOxygenShownWholeIsJudgedWhole() {
+        func verdict(_ value: Double) -> HealthMonitorRule.Verdict {
+            HealthMonitorRule.statuses(days: [row("2026-10-12", spo2: value)], todayKey: "2026-10-12")
+                .first { $0.vital == .bloodOxygen }!.verdict
+        }
+        withYoop(true) {
+            XCTAssertEqual(verdict(94.6), .within)
+            XCTAssertEqual(verdict(94.4), .below)
+        }
+        withYoop(false) { XCTAssertEqual(verdict(94.6), .below) }
+    }
+
     // MARK: Skin temperature
 
     /// A change from the usual temperature (Yoop's own nights) is judged on the longer absolute history, and the
