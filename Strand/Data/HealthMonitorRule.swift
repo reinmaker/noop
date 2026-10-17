@@ -107,7 +107,11 @@ enum HealthMonitorRule {
     /// Every tracked vital from the merged daily rows, judged against `todayKey` (the logical day).
     static func statuses(days: [DailyMetric], todayKey: String) -> [Status] {
         let sorted = days.sorted { $0.day < $1.day }
-        return tracked.map { status($0, sorted: sorted, todayKey: todayKey) }
+        // Yoop: once today's night is scored, a reading left over from the night before is an old one, not the
+        // latest night's, so a vital that night did not produce reads "From 16 Oct" instead of passing as current.
+        let tonightIn = PuffinExperiment.whoopScoresEnabled
+            && sorted.contains { $0.day == todayKey && ($0.totalSleepMin ?? 0) >= WhoopAge.minNightMinutes }
+        return tracked.map { status($0, sorted: sorted, todayKey: todayKey, tonightIn: tonightIn) }
     }
 
     private static func pick(_ vital: Vital) -> (DailyMetric) -> Double? {
@@ -120,19 +124,21 @@ enum HealthMonitorRule {
         }
     }
 
-    private static func status(_ vital: Vital, sorted: [DailyMetric], todayKey: String) -> Status {
-        if vital == .skinTemperature { return skinStatus(sorted, todayKey: todayKey) }
+    private static func status(_ vital: Vital, sorted: [DailyMetric], todayKey: String, tonightIn: Bool) -> Status {
+        if vital == .skinTemperature { return skinStatus(sorted, todayKey: todayKey, tonightIn: tonightIn) }
         let read = pick(vital)
         let points = sorted.compactMap { d in read(d).flatMap { $0 > 0 ? (day: d.day, value: $0) : nil } }
         guard let latest = Baselines.freshestCarried(points, todayKey: todayKey) else {
             return Status(vital: vital, value: nil, day: nil, isCurrent: false, interval: nil,
                           verdict: .noData, isDeviation: false)
         }
-        let current = isCurrent(latest.day, todayKey: todayKey)
+        let current = isCurrent(latest.day, todayKey: todayKey, tonightIn: tonightIn)
         if vital == .bloodOxygen {
             let v = latest.value
+            // Yoop: the percent is shown whole, so it is judged whole (95% shown is not "below 95%").
+            let judged = PuffinExperiment.whoopScoresEnabled ? v.rounded() : v
             return Status(vital: vital, value: v, day: latest.day, isCurrent: current, interval: nil,
-                          verdict: v >= bloodOxygenFloor ? .within : .below, isDeviation: false)
+                          verdict: judged >= bloodOxygenFloor ? .within : .below, isDeviation: false)
         }
         let prior = WhoopDayFigures.normalValues(days: sorted.filter { $0.day < latest.day }, excluding: nil, read)
         return judged(vital, value: latest.value, day: latest.day, current: current, prior: prior, isDeviation: false)
@@ -142,7 +148,7 @@ enum HealthMonitorRule {
     /// usual one (Yoop's own nights); a change is the figure WHOOP shows, and it is judged on the absolute
     /// history, which is longer and on the same scale: Yoop's change is the night's absolute minus the mean of the
     /// nights before it. A night with only a change and fewer than `minNights` of them has no verdict yet.
-    private static func skinStatus(_ sorted: [DailyMetric], todayKey: String) -> Status {
+    private static func skinStatus(_ sorted: [DailyMetric], todayKey: String, tonightIn: Bool) -> Status {
         func absolute(_ d: DailyMetric) -> Double? {
             if let a = d.skinTempC, VitalBands.isAbsoluteSkinTemp(a) { return a }
             if let v = d.skinTempDevC, VitalBands.isAbsoluteSkinTemp(v) { return v }
@@ -158,7 +164,7 @@ enum HealthMonitorRule {
         }
         let row = sorted.first { $0.day == latest.day }
         let shownChange = row.flatMap(change)
-        let current = isCurrent(latest.day, todayKey: todayKey)
+        let current = isCurrent(latest.day, todayKey: todayKey, tonightIn: tonightIn)
         let history = sorted.filter { $0.day < latest.day }
         if let shownChange {
             // Judge the change on the absolute history when this night has an absolute too.
@@ -190,9 +196,10 @@ enum HealthMonitorRule {
                       verdict: verdict, isDeviation: isDeviation)
     }
 
-    /// The reading is from today's night or the one before it, the latest a wearer can have at any hour.
-    static func isCurrent(_ day: String, todayKey: String) -> Bool {
-        day >= Baselines.cutoffKey(todayKey: todayKey, carryDays: 1)
+    /// The reading is from today's night or the one before it, the latest a wearer can have at any hour. With
+    /// today's night already scored (`tonightIn`), only today's own reading is the latest.
+    static func isCurrent(_ day: String, todayKey: String, tonightIn: Bool = false) -> Bool {
+        tonightIn ? day >= todayKey : day >= Baselines.cutoffKey(todayKey: todayKey, carryDays: 1)
     }
 
     // MARK: Tally
