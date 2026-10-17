@@ -24,8 +24,15 @@ struct WhoopHealthGlow: View {
 
 // MARK: - The bubble
 
-/// The bubble's outline: a circle with a slow wobble, so it reads as a living blob rather than a ring.
+/// The bubble's outline: a circle with a slow wobble that drifts with `phase`, so the blob keeps changing shape.
 struct WhoopBlobShape: Shape {
+    var phase: Double = 0
+
+    var animatableData: Double {
+        get { phase }
+        set { phase = newValue }
+    }
+
     func path(in rect: CGRect) -> Path {
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let radius = min(rect.width, rect.height) / 2 * 0.9
@@ -33,7 +40,8 @@ struct WhoopBlobShape: Shape {
         var path = Path()
         for i in 0...steps {
             let t = Double(i) / Double(steps) * 2 * Double.pi
-            let wobble = 1 + 0.05 * sin(3 * t + 0.6) + 0.035 * sin(5 * t + 2.1) + 0.02 * sin(2 * t + 4.0)
+            let wobble = 1 + 0.07 * sin(3 * t + 0.6 + phase * 0.9) + 0.045 * sin(5 * t + 2.1 - phase * 1.3)
+                + 0.03 * sin(2 * t + 4.0 + phase * 0.7)
             let r = Double(radius) * wobble
             let point = CGPoint(x: center.x + CGFloat(cos(t) * r), y: center.y + CGFloat(sin(t) * r))
             if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
@@ -43,61 +51,73 @@ struct WhoopBlobShape: Shape {
     }
 }
 
-/// The specks inside the bubble, thickest near the rim, each breathing slowly. The same specks every time:
-/// they come from a fixed seed.
+/// The specks inside the bubble, thickest near the rim. Each drifts round the centre at its own pace, in and out
+/// a little, and brightens and fades on its own beat, so the whole bubble is plainly alive. The same specks every
+/// time they start: they come from a fixed seed. `time` is seconds.
 private struct WhoopBlobParticles: View {
     let tint: Color
+    let time: Double
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { timeline in
-            Canvas { context, size in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                let radius = min(size.width, size.height) / 2
-                var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
-                func next() -> Double {
-                    seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-                    return Double(seed >> 11) / Double(UInt64(1) << 53)
-                }
-                for _ in 0..<150 {
-                    let angle = next() * 2 * Double.pi
-                    let reach = 0.5 + 0.5 * pow(next(), 0.55)
-                    let dot = 0.8 + next() * 2.6
-                    let phase = next() * 2 * Double.pi
-                    let alpha = 0.35 + 0.65 * next()
-                    let breath = 0.75 + 0.25 * sin(t * 0.9 + phase)
-                    let x = center.x + CGFloat(cos(angle) * reach) * radius * 0.92
-                    let y = center.y + CGFloat(sin(angle) * reach) * radius * 0.92
-                    let rect = CGRect(x: x - CGFloat(dot) / 2, y: y - CGFloat(dot) / 2, width: CGFloat(dot), height: CGFloat(dot))
-                    context.fill(Path(ellipseIn: rect), with: .color(tint.opacity(alpha * breath)))
-                }
+        Canvas { context, size in
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let radius = min(size.width, size.height) / 2
+            var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+            func next() -> Double {
+                seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                return Double(seed >> 11) / Double(UInt64(1) << 53)
+            }
+            for _ in 0..<210 {
+                let angle0 = next() * 2 * Double.pi
+                let reach0 = 0.5 + 0.5 * pow(next(), 0.55)
+                let dot = 1.4 + next() * 3.8
+                let phase = next() * 2 * Double.pi
+                let alpha = 0.55 + 0.45 * next()
+                let drift = (next() - 0.5) * 0.3
+                let beat = 0.5 + next() * 1.1
+                let angle = angle0 + time * drift
+                let reach = min(0.97, max(0.42, reach0 + 0.04 * sin(time * 0.35 + phase)))
+                let glow = 0.35 + 0.65 * (0.5 + 0.5 * sin(time * beat + phase))
+                let x = center.x + CGFloat(cos(angle) * reach) * radius * 0.92
+                let y = center.y + CGFloat(sin(angle) * reach) * radius * 0.92
+                let rect = CGRect(x: x - CGFloat(dot) / 2, y: y - CGFloat(dot) / 2, width: CGFloat(dot), height: CGFloat(dot))
+                context.fill(Path(ellipseIn: rect), with: .color(tint.opacity(alpha * glow)))
             }
         }
     }
 }
 
 /// The big WHOOP Age number on its own, in WHOOP's dark blob with specks, on the Health tab and at the top of the page.
+/// The blob changes shape slowly and the specks drift and glow (still, with Reduce Motion on).
 struct WhoopAgeBubble: View {
     let snapshot: WhoopAgeSnapshot?
     var diameter: CGFloat = 220
     /// The folded header's small bubble: the age alone.
     var compact = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         let result = snapshot?.isUnlocked == true ? snapshot?.result : nil
         let younger = (result?.yearsYounger ?? 0) >= 0
         let tint = result == nil ? StrandPalette.textTertiary : (younger ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
         ZStack {
-            WhoopBlobShape()
-                .fill(RadialGradient(gradient: Gradient(stops: [
-                    .init(color: StrandPalette.surfaceBase, location: 0),
-                    .init(color: StrandPalette.surfaceBase.opacity(0.94), location: 0.42),
-                    .init(color: tint.opacity(0.35), location: 0.74),
-                    .init(color: tint.opacity(0.8), location: 1),
-                ]), center: .center, startRadius: 0, endRadius: diameter * 0.52))
-            WhoopBlobParticles(tint: tint)
-                .clipShape(WhoopBlobShape())
-            WhoopBlobShape().stroke(tint.opacity(0.85), lineWidth: 1.5)
+            TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: reduceMotion || compact)) { timeline in
+                let t = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+                let phase = t * 0.8
+                ZStack {
+                    WhoopBlobShape(phase: phase)
+                        .fill(RadialGradient(gradient: Gradient(stops: [
+                            .init(color: StrandPalette.surfaceBase, location: 0),
+                            .init(color: StrandPalette.surfaceBase.opacity(0.94), location: 0.42),
+                            .init(color: tint.opacity(0.35), location: 0.74),
+                            .init(color: tint.opacity(0.8), location: 1),
+                        ]), center: .center, startRadius: 0, endRadius: diameter * 0.52))
+                    WhoopBlobParticles(tint: tint, time: t)
+                        .clipShape(WhoopBlobShape(phase: phase))
+                    WhoopBlobShape(phase: phase).stroke(tint.opacity(0.85), lineWidth: 1.5)
+                }
+            }
             VStack(spacing: NoopMetrics.space1) {
                 Text(verbatim: result.map { String(format: "%.1f", $0.whoopAge) } ?? "--")
                     .font(WhoopStyle.number(diameter * 0.2))

@@ -153,8 +153,8 @@ struct WhoopInsightCard: View {
         // Tonight's planned bedtime and wake time in steps of 10 minutes: the card quotes the plan, and
         // the plan moves with the day's Strain, so a bedtime that has moved is written again (on 12 Oct
         // the card said 01:08 while Tonight's Sleep said 01:31). v5: the need's sleep debt became WHOOP's, so
-        // a card written about the old plan's figures is written again.
-        return "v5|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.sleepPlanToken)|\(coach.isConfigured)|\(coach.dataConsent)"
+        // a card written about the old plan's figures is written again. v6: the Coach's plainer, shorter voice.
+        return "v6|\(d.day)|\(rec)|\(sleep)|\(strain)|\(coach.sleepPlanToken)|\(coach.isConfigured)|\(coach.dataConsent)"
     }
 
     var body: some View {
@@ -465,7 +465,7 @@ struct DayInReviewSheet: View {
     @State private var loading = false
     @State private var failed = false
 
-    private static let cacheKey = "whoopStyle.dayReview"
+    private static let cacheKey = "whoopStyle.dayReview.v2"
     private var today: String { Repository.logicalDayKey(Date()) }
 
     var body: some View {

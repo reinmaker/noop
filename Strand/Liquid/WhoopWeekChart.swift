@@ -107,7 +107,8 @@ struct WhoopWeekChartCard: View {
                                 .foregroundStyle(point.color)
                         }
                 } else {
-                    AreaMark(x: .value("Day", point.key), y: .value("Value", point.value))
+                    AreaMark(x: .value("Day", point.key),
+                             yStart: .value("Base", domain.lowerBound), yEnd: .value("Value", point.value))
                         .interpolationMethod(.linear)
                         .foregroundStyle(LinearGradient(colors: [lineColor.opacity(0.26), lineColor.opacity(0.02)],
                                                         startPoint: .top, endPoint: .bottom))
