@@ -38,6 +38,8 @@ struct WhoopRingGauge: View {
     var caption: String? = nil
     /// Optional band drawn on the track (the Strain ring's optimal range), in `maxValue` units.
     var band: ClosedRange<Double>? = nil
+    /// Optional letters in a thin spaced line above the number, as WHOOP sets its name on a score screen.
+    var wordmark: String? = nil
 
     @State private var shown: Double = 0
 
@@ -64,6 +66,12 @@ struct WhoopRingGauge: View {
                     .trim(from: min(1, band.lowerBound / maxValue), to: min(1, band.upperBound / maxValue))
                     .stroke(StrandPalette.textTertiary.opacity(0.55), style: StrokeStyle(lineWidth: lineWidth))
                     .rotationEffect(.degrees(-90))
+                // A short white tick where the range begins, as WHOOP marks it.
+                let start = min(1, band.lowerBound / maxValue)
+                Circle()
+                    .trim(from: max(0, start - 0.004), to: min(1, start + 0.004))
+                    .stroke(StrandPalette.textPrimary, style: StrokeStyle(lineWidth: lineWidth + 4))
+                    .rotationEffect(.degrees(-90))
             }
             Circle()
                 .trim(from: 0, to: shown)
@@ -73,6 +81,13 @@ struct WhoopRingGauge: View {
             // that fits inside the inner edge, and both lines shrink to fit it, so they can never touch
             // each other or the ring, at any number width or text size.
             VStack(spacing: diameter * 0.03) {
+                if let wordmark {
+                    HStack(spacing: diameter * 0.025) {
+                        ForEach(Array(wordmark.enumerated()), id: \.offset) { _, letter in Text(String(letter)) }
+                    }
+                    .font(WhoopStyle.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
                     Text(valueText)
                         .font(WhoopStyle.number(diameter * (caption == nil ? 0.28 : 0.24)))

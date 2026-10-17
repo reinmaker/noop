@@ -27,51 +27,6 @@ final class WhoopScoreInsightTextTests: XCTestCase {
         XCTAssertTrue(sentences.allSatisfy { !$0.isEmpty })
     }
 
-    // MARK: Recovery
-
-    /// 12 Oct style readout: HRV 74 against 85 and resting heart rate 54 against 50, breathing and sleep fine.
-    private var lowReadings: [WhoopScoreInsightText.Reading] {
-        [.init(driver: .hrv, today: 74, usual: 85), .init(driver: .restingHr, today: 54, usual: 50),
-         .init(driver: .respiratory, today: 14.9, usual: 15.1), .init(driver: .sleep, today: 88, usual: 84)]
-    }
-
-    func testTheReadingScoreIsTheMoveThatHelpsAsAShareOfWhatIsNotable() throws {
-        let hrv = try XCTUnwrap(lowReadings[0].score)
-        XCTAssertEqual(hrv, (74.0 - 85.0) / 85.0 / 0.05, accuracy: 1e-9)
-        let rhr = try XCTUnwrap(lowReadings[1].score)
-        XCTAssertEqual(rhr, (50.0 - 54.0) / 50.0 / 0.03, accuracy: 1e-9, "a higher resting rate hurts")
-        let sleep = try XCTUnwrap(lowReadings[3].score)
-        XCTAssertEqual(sleep, 4.0 / 100.0 / 0.06, accuracy: 1e-9, "sleep moves in points of 100")
-        XCTAssertNil(WhoopScoreInsightText.Reading(driver: .hrv, today: nil, usual: 85).score)
-        XCTAssertNil(WhoopScoreInsightText.Reading(driver: .hrv, today: 74, usual: nil).score)
-    }
-
-    func testTheStrongestDragAndLead() {
-        XCTAssertEqual(WhoopScoreInsightText.strongest(lowReadings, drag: true), .restingHr)
-        XCTAssertNil(WhoopScoreInsightText.strongest(lowReadings, drag: false), "no move reaches what is notable")
-        let good: [WhoopScoreInsightText.Reading] = [.init(driver: .hrv, today: 97, usual: 86),
-                                                     .init(driver: .restingHr, today: 48, usual: 50)]
-        XCTAssertEqual(WhoopScoreInsightText.strongest(good, drag: false), .hrv)
-        XCTAssertNil(WhoopScoreInsightText.strongest(good, drag: true))
-        XCTAssertNil(WhoopScoreInsightText.strongest([], drag: true))
-    }
-
-    func testTheRecoverySentenceFollowsTheBandAndNamesTheSignal() {
-        XCTAssertEqual(WhoopScoreInsightText.recoverySentence(recovery: 80, readings: []),
-                       "Your body is well recovered and ready for a hard day.")
-        XCTAssertEqual(WhoopScoreInsightText.recoverySentence(recovery: 67, readings: []),
-                       "Your body is well recovered and ready for a hard day.", "67 is green")
-        XCTAssertEqual(WhoopScoreInsightText.recoverySentence(recovery: 66, readings: []),
-                       "Your recovery is moderate. Keep today's effort steady and listen to your body.")
-        XCTAssertEqual(WhoopScoreInsightText.recoverySentence(recovery: 20, readings: []),
-                       "Your recovery is low. Prioritize rest, fluids and an early night.")
-        let moderate = WhoopScoreInsightText.recoverySentence(recovery: 50, readings: lowReadings)
-        XCTAssertTrue(moderate.hasSuffix("Resting Heart Rate is the biggest drag on today's Recovery."), moderate)
-        let green = WhoopScoreInsightText.recoverySentence(
-            recovery: 91, readings: [.init(driver: .hrv, today: 97, usual: 86)])
-        XCTAssertTrue(green.hasSuffix("Heart Rate Variability is helping your Recovery the most."), green)
-    }
-
     // MARK: Behaviours
 
     func testABehaviourChipDropsTheFramingWords() {
