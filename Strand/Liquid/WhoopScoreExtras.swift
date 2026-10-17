@@ -51,84 +51,6 @@ enum WhoopScoreInsightText {
         }
     }
 
-    // MARK: Recovery
-
-    /// The signals behind a Recovery score that the card can name.
-    enum Driver: Equatable {
-        case hrv, restingHr, respiratory, sleep
-
-        /// The name of the signal as the contributor row states it.
-        var label: String {
-            switch self {
-            case .hrv: return String(localized: "HEART RATE VARIABILITY")
-            case .restingHr: return String(localized: "RESTING HEART RATE")
-            case .respiratory: return String(localized: "RESPIRATORY RATE")
-            case .sleep: return String(localized: "SLEEP PERFORMANCE")
-            }
-        }
-
-        /// The size of a move that is worth naming, as a share of the usual value (sleep: of 100 points).
-        fileprivate var notable: Double {
-            switch self {
-            case .hrv: return 0.05
-            case .restingHr: return 0.03
-            case .respiratory: return 0.03
-            case .sleep: return 0.06
-            }
-        }
-    }
-
-    /// One signal today against its 30-day usual, nil when either is missing.
-    struct Reading: Equatable {
-        let driver: Driver
-        let today: Double?
-        let usual: Double?
-
-        /// The move in the direction that helps Recovery, as a share of what is notable: -1 is a move that
-        /// just earns a mention against it, +1 one that just earns a mention for it.
-        var score: Double? {
-            guard let today, let usual, usual > 0 else { return nil }
-            let helpful: Double
-            switch driver {
-            case .hrv: helpful = (today - usual) / usual
-            case .restingHr, .respiratory: helpful = (usual - today) / usual
-            case .sleep: helpful = (today - usual) / 100
-            }
-            return helpful / driver.notable
-        }
-    }
-
-    /// The signal that pulls Recovery down the most (`drag`) or lifts it the most (`lead`), when one moved by
-    /// more than is notable.
-    static func strongest(_ readings: [Reading], drag: Bool) -> Driver? {
-        let scored = readings.compactMap { r in r.score.map { (r.driver, $0) } }
-        if drag {
-            guard let worst = scored.min(by: { $0.1 < $1.1 }), worst.1 <= -1 else { return nil }
-            return worst.0
-        }
-        guard let best = scored.max(by: { $0.1 < $1.1 }), best.1 >= 1 else { return nil }
-        return best.0
-    }
-
-    /// The card's sentence for a Recovery score (0 to 100): the band, then the signal behind it when one stands out.
-    static func recoverySentence(recovery: Double, readings: [Reading]) -> String {
-        let band: String
-        let drag = recovery < 67
-        if recovery >= 67 {
-            band = String(localized: "Your body is well recovered and ready for a hard day.")
-        } else if recovery >= 34 {
-            band = String(localized: "Your recovery is moderate. Keep today's effort steady and listen to your body.")
-        } else {
-            band = String(localized: "Your recovery is low. Prioritize rest, fluids and an early night.")
-        }
-        guard let driver = strongest(readings, drag: drag) else { return band }
-        let name = driver.label.localizedCapitalized
-        let reason = drag
-            ? String(localized: "\(name) is the biggest drag on today's Recovery.")
-            : String(localized: "\(name) is helping your Recovery the most.")
-        return band + " " + reason
-    }
-
     /// "Did you have any alcohol?" as a chip: the question without its framing words and question mark.
     static func behaviourName(_ question: String) -> String {
         var text = question.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -186,15 +108,74 @@ struct WhoopOutlineInsightCard: View {
 
 // MARK: - Behavior insights
 
-/// "BEHAVIOR INSIGHTS" on the Recovery screen: yesterday's journal answers that were Yes, as chips marked with
-/// what they have done to the wearer's own Recovery (the lag-aware ranker over the whole journal, flagged only
-/// when the effect is significant). With no journal for yesterday it asks for one.
+/// The drivers WHOOP names beside the journal behaviours on the Recovery screen ("10+ Strain", "83%+ Sleep
+/// Performance"): for each, the threshold at which this wearer's own Recovery differs most from the days under it,
+/// kept only when the difference is significant and today is on the over-the-threshold side. Pure.
+enum WhoopBehaviorDrivers {
+    struct Chip: Equatable {
+        let name: String
+        /// +1 when Recovery ran higher on those days, -1 lower.
+        let direction: Int
+    }
+
+    static let strainThresholds: [Double] = [8, 10, 12, 14]
+    static let sleepThresholds: [Double] = [70, 75, 80, 83, 85, 90]
+
+    /// The best threshold of `values` (day to figure) against `outcome` (day to Recovery), as the signed effect.
+    private static func best(_ values: [String: Double], thresholds: [Double], outcome: [String: Double],
+                             label: String) -> (threshold: Double, delta: Double)? {
+        var chosen: (threshold: Double, delta: Double, size: Double)?
+        for t in thresholds {
+            let withDays = Set(values.filter { $0.value >= t && outcome[$0.key] != nil }.keys)
+            let without = Set(values.filter { $0.value < t && outcome[$0.key] != nil }.keys)
+            guard let e = BehaviorInsights.effect(behaviorDays: withDays, controlDays: without, outcomeByDay: outcome,
+                                                  behavior: label, outcome: "Recovery"),
+                  e.significant else { continue }
+            if chosen == nil || abs(e.cohensD) > chosen!.size { chosen = (t, e.delta, abs(e.cohensD)) }
+        }
+        return chosen.map { (threshold: $0.threshold, delta: $0.delta) }
+    }
+
+    static func chips(days: [DailyMetric], sleepPerformance: [String: Double], shownDay: String) -> [Chip] {
+        let recovery = Dictionary(days.compactMap { d in d.recovery.map { (d.day, $0) } }, uniquingKeysWith: { _, last in last })
+        var out: [Chip] = []
+
+        // Yesterday's Strain against this morning's Recovery: a day's outcome is the next day's Recovery.
+        let strain = Dictionary(days.compactMap { d in d.strain.map { (d.day, AICoachEngine.strain21($0)) } },
+                                uniquingKeysWith: { _, last in last })
+        var nextMorning: [String: Double] = [:]
+        for day in strain.keys {
+            if let r = recovery[WeeklyDigestEngine.addDays(day, 1)] { nextMorning[day] = r }
+        }
+        if let pick = best(strain, thresholds: strainThresholds, outcome: nextMorning, label: "Strain"),
+           let yesterday = strain[WeeklyDigestEngine.addDays(shownDay, -1)], yesterday >= pick.threshold {
+            out.append(Chip(name: "\(Int(pick.threshold))+ " + String(localized: "Strain"), direction: pick.delta > 0 ? 1 : -1))
+        }
+
+        // Last night's Sleep Performance against this morning's Recovery.
+        if let pick = best(sleepPerformance, thresholds: sleepThresholds, outcome: recovery, label: "Sleep Performance"),
+           let tonight = sleepPerformance[shownDay], tonight >= pick.threshold {
+            out.append(Chip(name: "\(Int(pick.threshold))%+ " + String(localized: "Sleep Performance"),
+                            direction: pick.delta > 0 ? 1 : -1))
+        }
+        return out
+    }
+}
+
+/// "BEHAVIOR INSIGHTS" on the Recovery screen, as WHOOP sets it: a lightbulb and an arrow on the title, a line about
+/// yesterday, and chips for what may have moved today's Recovery, each marked up or down: the drivers
+/// (`WhoopBehaviorDrivers`) and yesterday's Yes journal answers marked by the lag-aware ranker over the whole
+/// journal. Three show and the rest sit behind "+N more". It opens the Behavior Insights hub, or the journal when
+/// yesterday has none and there is nothing else to show.
 struct WhoopRecoveryBehaviorsCard: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var router: NavRouter
 
     /// The stored journal day of the Recovery shown: the morning after the behaviours, which is the day itself.
     let day: String
+    let days: [DailyMetric]
+    /// Each day's Sleep Performance, the figure the screen's own row states.
+    let sleepPerformance: [String: Double]
 
     private struct Chip: Identifiable {
         let id: String
@@ -207,57 +188,77 @@ struct WhoopRecoveryBehaviorsCard: View {
     @State private var answered = false
     @State private var loaded = false
 
+    private static let shown = 3
+
     var body: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            Text("BEHAVIOR INSIGHTS")
-                .font(WhoopStyle.smallLabel)
-                .foregroundStyle(StrandPalette.textPrimary)
-            if loaded && !answered {
-                Text("Log yesterday's journal to see how your behaviors moved your Recovery.")
-                    .font(WhoopStyle.body)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Some of your behaviors from yesterday may have moved today's Recovery.")
-                    .font(WhoopStyle.body)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !chips.isEmpty {
-                    FlowLayout(spacing: NoopMetrics.space2) {
-                        ForEach(chips) { chip in chipView(chip) }
+        Button {
+            if answered || !chips.isEmpty { router.openInsightsHub() } else { router.openJournal(day: 1) }
+        } label: {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                HStack(spacing: NoopMetrics.space2) {
+                    Image(systemName: "lightbulb")
+                        .font(WhoopStyle.icon)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                    Text("BEHAVIOR INSIGHTS")
+                        .font(WhoopStyle.smallLabel)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    Spacer(minLength: NoopMetrics.space2)
+                    Image(systemName: "chevron.right")
+                        .font(WhoopStyle.detail)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+                if loaded && !answered && chips.isEmpty {
+                    Text("Log yesterday's journal to see how your behaviors moved your Recovery.")
+                        .font(WhoopStyle.body)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Some of your behaviors from yesterday may have moved today's Recovery.")
+                        .font(WhoopStyle.body)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !chips.isEmpty {
+                        FlowLayout(spacing: NoopMetrics.space2) {
+                            ForEach(chips.prefix(Self.shown)) { chip in chipView(chip) }
+                            if chips.count > Self.shown { moreView(chips.count - Self.shown) }
+                        }
                     }
                 }
             }
-            Button {
-                if answered { router.openInsightsHub() } else { router.openJournal(day: 1) }
-            } label: {
-                WhoopActionButtonLabel(title: answered ? String(localized: "BEHAVIOR INSIGHTS")
-                                                       : String(localized: "MY JOURNAL"),
-                                       systemImage: answered ? "lightbulb" : "square.and.pencil")
-            }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(WhoopStyle.compactPadding)
+            .whoopCard()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(WhoopStyle.compactPadding)
-        .whoopCard()
+        .buttonStyle(.plain)
         .task(id: "\(repo.refreshSeq)|\(repo.journalSeq)|\(day)") { await load() }
     }
 
     private func chipView(_ chip: Chip) -> some View {
-        HStack(spacing: 4) {
+        let tint: Color = chip.direction > 0 ? WhoopStyle.rangeGreen : (chip.direction < 0 ? WhoopStyle.rangeAmber : StrandPalette.textPrimary)
+        return HStack(spacing: 5) {
             if chip.direction != 0 {
                 Image(systemName: chip.direction > 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                     .font(WhoopStyle.chevron)
-                    .foregroundStyle(chip.direction > 0 ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
             }
             Text(chip.name)
                 .font(WhoopStyle.detail)
-                .foregroundStyle(StrandPalette.textPrimary)
                 .lineLimit(1)
         }
+        .foregroundStyle(tint)
         .padding(.horizontal, NoopMetrics.space3)
         .padding(.vertical, NoopMetrics.space2)
-        .background(Capsule().fill(WhoopStyle.ringTrack))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(chip.direction == 0 ? 0.1 : 0.16)))
+    }
+
+    private func moreView(_ count: Int) -> some View {
+        Text("+\(count) more")
+            .font(WhoopStyle.detail)
+            .foregroundStyle(StrandPalette.textSecondary)
+            .padding(.horizontal, NoopMetrics.space3)
+            .padding(.vertical, NoopMetrics.space2)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(WhoopStyle.ringTrack))
     }
 
     private func load() async {
@@ -270,16 +271,21 @@ struct WhoopRecoveryBehaviorsCard: View {
             if e.answeredYes { byBehaviour[e.question, default: []].insert(e.day) }
             else { controls[e.question, default: []].insert(e.day) }
         }
-        let outcome = Dictionary(repo.days.compactMap { d in d.recovery.map { (d.day, $0) } },
+        let outcome = Dictionary(days.compactMap { d in d.recovery.map { (d.day, $0) } },
                                  uniquingKeysWith: { _, last in last })
         let ranked = EffectRanker.rank(behaviors: byBehaviour, controls: controls, outcomeByDay: outcome,
                                        outcome: "Recovery")
         var effect: [String: Int] = [:]
         for r in ranked where r.effect.significant { effect[r.behavior] = r.effect.delta > 0 ? 1 : -1 }
-        answered = !yesterday.isEmpty
-        chips = yesterday.filter(\.answeredYes).prefix(8).map {
+        let journal = yesterday.filter(\.answeredYes).prefix(8).map {
             Chip(id: $0.question, name: WhoopScoreInsightText.behaviourName($0.question), direction: effect[$0.question] ?? 0)
         }
+        let drivers = WhoopBehaviorDrivers.chips(days: days, sleepPerformance: sleepPerformance, shownDay: day)
+            .map { Chip(id: "driver-" + $0.name, name: $0.name, direction: $0.direction) }
+        // The ones with a clear effect first, then the rest.
+        let all = journal + drivers
+        chips = all.filter { $0.direction != 0 } + all.filter { $0.direction == 0 }
+        answered = !yesterday.isEmpty
         loaded = true
     }
 }
@@ -328,6 +334,8 @@ struct WhoopDayActivityFigures: Equatable {
     var zones13Min = 0.0
     var zones45Min = 0.0
     var strengthMin = 0.0
+    /// Minutes in each of zones 1 to 5, which the two sums above add up.
+    var zoneMin: [Double] = Array(repeating: 0, count: 5)
 }
 
 /// Yoop: the activity figures of each of the last days, counted as `WhoopAgeLoader` counts them for WHOOP Age
@@ -338,21 +346,31 @@ enum WhoopStrainFigures {
     static func load(repo: Repository, rows: [WorkoutRow]) async -> [String: WhoopDayActivityFigures] {
         var out: [String: WhoopDayActivityFigures] = [:]
         for w in rows {
-            let day = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
+            let dayKey = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
             let duration = w.durationS ?? Double(w.endTs - w.startTs)
             var bands: [Double]?
             if WorkoutZones.percents(w.zonesJSON) == nil {
-                let rest = WhoopActivityZones.restingHR(dayKey: day, days: repo.days)
+                let rest = WhoopActivityZones.restingHR(dayKey: dayKey, days: repo.days)
                 let samples = await repo.workoutHrSamples(from: w.startTs, to: w.endTs, source: w.source)
                 bands = WhoopActivityZones.bandSeconds(samples, from: w.startTs, to: w.endTs, restingHR: rest)
             }
-            if let z = WhoopAge.zoneMinutes(durationS: duration, importedPercents: WorkoutZones.percents(w.zonesJSON),
-                                            bandSeconds: bands) {
-                out[day, default: WhoopDayActivityFigures()].zones13Min += z.z13
-                out[day, default: WhoopDayActivityFigures()].zones45Min += z.z45
+            var perZone = [Double](repeating: 0, count: 5)
+            if let p = WorkoutZones.percents(w.zonesJSON), p.count == 5, duration > 0 {
+                for i in 0..<5 { perZone[i] = duration / 60 * p[i] / 100 }
+            } else if let b = bands, b.count == 6 {
+                for i in 0..<5 { perZone[i] = b[i + 1] / 60 }
+            } else {
+                perZone = []
+            }
+            if perZone.count == 5 {
+                var day = out[dayKey, default: WhoopDayActivityFigures()]
+                for i in 0..<5 { day.zoneMin[i] += perZone[i] }
+                day.zones13Min += perZone[0] + perZone[1] + perZone[2]
+                day.zones45Min += perZone[3] + perZone[4]
+                out[dayKey] = day
             }
             if WhoopAge.isStrengthSport(w.sport), duration > 0 {
-                out[day, default: WhoopDayActivityFigures()].strengthMin += duration / 60
+                out[dayKey, default: WhoopDayActivityFigures()].strengthMin += duration / 60
             }
         }
         return out
