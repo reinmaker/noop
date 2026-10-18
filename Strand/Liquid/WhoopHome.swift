@@ -260,7 +260,7 @@ struct HealthMonitorCard: View {
                             .font(WhoopStyle.smallLabel)
                             .foregroundStyle(tint)
                         if summary.counted > 0 || headline == .noData {
-                            let tally = "\(summary.within)/\(summary.counted)"
+                            let tally = "\(summary.within)/\(summary.tracked)"
                             Text(summary.counted == 0 ? String(localized: "Wear it tonight")
                                  : tally + " " + String(localized: "Metrics"))
                                 .font(WhoopStyle.detail)

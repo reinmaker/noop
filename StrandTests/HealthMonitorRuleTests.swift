@@ -302,6 +302,7 @@ final class HealthMonitorRuleTests: XCTestCase {
         let oldSpo2 = row("2026-10-08", spo2: 96)
         let summary = HealthMonitorRule.summary(
             HealthMonitorRule.statuses(days: prior + [oldSpo2, latest], todayKey: "2026-10-12"))
+        XCTAssertEqual(summary.tracked, 5, "all five vitals are tracked, read or not: the tally reads 3/5, not 3/3")
         XCTAssertEqual(summary.counted, 3, "HRV, resting heart rate, respiratory rate; skin has no reading, blood oxygen is old")
         XCTAssertEqual(summary.within, 3)
         XCTAssertTrue(summary.allWithin)

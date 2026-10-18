@@ -131,7 +131,7 @@ struct WhoopVitalsCard: View {
                 VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
                     Text(WhoopVitalText.headline(headline)).font(WhoopStyle.smallLabel).foregroundStyle(tint)
                     if summary.counted > 0 {
-                        let tally = "\(summary.within)/\(summary.counted)"
+                        let tally = "\(summary.within)/\(summary.tracked)"
                         Text(tally + " " + String(localized: "Metrics"))
                             .font(WhoopStyle.detail)
                             .foregroundStyle(StrandPalette.textSecondary)
