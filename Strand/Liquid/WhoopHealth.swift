@@ -51,6 +51,17 @@ enum WhoopVitalText {
         }
     }
 
+    /// Yoop, a skin temperature shown as a change: the night's temperature and the baseline behind the change,
+    /// so a change near zero still says where the wrist was.
+    static func skinNote(_ status: HealthMonitorRule.Status, fahrenheit: Bool) -> String? {
+        guard status.vital == .skinTemperature, status.isDeviation, let night = status.night,
+              let change = status.value else { return nil }
+        func degrees(_ v: Double) -> String {
+            SkinTempDisplay.formatReading(SkinTempDisplay.Reading(value: v, kind: .absolute), fahrenheit: fahrenheit)
+        }
+        return String(localized: "Night \(degrees(night)), baseline \(degrees(night - change))")
+    }
+
     static func value(_ status: HealthMonitorRule.Status, fahrenheit: Bool) -> String? {
         status.value.map { number($0, status.vital, isDeviation: status.isDeviation, fahrenheit: fahrenheit) }
     }
@@ -266,7 +277,6 @@ struct WhoopVitalsSection: View {
     @EnvironmentObject private var repo: Repository
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
-    @AppStorage(UnitPrefs.skinTempDisplayKey) private var skinTempDisplayRaw = ""
     var showsRule = true
 
     private var fahrenheit: Bool {
@@ -303,13 +313,16 @@ struct WhoopVitalsSection: View {
            source(of: .respiratoryRate, day: day) == .noopComputed {
             out[.respiratoryRate] = String(localized: "Estimated from your heartbeat intervals")
         }
+        if let skin = statuses.first(where: { $0.vital == .skinTemperature }),
+           let note = WhoopVitalText.skinNote(skin, fahrenheit: fahrenheit) {
+            out[.skinTemperature] = note
+        }
         return out
     }
 
     var body: some View {
         let today = Repository.logicalDayKey(Date())
-        let statuses = HealthMonitorRule.statuses(days: repo.days, todayKey: today,
-                                                  skinTemp: SkinTempDisplay.Kind(rawValue: skinTempDisplayRaw) ?? .absolute)
+        let statuses = HealthMonitorRule.statuses(days: repo.days, todayKey: today)
         WhoopVitalsCard(statuses: statuses, fahrenheit: fahrenheit, notes: notes(statuses), today: today, showsRule: showsRule)
     }
 }
