@@ -304,7 +304,8 @@ struct WhoopVitalsSection: View {
             switch from {
             case .whoopImport: out[.bloodOxygen] = String(localized: "Imported from your WHOOP export")
             case .appleHealth: out[.bloodOxygen] = String(localized: "Imported from Apple Health")
-            case .noopComputed, .localCache: out[.bloodOxygen] = String(localized: "Saved on this device")
+            case .noopComputed: out[.bloodOxygen] = String(localized: "Estimated from your strap's own readings")
+            case .localCache: out[.bloodOxygen] = String(localized: "Saved on this device")
             }
         }
         // A night Yoop scored has no respiration sensor behind its rate: it is read off the beat to beat
