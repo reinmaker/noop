@@ -585,7 +585,7 @@ struct WhoopHealthMonitorGridCard: View {
                 .frame(width: 20, height: 20)
                 .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(good || headline == .outOfRange ? tint : WhoopStyle.ringTrack))
-            Text(summary.counted > 0 ? String(localized: "\(summary.within)/\(summary.counted) metrics within range")
+            Text(summary.counted > 0 ? String(localized: "\(summary.within)/\(summary.tracked) metrics within range")
                                      : WhoopVitalText.headline(headline))
                 .font(WhoopStyle.detail)
                 .foregroundStyle(StrandPalette.textPrimary)

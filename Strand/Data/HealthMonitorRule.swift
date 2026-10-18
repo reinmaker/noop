@@ -264,6 +264,9 @@ enum HealthMonitorRule {
     // MARK: Tally
 
     struct Summary: Equatable {
+        /// Every vital the monitor tracks, read or not: the "of" in "4/5 Metrics". A vital with no reading from
+        /// the latest night (respiratory rate on a night Yoop could not estimate it) is still one of the five.
+        let tracked: Int
         /// Vitals with a verdict from the latest night.
         let counted: Int
         let within: Int
@@ -296,7 +299,7 @@ enum HealthMonitorRule {
 
     static func summary(_ statuses: [Status]) -> Summary {
         let counted = statuses.filter(\.counts)
-        return Summary(counted: counted.count,
+        return Summary(tracked: statuses.count, counted: counted.count,
                        within: counted.filter(\.isFine).count,
                        notCounted: statuses.filter { !$0.counts && $0.value != nil }.count)
     }
