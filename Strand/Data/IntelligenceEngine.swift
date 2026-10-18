@@ -2089,7 +2089,9 @@ final class IntelligenceEngine: ObservableObject {
             $0.skinTempDevC.flatMap { $0 >= skinCfg.minVal && $0 <= skinCfg.maxVal ? $0 : nil }
         }
         let skinHistory = ChargeBaselines.history(imported: importedSkin, own: ownNights(nightlySkinByDay),
-                                                  anchorDay: newestDay, cfg: skinCfg, baselineEpoch: recoveryEpoch)
+                                                  anchorDay: newestDay, cfg: skinCfg, baselineEpoch: recoveryEpoch,
+                                                  windowDays: asleepVitalsGlobal ? Self.skinBaselineDays
+                                                                                 : ChargeBaselines.windowDays)
         // Resp baseline gated on `usable`: RecoveryScorer includes the resp term whenever a
         // baseline object is present , a CALIBRATING (<4-night) baseline would let one noisy
         // RSA night move recovery (mirrors the skin-temp use-site gate; honest cold-start).
@@ -2098,8 +2100,10 @@ final class IntelligenceEngine: ObservableObject {
         // Skin-temp gated the same way for consistency: its only use-site re-checks `.usable`
         // (AnalyticsEngine's skinTempDevC guard) so this is belt-and-suspenders, but it stops a
         // future use-site from trusting a CALIBRATING baseline. (PR #97 review.)
-        let skinFold = Baselines.foldHistory(skinHistory.values, dayKeys: skinHistory.dayKeys, cfg: skinCfg,
-                                             baselineEpoch: recoveryEpoch)
+        let skinFold = asleepVitalsGlobal
+            ? Self.yoopSkinBaseline(skinHistory, before: newestDay, epoch: recoveryEpoch, cfg: skinCfg)
+            : Baselines.foldHistory(skinHistory.values, dayKeys: skinHistory.dayKeys, cfg: skinCfg,
+                                    baselineEpoch: recoveryEpoch)
         // #1614: the per-night HRV fold, traced. HRV ONLY, deliberately: it is Charge's dominant driver
         // and the one whose spread the score divides by, so tracing all four baselines would quadruple
         // the log for the three that are not the question being asked. Capped at the last 14 nights,
@@ -3610,6 +3614,28 @@ final class IntelligenceEngine: ObservableObject {
     private static func recomputeSkinTempDev(_ nightly: Double?, _ base: BaselineState?) -> Double? {
         guard let v = nightly, let b = base, b.usable else { return nil }
         return (Baselines.deviation(v, state: b).delta * 100.0).rounded() / 100.0
+    }
+
+    /// Yoop: the calendar days of nights the skin-temperature baseline reads, the span of WHOOP's own typical range.
+    nonisolated static let skinBaselineDays = 30
+
+    /// Yoop: the skin-temperature baseline is the plain mean of the nights in `history` before `day`, cut at the
+    /// recalibration `epoch`. The Charge baseline (a fold over 21 days, folded again from the window's first night,
+    /// fast while young and slow after) held 12 nights on 18 Oct 2026 and read 31.88, 0.3 °C under the 30-day
+    /// mean, so a 31.85 night showed as no change. Usable from `Baselines.minNightsSeed` nights.
+    /// The nights come from the pass: imported ones while they seed it, then the pass's own scan window.
+    nonisolated static func yoopSkinBaseline(_ history: ChargeBaselines.History, before day: String,
+                                             epoch: Double, cfg: MetricCfg) -> BaselineState {
+        let fmt = DateFormatter()
+        fmt.calendar = Calendar(identifier: .gregorian)
+        fmt.timeZone = TimeZone(secondsFromGMT: 0)
+        fmt.dateFormat = "yyyy-MM-dd"
+        var nights: [Double?] = []
+        for (key, value) in zip(history.dayKeys, history.values) where key < day {
+            if epoch > 0, let start = fmt.date(from: key), start.timeIntervalSince1970 < epoch { continue }
+            nights.append(value)
+        }
+        return Baselines.rollingMeanSD(nights, cfg: cfg, window: skinBaselineDays)
     }
 
     /// The user's habitual midsleep (local time-of-day seconds), or nil under `habitualMinDays` of
