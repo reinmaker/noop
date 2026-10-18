@@ -233,6 +233,10 @@ final class IntelligenceEngine: ObservableObject {
         /// "spo2_candidate" under the "-noop" device ID in pass 2 — same key for both devices, since the
         /// series is always read scoped to one device's own computed ID.
         let spo2Candidate: Int?
+        /// Yoop: the night's blood oxygen from the strap's own readings (`YoopBloodOxygen`), written to the day's
+        /// `spo2Pct` in pass 2 when nothing else measured it. nil off the Yoop path, on an Oura owner, on a strap
+        /// with no v18 stream, or on a night with too few bursts.
+        let yoopSpo2: Double?
         /// #1118: whether this night's in-sleep R-R is OVER-COUNTED (`crossSecondOverCount` /
         /// `sameSecondOverCount`) — the WHOOP-4.0 two-optical-channel artifact that inflates R-R and
         /// contaminates the displayed HRV. nil when the night has no in-sleep R-R (no HRV to caveat).
@@ -1078,6 +1082,8 @@ final class IntelligenceEngine: ObservableObject {
         // Yoop: the night starts where the wearer got into bed, after the walk to it, not at the first stillness.
         SleepStager.bedtimeFromWalkEnabled = PuffinExperiment.whoopScoresEnabled
         let bedtimeWalkGlobal = SleepStager.bedtimeFromWalkEnabled
+        // Yoop: the night's blood oxygen from the strap's own reading (`YoopBloodOxygen`).
+        let yoopSpo2Global = PuffinExperiment.whoopScoresEnabled
         // Yoop: count steps as the strap's pedometer releases them, and store ACTIVE energy priced from heart
         // rate and steps, with resting energy added where a total is shown.
         StepsCounter.yoopCountingEnabled = PuffinExperiment.whoopScoresEnabled
@@ -1155,6 +1161,7 @@ final class IntelligenceEngine: ObservableObject {
             "\(yoopStepsGlobal)",
             "\(yoopEnergyGlobal)",
             "\(bedtimeWalkGlobal)",
+            "\(yoopSpo2Global)",
         ].joined(separator: "|")
         // Drop the whole cache on a config change, then snapshot it into a Sendable `let` for the detached
         // loop (the engine is @MainActor; the loop can't touch `self`). The loop returns the updated cache
@@ -1838,7 +1845,8 @@ final class IntelligenceEngine: ObservableObject {
                 // decode, an Oura night with no in-window plausible sample, or when the toggle is OFF.
                 // The mean is written to metricSeries as "spo2_candidate" in pass 2, never to `spo2Pct` —
                 // the guard test `testHistoricalV18OpticalFieldsAreNotNamedPhysiologically` enforces that
-                // boundary for the WHOOP path.
+                // boundary for the WHOOP path. Yoop's own burst-averaged night (`YoopBloodOxygen`, below) is a
+                // separate value and does fill `spo2Pct`.
                 var spo2CandidateMean: Int? = nil
                 if spo2CandidateDisplayOn {
                     // Through the catalog, NOT `regDevices…?.brand == "Oura"`. Kotlin resolves this with
@@ -1863,6 +1871,13 @@ final class IntelligenceEngine: ObservableObject {
                         }
                     }
                 }
+                // Yoop: the strap's own blood oxygen, averaged over the night's bursts. Not an Oura ring's.
+                var yoopSpo2Night: Double? = nil
+                if yoopSpo2Global, !DeviceBrandCatalog.isOura(owner) {
+                    let auxSamples = (try? await store.v18AuxSamples(
+                        deviceId: owner, from: from, to: to, limit: 200_000)) ?? []
+                    yoopSpo2Night = YoopBloodOxygen.night(sessions: res.sleepSessions, aux: auxSamples)?.percent
+                }
                 // #1169 SHADOW METRIC (instrumentation only): the primary-session MEAN resting HR, recorded
                 // beside the shipped nightly HR FLOOR (daily.restingHr = min per session) so the mean-vs-floor
                 // comparison the issue asks for accrues on real devices. NEVER shown and NEVER fed to any
@@ -1876,6 +1891,7 @@ final class IntelligenceEngine: ObservableObject {
                                    sleepTrace: sleepTrace, stepsTrace: stepsTrace, hrvTrace: hrvTrace,
                                    hrvDiag: Self.mergedDayDiag(hrvDiag, strainDiagLines),
                                    spo2Candidate: spo2CandidateMean,
+                                   yoopSpo2: yoopSpo2Night,
                                    hrvOverCounted: hrvOverCounted,
                                    primarySessionRHR: primarySessionRHR,
                                    primarySessionRHRCoverage: primarySessionRHRCoverage)
@@ -1963,6 +1979,7 @@ final class IntelligenceEngine: ObservableObject {
         var resolvedScoreOwnerByDay: [String: String] = [:]
         // #103: SpO₂ candidate @82 nightly mean per day, carried from pass 1 for metricSeries persistence.
         var spo2CandidateByDay: [String: Int] = [:]
+        var yoopSpo2ByDay: [String: Double] = [:]
         // #1118: per-day HRV over-count flag, carried from pass 1 for metricSeries persistence. nil (absent)
         // for a night with no in-sleep R-R; otherwise true/false, so a re-score always overwrites the row.
         var hrvOverCountByDay: [String: Bool] = [:]
@@ -1987,6 +2004,7 @@ final class IntelligenceEngine: ObservableObject {
             if let cand = scan.spo2Candidate {
                 spo2CandidateByDay[res.daily.day] = cand
             }
+            if let night = scan.yoopSpo2 { yoopSpo2ByDay[res.daily.day] = night }
             // #1118: carry the HRV over-count flag into pass 2 for metricSeries persistence.
             if let oc = scan.hrvOverCounted {
                 hrvOverCountByDay[res.daily.day] = oc
@@ -2305,6 +2323,10 @@ final class IntelligenceEngine: ObservableObject {
             }
             daily = Self.recomputeRecoveryDaily(daily, nightlySkinTempC: night.nightlySkin,
                                                baselines: baselines2)
+            // Yoop: the strap's own blood oxygen fills the night when no measured reading did.
+            if whoopScores, daily.spo2Pct == nil, let spo2 = yoopSpo2ByDay[daily.day] {
+                daily = daily.with(spo2Pct: spo2)
+            }
             if whoopScores, let whoopRecovery = WhoopScores.recovery(
                 day: daily.day, hrv: daily.avgHrv, rhr: daily.restingHr.map(Double.init),
                 resp: daily.respRateBpm, history: whoopHistory) {
@@ -3781,6 +3803,17 @@ extension DailyMetric {
                     spo2Pct: spo2Pct, skinTempDevC: sd, respRateBpm: respRateBpm,
                     steps: steps, activeKcalEst: activeKcalEst,
                     spo2Red: spo2Red, spo2Ir: spo2Ir, avgSdnn: avgSdnn, skinTempC: sa,
+                    sleepHrOnly: sleepHrOnly)
+    }
+
+    /// Rebuild with a substituted blood oxygen (Yoop: the strap's own reading, `YoopBloodOxygen`).
+    func with(spo2Pct spo2: Double?) -> DailyMetric {
+        DailyMetric(day: day, totalSleepMin: totalSleepMin, efficiency: efficiency, deepMin: deepMin,
+                    remMin: remMin, lightMin: lightMin, disturbances: disturbances, restingHr: restingHr,
+                    avgHrv: avgHrv, recovery: recovery, strain: strain, exerciseCount: exerciseCount,
+                    spo2Pct: spo2, skinTempDevC: skinTempDevC, respRateBpm: respRateBpm,
+                    steps: steps, activeKcalEst: activeKcalEst,
+                    spo2Red: spo2Red, spo2Ir: spo2Ir, avgSdnn: avgSdnn, skinTempC: skinTempC,
                     sleepHrOnly: sleepHrOnly)
     }
 
