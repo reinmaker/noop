@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import StrandAnalytics
 import WhoopStore
 @testable import Strand
 
@@ -290,6 +291,49 @@ final class HealthMonitorRuleTests: XCTestCase {
         let status = HealthMonitorRule.statuses(days: days, todayKey: "2026-10-12").first { $0.vital == .skinTemperature }!
         XCTAssertEqual(status.verdict, .learning(nights: 4))
         XCTAssertFalse(status.counts)
+    }
+
+    /// Yoop leads with the night's temperature, as WHOOP's Health Monitor does. A night a few hundredths from the
+    /// baseline read "0.0" as a change, which looked like a missing value and said nothing about the wrist.
+    func testYoopLeadsWithTheTemperatureOfANight() {
+        var days = keys("2026-10-11", 30).enumerated().map { i, k in
+            row(k, skinDev: i % 2 == 0 ? 0.1 : -0.1, skinAbs: 32.2 + (i % 2 == 0 ? 0.3 : -0.3))
+        }
+        days.append(row("2026-10-12", skinDev: -0.03, skinAbs: 32.0))
+        func skin(_ kind: SkinTempDisplay.Kind) -> HealthMonitorRule.Status {
+            HealthMonitorRule.statuses(days: days, todayKey: "2026-10-12", skinTemp: kind)
+                .first { $0.vital == .skinTemperature }!
+        }
+        withYoop(true) {
+            let status = skin(.absolute)
+            XCTAssertFalse(status.isDeviation)
+            XCTAssertEqual(status.value ?? 0, 32.0, accuracy: 1e-9)
+            XCTAssertEqual(status.verdict, .within)
+            XCTAssertEqual(status.interval?.mean ?? 0, 32.2, accuracy: 0.05)
+            let change = skin(.deviation)
+            XCTAssertTrue(change.isDeviation)
+            XCTAssertEqual(change.value ?? 99, -0.03, accuracy: 1e-9)
+            XCTAssertEqual(change.verdict, status.verdict)
+        }
+        withYoop(false) {
+            let status = skin(.absolute)
+            XCTAssertTrue(status.isDeviation)
+            XCTAssertEqual(status.value ?? 99, -0.03, accuracy: 1e-9)
+        }
+    }
+
+    /// A Yoop night that kept only a change (scored before the temperature was stored) still shows the change.
+    func testYoopFallsBackToTheChangeWhenANightHasNoTemperature() {
+        var days = keys("2026-10-11", 30).enumerated().map { i, k in
+            row(k, skinDev: i % 2 == 0 ? 0.1 : -0.1, skinAbs: 32.2 + (i % 2 == 0 ? 0.3 : -0.3))
+        }
+        days.append(row("2026-10-12", skinDev: 0.2))
+        withYoop(true) {
+            let status = HealthMonitorRule.statuses(days: days, todayKey: "2026-10-12", skinTemp: .absolute)
+                .first { $0.vital == .skinTemperature }!
+            XCTAssertTrue(status.isDeviation)
+            XCTAssertEqual(status.value ?? 99, 0.2, accuracy: 1e-9)
+        }
     }
 
     // MARK: Tally
