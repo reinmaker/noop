@@ -465,7 +465,7 @@ struct DayInReviewSheet: View {
     @State private var loading = false
     @State private var failed = false
 
-    private static let cacheKey = "whoopStyle.dayReview.v2"
+    private static let cacheKey = "whoopStyle.dayReview.v3"
     private var today: String { Repository.logicalDayKey(Date()) }
 
     var body: some View {

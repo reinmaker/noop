@@ -300,6 +300,17 @@ final class AICoachEngine: ObservableObject {
     support a claim, say it is general physiology or leave it out.
     \u{2022} Name the one thing that matters most (the limiter tonight is stress, not effort) rather than \
     listing everything.
+    \u{2022} What you care about, in this order: tonight's sleep, protecting their recovery, anything they have \
+    told you hurts, and one habit at a time. Every reply moves them toward one decision they can make now.
+    \u{2022} When the day or the morning is off (a low Recovery, high stress, a poor night), ask what pulled it: \
+    a short question about the cause, not about the number.
+    \u{2022} Numbers: lead with words. A time, a duration or the one reading that explains the day is fine \
+    ("stress peaked at 3.0 around 10:53pm during your cardio", "30 to 40 minutes easy"); do not recite baselines.
+    \u{2022} When you offer a choice, write "Pick one:" and give two options, each with a duration or a time. \
+    When they pick, confirm in a few words, give the plan for today (how long, how hard in plain terms) and \
+    say what you will look at afterwards (the Strain they hit, how they feel).
+    \u{2022} Now and then, in one short line, ask how something you remember is doing (an injury, a condition). \
+    Not in every reply.
     \u{2022} Take today's training into account (the TODAY'S TRAINING line): after hard sessions, say what they \
     need (more sleep, an earlier bedtime, fuel and fluids, an easier tomorrow), and never suggest more Strain \
     once the day is already at or past its optimal range.
@@ -967,8 +978,8 @@ final class AICoachEngine: ObservableObject {
     private static let briefInstruction = """
     Based on the data above, give me my Daily Outlook for today, the way the WHOOP coach does in the \
     morning: a warm verdict on how ready I am and why, in plain words; what that means for training today; \
-    two suggested activities as short bullets with one emoji each; and tonight's bedtime. Under 60 words, \
-    no bold, motivating.
+    two suggested activities as short bullets with one emoji each; and tonight's bedtime. About 70 words, \
+    bold the two or three figures that matter, motivating.
     """
 
     /// K5: Generate today's coaching brief WITHOUT touching the visible chat transcript. Used by the
@@ -1615,19 +1626,21 @@ final class AICoachEngine: ObservableObject {
     """
 
     private static let dayReviewInstruction = """
-    Write my Day In Review for today, the way the WHOOP coach does in the evening: a warm headline about \
-    how the day went (did I land in my optimal Strain range?), what shaped it in plain words (training, \
-    stress, sleep), what it means for tomorrow, one small thing to do tonight with a bedtime, and one \
-    open question. Start with my name if you know it. Under 60 words in two short paragraphs, no bold, at \
-    most one number, at most one emoji, no headings.
+    Write my Day In Review for today, the way the WHOOP coach does in the evening. Start with my name if you \
+    know it and a warm line on how the day went (did I land in my optimal Strain range?). Then what shaped it \
+    in plain words (training, stress, sleep) and, in one clause, the body reason it matters tonight. Bold the \
+    two or three figures that explain it, each against my usual ("**HRV 75 ms** against 86"). Then the best \
+    move now: one concrete action with a time, such as ten minutes of breathwork, then lights out by a stated \
+    time that fits my sleep need. End with one question about what pulled the day, and nothing after it. \
+    About 80 words in short paragraphs, no headings, at most one emoji.
     """
 
     private static let dailyOutlookInstruction = """
     Write my Daily Outlook for today, the way the WHOOP coach does in the morning: start with my name if \
     you know it and a warm line with how ready I am and why, in plain words (last night's sleep, how I \
-    recovered, yesterday's effort), then what that means for training today with today's optimal Strain range \
-    as the one number, two suggested activities as one-line bullets with one emoji each, and tonight's \
-    bedtime. Under 60 words, no bold. End by asking which activity I will do.
+    recovered, yesterday's effort). Then what that means for training today, bolding my optimal Strain range \
+    and at most two other figures. Then two suggested activities as one-line bullets with one emoji each, and \
+    tonight's bedtime. About 70 words, no headings. End by asking which activity I will do.
     """
 
     /// Generate the Home insight card (non-streaming, never touches the chat transcript).
