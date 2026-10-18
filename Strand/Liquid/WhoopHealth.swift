@@ -266,6 +266,7 @@ struct WhoopVitalsSection: View {
     @EnvironmentObject private var repo: Repository
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
+    @AppStorage(UnitPrefs.skinTempDisplayKey) private var skinTempDisplayRaw = ""
     var showsRule = true
 
     private var fahrenheit: Bool {
@@ -307,7 +308,8 @@ struct WhoopVitalsSection: View {
 
     var body: some View {
         let today = Repository.logicalDayKey(Date())
-        let statuses = HealthMonitorRule.statuses(days: repo.days, todayKey: today)
+        let statuses = HealthMonitorRule.statuses(days: repo.days, todayKey: today,
+                                                  skinTemp: SkinTempDisplay.Kind(rawValue: skinTempDisplayRaw) ?? .absolute)
         WhoopVitalsCard(statuses: statuses, fahrenheit: fahrenheit, notes: notes(statuses), today: today, showsRule: showsRule)
     }
 }

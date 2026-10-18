@@ -143,14 +143,16 @@ enum HealthMonitorRule {
         }
     }
 
-    /// Every tracked vital from the merged daily rows, judged against `todayKey` (the logical day).
-    static func statuses(days: [DailyMetric], todayKey: String) -> [Status] {
+    /// Every tracked vital from the merged daily rows, judged against `todayKey` (the logical day). `skinTemp` is
+    /// the Settings choice for skin temperature; only Yoop reads it.
+    static func statuses(days: [DailyMetric], todayKey: String,
+                         skinTemp: SkinTempDisplay.Kind = .absolute) -> [Status] {
         let sorted = days.sorted { $0.day < $1.day }
         // Yoop: once today's night is scored, a reading left over from the night before is an old one, not the
         // latest night's, so a vital that night did not produce reads "From 16 Oct" instead of passing as current.
         let tonightIn = PuffinExperiment.whoopScoresEnabled
             && sorted.contains { $0.day == todayKey && ($0.totalSleepMin ?? 0) >= WhoopAge.minNightMinutes }
-        return tracked.map { status($0, sorted: sorted, todayKey: todayKey, tonightIn: tonightIn) }
+        return tracked.map { status($0, sorted: sorted, todayKey: todayKey, tonightIn: tonightIn, skinTemp: skinTemp) }
     }
 
     private static func pick(_ vital: Vital) -> (DailyMetric) -> Double? {
@@ -163,8 +165,11 @@ enum HealthMonitorRule {
         }
     }
 
-    private static func status(_ vital: Vital, sorted: [DailyMetric], todayKey: String, tonightIn: Bool) -> Status {
-        if vital == .skinTemperature { return skinStatus(sorted, todayKey: todayKey, tonightIn: tonightIn) }
+    private static func status(_ vital: Vital, sorted: [DailyMetric], todayKey: String, tonightIn: Bool,
+                               skinTemp: SkinTempDisplay.Kind) -> Status {
+        if vital == .skinTemperature {
+            return skinStatus(sorted, todayKey: todayKey, tonightIn: tonightIn, skinTemp: skinTemp)
+        }
         let read = pick(vital)
         let points = sorted.compactMap { d in read(d).flatMap { $0 > 0 ? (day: d.day, value: $0) : nil } }
         guard let latest = Baselines.freshestCarried(points, todayKey: todayKey) else {
@@ -191,10 +196,16 @@ enum HealthMonitorRule {
     }
 
     /// Skin temperature. The stored column holds an absolute temperature (a WHOOP export) or a change from the
-    /// usual one (Yoop's own nights); a change is the figure WHOOP shows, and it is judged on the absolute
-    /// history, which is longer and on the same scale: Yoop's change is the night's absolute minus the mean of the
-    /// nights before it. A night with only a change and fewer than `minNights` of them has no verdict yet.
-    private static func skinStatus(_ sorted: [DailyMetric], todayKey: String, tonightIn: Bool) -> Status {
+    /// usual one (Yoop's own nights, which also keep the night's absolute in `skinTempC`). A change is judged on
+    /// the absolute history, which is longer and on the same scale: Yoop's change is the night's absolute minus
+    /// the mean of the nights before it. A night with only a change and fewer than `minNights` of them has no
+    /// verdict yet.
+    ///
+    /// Yoop shows the night's temperature, as WHOOP's Health Monitor does (its typical range and limits are
+    /// degrees), unless Settings asks for the change from baseline. A change that rounds to 0.0 on a night
+    /// within a few hundredths of the baseline read as a missing value, and said less than the temperature.
+    private static func skinStatus(_ sorted: [DailyMetric], todayKey: String, tonightIn: Bool,
+                                   skinTemp: SkinTempDisplay.Kind) -> Status {
         func absolute(_ d: DailyMetric) -> Double? {
             if let a = d.skinTempC, VitalBands.isAbsoluteSkinTemp(a) { return a }
             if let v = d.skinTempDevC, VitalBands.isAbsoluteSkinTemp(v) { return v }
@@ -203,13 +214,15 @@ enum HealthMonitorRule {
         func change(_ d: DailyMetric) -> Double? {
             d.skinTempDevC.flatMap { VitalBands.isAbsoluteSkinTemp($0) ? nil : $0 }
         }
-        let points = sorted.compactMap { d in (change(d) ?? absolute(d)).map { (day: d.day, value: $0) } }
+        let leadsAbsolute = PuffinExperiment.whoopScoresEnabled && skinTemp == .absolute
+        func shown(_ d: DailyMetric) -> Double? { leadsAbsolute ? (absolute(d) ?? change(d)) : (change(d) ?? absolute(d)) }
+        let points = sorted.compactMap { d in shown(d).map { (day: d.day, value: $0) } }
         guard let latest = Baselines.freshestCarried(points, todayKey: todayKey) else {
             return Status(vital: .skinTemperature, value: nil, day: nil, isCurrent: false, interval: nil,
                           verdict: .noData, isDeviation: false)
         }
         let row = sorted.first { $0.day == latest.day }
-        let shownChange = row.flatMap(change)
+        let shownChange = row.flatMap(shown).flatMap { VitalBands.isAbsoluteSkinTemp($0) ? nil : $0 }
         let current = isCurrent(latest.day, todayKey: todayKey, tonightIn: tonightIn)
         let history = sorted.filter { $0.day < latest.day }
         if let shownChange {
