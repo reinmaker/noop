@@ -575,11 +575,14 @@ extension SleepModel {
     }
 
     /// One sleep window per night, oldest first, timed the way WHOOP times it: from falling asleep to
-    /// waking. Records less than two hours apart are one night; its main sleep is the record with the
-    /// longest stretch asleep, from its first to its last minute asleep, so time lying awake before
-    /// falling asleep or after waking does not count (WHOOP put 7 Oct at 3:33 to 9:44 where the records
-    /// ran 23:52 to 10:27). Windows under three hours (naps) are left out. `last` limits the work to the
-    /// most recent nights.
+    /// waking. Records less than two hours apart are one night; its main sleep is the bridged main-night
+    /// group the Sleep page shows (`SleepStageTotals.mainNightGroupIndices`: a night stored as several
+    /// records, split by a short wake, is one night), from its first to its last minute asleep, so time
+    /// lying awake before falling asleep or after waking does not count (WHOOP put 7 Oct at 3:33 to 9:44
+    /// where the records ran 23:52 to 10:27). The longest record alone made a night split by a wake read
+    /// as ending at the first record's end (19 Oct 2026: 01:57 to 06:26 on Home and in the consistency
+    /// bars, against 8:40 in bed on the Sleep page). Windows under three hours (naps) are left out. `last`
+    /// limits the work to the most recent nights.
     static func nightWindows(_ sleeps: [CachedSleepSession], last: Int? = nil) -> [(start: Int, end: Int)] {
         var groups: [[CachedSleepSession]] = []
         var groupEnd = Int.min
@@ -595,9 +598,13 @@ extension SleepModel {
         // Over-fetch a little: a recent group can turn out to be a nap and drop out.
         let recent = last.map { Array(groups.suffix($0 + 3)) } ?? groups
         let nights = recent.compactMap { group -> (start: Int, end: Int)? in
-            let main = group.map(asleepWindow).max { ($0.end - $0.start) < ($1.end - $1.start) }
-            guard let main, main.end - main.start >= 3 * 3600 else { return nil }
-            return main
+            let blocks = group.map { SleepStageTotals.NightBlock(start: $0.effectiveStartTs, end: $0.endTs) }
+            let night = SleepStageTotals.mainNightGroupIndices(blocks, offsetSec: SleepView.tzOffsetSec)
+                .map { $0.map { group[$0] } } ?? group
+            let windows = night.map(asleepWindow)
+            guard let start = windows.map(\.start).min(), let end = windows.map(\.end).max(),
+                  end - start >= 3 * 3600 else { return nil }
+            return (start, end)
         }
         return last.map { Array(nights.suffix($0)) } ?? nights
     }
