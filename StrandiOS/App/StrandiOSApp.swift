@@ -104,8 +104,14 @@ struct StrandiOSApp: App {
                 router?.openCoach()
             case "coach":
                 router?.openCoach()
+            case WhoopNotifications.sleepReadRoute:
+                coach?.nextOpener = .sleepRead
+                router?.openCoach()
             default:
-                break
+                if let workout = WhoopNotifications.parseWorkoutRoute(route) {
+                    coach?.nextOpener = .workoutFollowUp(sport: workout.sport, minutes: workout.minutes)
+                    router?.openCoach()
+                }
             }
         }
         CoachBriefScheduler.register(generateBrief: { [weak coach = model.coach] in

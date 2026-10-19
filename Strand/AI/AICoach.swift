@@ -1347,6 +1347,10 @@ final class AICoachEngine: ObservableObject {
     enum Opener: Equatable {
         case dayReview
         case dailyOutlook
+        /// A tap on the "night is scored" note: the Coach's read on last night's sleep and Recovery.
+        case sleepRead
+        /// A tap on the "activity added" note: the Coach checks in about that session.
+        case workoutFollowUp(sport: String, minutes: Int)
         case screenSummary(String, CoachScreen)
     }
     var nextOpener: Opener?
@@ -1437,6 +1441,10 @@ final class AICoachEngine: ObservableObject {
             instruction = Self.dayReviewInstruction + " Then the special lines."
         } else if nextOpener == .dailyOutlook {
             instruction = Self.dailyOutlookInstruction + " Then the special lines."
+        } else if nextOpener == .sleepRead {
+            instruction = Self.sleepReadInstruction + " Then the special lines."
+        } else if case .workoutFollowUp(let sport, let minutes)? = nextOpener {
+            instruction = Self.workoutFollowUpInstruction(sport: sport, minutes: minutes) + " Then the special lines."
         } else {
             instruction = Self.screenOpenerInstruction(currentScreen,
                                                        hour: Calendar.current.component(.hour, from: Date()))
@@ -1642,6 +1650,26 @@ final class AICoachEngine: ObservableObject {
     and at most two other figures. Then two suggested activities as one-line bullets with one emoji each, and \
     tonight's bedtime. About 70 words, no headings. End by asking which activity I will do.
     """
+
+    nonisolated static let sleepReadInstruction = """
+    Tell me how last night went, the way the WHOOP coach does once my sleep has been analysed: start with my \
+    name if you know it and one warm line with my Recovery and how long I slept, each against my usual \
+    ("**Recovery 73%**, **8 hr 1 min** against my usual 7 hr 20 min"). Then what that means for today in plain \
+    words and one concrete move with a time (push, keep it moderate or take it easy, and when to wind down \
+    tonight). If Recovery or sleep was low, end by asking what pulled it down; otherwise end by asking what I \
+    plan to do today. About 60 words, no headings, at most one emoji.
+    """
+
+    /// The check-in after an activity Yoop detected and saved (`sport` is "Activity" when Yoop was unsure).
+    nonisolated static func workoutFollowUpInstruction(sport: String, minutes: Int) -> String {
+        """
+        I just finished a \(minutes) minute \(sport) that Yoop detected and saved. Check in the way the WHOOP \
+        coach does after an activity: one warm line about it with its Strain and average heart rate from my \
+        data (say only what you can see), then what it asks of tonight in plain words, such as sleep or a \
+        lighter tomorrow, and in one clause why. End by asking how it felt and whether anything hurts, and \
+        nothing after it. About 60 words, no headings, at most one emoji.
+        """
+    }
 
     /// Generate the Home insight card (non-streaming, never touches the chat transcript).
     func generateHomeInsight() async -> HomeInsight? {

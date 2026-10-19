@@ -3,7 +3,7 @@ import Foundation
 import WhoopStore
 @testable import Strand
 
-/// The two notes Yoop was missing next to WHOOP's: the night is scored, and an activity was added.
+/// The Coach's two notes next to WHOOP's: the night is scored, and an activity was added.
 final class WhoopNotificationsTests: XCTestCase {
 
     private func night(sleepMin: Double?, recovery: Double?) -> DailyMetric {
@@ -38,6 +38,31 @@ final class WhoopNotificationsTests: XCTestCase {
         XCTAssertTrue(WhoopNotifications.isNewSleepDay(last: nil, todayKey: "2026-10-19"))
         XCTAssertTrue(WhoopNotifications.isNewSleepDay(last: "2026-10-18", todayKey: "2026-10-19"))
         XCTAssertFalse(WhoopNotifications.isNewSleepDay(last: "2026-10-19", todayKey: "2026-10-19"))
+    }
+
+    /// A tap on the activity note carries the session to the Coach, whatever the sport is called.
+    func testWorkoutRouteRoundTrips() throws {
+        let route = WhoopNotifications.workoutRoute(sport: "Run", minutes: 42)
+        XCTAssertEqual(route, "workout|42|Run")
+        let parsed = try XCTUnwrap(WhoopNotifications.parseWorkoutRoute(route))
+        XCTAssertEqual(parsed.sport, "Run")
+        XCTAssertEqual(parsed.minutes, 42)
+        let odd = try XCTUnwrap(WhoopNotifications.parseWorkoutRoute(
+            WhoopNotifications.workoutRoute(sport: "Hot | Yoga", minutes: 55)))
+        XCTAssertEqual(odd.sport, "Hot | Yoga")
+        XCTAssertNil(WhoopNotifications.parseWorkoutRoute(WhoopNotifications.sleepReadRoute))
+        XCTAssertNil(WhoopNotifications.parseWorkoutRoute("workout|x|Run"))
+        XCTAssertNil(WhoopNotifications.parseWorkoutRoute("workout|42|"))
+    }
+
+    /// The Coach is told about the session and asked how it felt; the sleep read names Recovery.
+    func testCoachOpenersCarryTheirContext() {
+        let text = AICoachEngine.workoutFollowUpInstruction(sport: "Run", minutes: 42)
+        XCTAssertTrue(text.contains("42 minute Run"), text)
+        XCTAssertTrue(text.contains("how it felt"), text)
+        XCTAssertTrue(AICoachEngine.sleepReadInstruction.contains("Recovery"))
+        XCTAssertNotEqual(AICoachEngine.Opener.workoutFollowUp(sport: "Run", minutes: 42),
+                          AICoachEngine.Opener.workoutFollowUp(sport: "Run", minutes: 43))
     }
 
     /// An activity that ended recently and has not been announced is news; an old one (a restore) and a repeat are not.

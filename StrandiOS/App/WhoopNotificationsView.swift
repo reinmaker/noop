@@ -27,9 +27,9 @@ struct WhoopNotificationsView: View {
                 row(String(localized: "DAILY OUTLOOK"),
                     String(localized: "Your Coach's plan for the day, each morning."), $dailyOutlook)
                 row(String(localized: "SLEEP AND RECOVERY"),
-                    String(localized: "A note when last night's sleep and Recovery are ready."), $sleepReady)
+                    String(localized: "The Coach tells you when last night's sleep and Recovery are ready."), $sleepReady)
                 row(String(localized: "ACTIVITIES"),
-                    String(localized: "A note when Yoop adds an activity it detected."), $activity)
+                    String(localized: "The Coach checks in after an activity Yoop detected."), $activity)
                 row(String(localized: "DAY IN REVIEW"),
                     String(localized: "A look back at your day every evening at 8:30pm."), $dayReview)
                 row(String(localized: "DAILY STRESS SUMMARY"),

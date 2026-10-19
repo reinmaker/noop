@@ -3,7 +3,8 @@ import UserNotifications
 import WhoopStore
 
 /// WHOOP-style notifications for Yoop (WHOOP's App Settings > Notifications, plus its evening Day In
-/// Review): Sleep and Recovery ready, Activity added, Day In Review, Daily Stress Summary, Conversational
+/// Review): the Coach on sleep and Recovery ready and on an activity added (a tap opens the Coach, which
+/// writes its read of the night or checks in about the session), Day In Review, Daily Stress Summary, Conversational
 /// Check-Ins, Device Off-Body and Travel Insights. All local, all on by default, each with its own switch (`WhoopNotificationsView`). The
 /// morning Daily Outlook is `CoachBriefScheduler`.
 ///
@@ -120,9 +121,11 @@ enum WhoopNotifications {
         guard let sleepMin = night.totalSleepMin, sleepMin >= WhoopAge.minNightMinutes else { return nil }
         let h = Int(sleepMin) / 60, m = Int(sleepMin) % 60
         let duration = String(localized: "\(h) hr \(m) min")
-        guard let recovery = night.recovery else { return String(localized: "You slept \(duration).") }
+        guard let recovery = night.recovery else {
+            return String(localized: "You slept \(duration). Tap for my read on your day.")
+        }
         let percent = "\(Int(recovery.rounded()))%"
-        return String(localized: "Recovery \(percent) after \(duration) of sleep.")
+        return String(localized: "Recovery \(percent) after \(duration) of sleep. Tap for my read on your day.")
     }
 
     /// Once a day: the first time `todayKey` has been announced.
@@ -139,11 +142,24 @@ enum WhoopNotifications {
         defaults.set(todayKey, forKey: sleepReadyDayKey)
         add(UNNotificationRequest(
             identifier: sleepReadyId,
-            content: content(String(localized: "Your sleep is ready"), body, route: nil),
+            content: content(String(localized: "Coach"), body, route: sleepReadRoute),
             trigger: nil))
     }
 
     // MARK: Activity added (Yoop detected and saved one)
+
+    /// The route a tap on the sleep note carries: the Coach writes its read on the night.
+    static let sleepReadRoute = "sleepRead"
+
+    /// The route a tap on the activity note carries: the Coach checks in about that session.
+    static func workoutRoute(sport: String, minutes: Int) -> String { "workout|\(minutes)|\(sport)" }
+
+    /// Inverse of `workoutRoute`; nil for any other route. The sport is everything after the second bar.
+    static func parseWorkoutRoute(_ route: String) -> (sport: String, minutes: Int)? {
+        let parts = route.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 3, parts[0] == "workout", let minutes = Int(parts[1]), !parts[2].isEmpty else { return nil }
+        return (parts[2], minutes)
+    }
 
     /// An activity found long after it ended (a restore, a late sync) is not news.
     static let activityNewsWindowSec = 3 * 3600
@@ -162,9 +178,9 @@ enum WhoopNotifications {
         defaults.set(Array((posted + [startSec]).suffix(50)), forKey: activityPostedKey)
         add(UNNotificationRequest(
             identifier: "yoop-activity-\(startSec)",
-            content: content(String(localized: "Activity added"),
-                             String(localized: "\(sport), \(durationMin) min. Open Yoop to check it or give it a name."),
-                             route: nil),
+            content: content(String(localized: "Coach"),
+                             String(localized: "\(sport), \(durationMin) min. Tap and tell me how it felt."),
+                             route: workoutRoute(sport: sport, minutes: durationMin)),
             trigger: nil))
     }
 
