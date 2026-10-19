@@ -2,8 +2,8 @@ import Foundation
 import UserNotifications
 
 /// WHOOP-style notifications for Yoop (WHOOP's App Settings > Notifications, plus its evening Day In
-/// Review): Day In Review, Daily Stress Summary, Conversational Check-Ins, Device Off-Body and Travel
-/// Insights. All local, all on by default, each with its own switch (`WhoopNotificationsView`). The
+/// Review): Sleep and Recovery ready, Activity added, Day In Review, Daily Stress Summary, Conversational
+/// Check-Ins, Device Off-Body and Travel Insights. All local, all on by default, each with its own switch (`WhoopNotificationsView`). The
 /// morning Daily Outlook is `CoachBriefScheduler`.
 ///
 /// A tap routes through `NotificationPresenter.onYoopRoute` with the `routeKey` in `userInfo`.
@@ -13,6 +13,8 @@ enum WhoopNotifications {
     static let checkInsKey = "whoopNotif.checkIns"
     static let offBodyKey = "whoopNotif.offBody"
     static let travelKey = "whoopNotif.travel"
+    static let sleepReadyKey = "whoopNotif.sleepReady"
+    static let activityKey = "whoopNotif.activity"
 
     /// `userInfo` key naming where a tap should go: "dayReview", "coach" or "stress".
     static let routeKey = "yoop.route"
@@ -21,6 +23,9 @@ enum WhoopNotifications {
     private static let stressSummaryId = "yoop-stress-summary"
     private static let offBodyId = "yoop-off-body"
     private static let travelId = "yoop-travel"
+    private static let sleepReadyId = "yoop-sleep-ready"
+    private static let sleepReadyDayKey = "whoopNotif.sleepReadyDay"
+    private static let activityPostedKey = "whoopNotif.activityPosted"
     private static let timeZoneKey = "whoopNotif.lastTimeZone"
 
     /// On unless switched off.
@@ -105,6 +110,61 @@ enum WhoopNotifications {
             content: content(String(localized: "Checking in"), body, route: "coach"),
             trigger: UNCalendarNotificationTrigger(dateMatching: cal.dateComponents([.year, .month, .day, .hour, .minute], from: at),
                                                    repeats: false)))
+    }
+
+    // MARK: Sleep and Recovery ready (the night is scored)
+
+    /// What the note says about a scored night, or nil when it is too short to be a night (under two hours).
+    static func sleepReadyBody(_ night: DailyMetric) -> String? {
+        guard let sleepMin = night.totalSleepMin, sleepMin >= WhoopAge.minNightMinutes else { return nil }
+        let h = Int(sleepMin) / 60, m = Int(sleepMin) % 60
+        let duration = String(localized: "\(h) hr \(m) min")
+        guard let recovery = night.recovery else { return String(localized: "You slept \(duration).") }
+        let percent = "\(Int(recovery.rounded()))%"
+        return String(localized: "Recovery \(percent) after \(duration) of sleep.")
+    }
+
+    /// Once a day: the first time `todayKey` has been announced.
+    static func isNewSleepDay(last: String?, todayKey: String) -> Bool { last != todayKey }
+
+    /// After a scoring pass: the first time today's night is scored, say so once for the day. WHOOP tells you when
+    /// your sleep has been analysed; Yoop did not.
+    static func sleepScored(_ dailies: [DailyMetric], todayKey: String) {
+        guard isOn(sleepReadyKey),
+              let night = dailies.first(where: { $0.day == todayKey }),
+              let body = sleepReadyBody(night) else { return }
+        let defaults = UserDefaults.standard
+        guard isNewSleepDay(last: defaults.string(forKey: sleepReadyDayKey), todayKey: todayKey) else { return }
+        defaults.set(todayKey, forKey: sleepReadyDayKey)
+        add(UNNotificationRequest(
+            identifier: sleepReadyId,
+            content: content(String(localized: "Your sleep is ready"), body, route: nil),
+            trigger: nil))
+    }
+
+    // MARK: Activity added (Yoop detected and saved one)
+
+    /// An activity found long after it ended (a restore, a late sync) is not news.
+    static let activityNewsWindowSec = 3 * 3600
+
+    static func isActivityNews(startSec: Int, endSec: Int, now: Int, posted: [Int]) -> Bool {
+        now - endSec <= activityNewsWindowSec && !posted.contains(startSec)
+    }
+
+    /// After Yoop adds an activity by itself: say so once, with its type and length.
+    static func activityAdded(sport: String, durationMin: Int, startSec: Int, endSec: Int) {
+        guard isOn(activityKey) else { return }
+        let defaults = UserDefaults.standard
+        let posted = defaults.array(forKey: activityPostedKey) as? [Int] ?? []
+        guard isActivityNews(startSec: startSec, endSec: endSec, now: Int(Date().timeIntervalSince1970),
+                             posted: posted) else { return }
+        defaults.set(Array((posted + [startSec]).suffix(50)), forKey: activityPostedKey)
+        add(UNNotificationRequest(
+            identifier: "yoop-activity-\(startSec)",
+            content: content(String(localized: "Activity added"),
+                             String(localized: "\(sport), \(durationMin) min. Open Yoop to check it or give it a name."),
+                             route: nil),
+            trigger: nil))
     }
 
     // MARK: Device Off-Body (strap off the wrist for 10 minutes)

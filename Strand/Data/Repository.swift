@@ -3563,6 +3563,10 @@ final class Repository: ObservableObject {
             guard await saveDetectedWorkout(found, sport: sport) else { break }
             autoTypedStarts = Array((autoTypedStarts + [found.startSec]).suffix(200))
             added = true
+            if !restoring {
+                WhoopNotifications.activityAdded(sport: sport, durationMin: found.durationMin,
+                                                 startSec: found.startSec, endSec: found.endSec)
+            }
         }
         if added || reconciled { await refresh() }
         return added || reconciled

@@ -3154,6 +3154,10 @@ final class IntelligenceEngine: ObservableObject {
         // pass (#899 dedup deleted stale session rows but no daily changed) must refresh too, so the
         // Sleep tab stops showing the removed duplicates right away.
         if !dailies.isEmpty || !healDropped.isEmpty { await repo.refresh() }
+        // Yoop: tell the wearer once a day when the night has been scored, as WHOOP does.
+        if PuffinExperiment.whoopScoresEnabled {
+            WhoopNotifications.sleepScored(dailies, todayKey: Repository.logicalDayKey(Date()))
+        }
 
         markPostLoopPhase("workouts")
         // #836/#sleep-sync: record the complete raw-analysis fingerprint this run scored against, so a later
