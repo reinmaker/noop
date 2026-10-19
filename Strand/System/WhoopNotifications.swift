@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import WhoopStore
 
 /// WHOOP-style notifications for Yoop (WHOOP's App Settings > Notifications, plus its evening Day In
 /// Review): Sleep and Recovery ready, Activity added, Day In Review, Daily Stress Summary, Conversational
