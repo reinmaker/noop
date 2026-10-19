@@ -7,6 +7,8 @@ import StrandDesign
 /// Outlook and evening Day In Review).
 struct WhoopNotificationsView: View {
     @AppStorage("coachBrief.enabled") private var dailyOutlook = true
+    @AppStorage(WhoopNotifications.sleepReadyKey) private var sleepReady = true
+    @AppStorage(WhoopNotifications.activityKey) private var activity = true
     @AppStorage(WhoopNotifications.dayReviewKey) private var dayReview = true
     @AppStorage(WhoopNotifications.stressSummaryKey) private var stressSummary = true
     @AppStorage(WhoopNotifications.checkInsKey) private var checkIns = true
@@ -24,6 +26,10 @@ struct WhoopNotificationsView: View {
                 }
                 row(String(localized: "DAILY OUTLOOK"),
                     String(localized: "Your Coach's plan for the day, each morning."), $dailyOutlook)
+                row(String(localized: "SLEEP AND RECOVERY"),
+                    String(localized: "A note when last night's sleep and Recovery are ready."), $sleepReady)
+                row(String(localized: "ACTIVITIES"),
+                    String(localized: "A note when Yoop adds an activity it detected."), $activity)
                 row(String(localized: "DAY IN REVIEW"),
                     String(localized: "A look back at your day every evening at 8:30pm."), $dayReview)
                 row(String(localized: "DAILY STRESS SUMMARY"),
