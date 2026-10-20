@@ -3104,6 +3104,13 @@ final class Repository: ObservableObject {
     ///    history is never touched.
     func saveManualWorkout(_ row: WorkoutRow, replacing old: WorkoutRow? = nil) async {
         await writeManualWorkout(row, replacing: old)
+        // A span the wearer corrected is theirs: the detector must not move it back on the next sync
+        // (`reconcileAutoActivities`), which it did to an activity whose end was shortened but whose start was
+        // the bout's (21 Oct 2026: jump rope 21:01 to 21:20 inside a 21:01 to 22:28 bout).
+        if let old, Self.spanWasCorrected(old: old, new: row) {
+            autoTypedStarts.removeAll { $0 == old.startTs }
+            userTypedDetectedStarts.removeAll { $0 == old.startTs }
+        }
         // A strength session's default muscle load lands at once, not on the next refresh.
         await rebuildStrainBook()
     }
@@ -3539,6 +3546,13 @@ final class Repository: ObservableObject {
     @discardableResult
     func addDetectedActivities() async -> Bool {
         guard PuffinExperiment.whoopScoresEnabled, PuffinExperiment.autoDetectWorkoutsEnabled else { return false }
+        // One run at a time. It awaits between reading what is saved and saving, and Home's card and every
+        // finished sync call it, so two runs overlapped: one deleted an activity to move its span while the
+        // other, seeing nothing saved there, added the same bout under its own guess (20 Oct 2026: a
+        // Weightlifting and a Jump rope row with one start and one end).
+        guard !addingDetectedActivities else { return false }
+        addingDetectedActivities = true
+        defer { addingDetectedActivities = false }
         let reconciled = await reconcileAutoActivities()
         var added = false
         var history: [WhoopActivityTyper.Example]?
@@ -3559,6 +3573,9 @@ final class Repository: ObservableObject {
                                                  durationMin: Double(found.durationMin),
                                                  startHour: Self.localHour(found.startSec),
                                                  history: history ?? []) ?? "Activity"
+            // Something else may have saved over this bout while its type was being guessed.
+            guard !Self.savedActivityCovers(startSec: found.startSec, endSec: found.endSec,
+                                            saved: await workoutRows(days: 3)) else { break }
             dismissDetectedSuggestion(found)
             guard await saveDetectedWorkout(found, sport: sport) else { break }
             autoTypedStarts = Array((autoTypedStarts + [found.startSec]).suffix(200))
@@ -3570,6 +3587,24 @@ final class Repository: ObservableObject {
         }
         if added || reconciled { await refresh() }
         return added || reconciled
+    }
+
+    /// Whether a save moved the activity's start or end (a retype or a rename keeps both).
+    nonisolated static func spanWasCorrected(old: WorkoutRow, new: WorkoutRow) -> Bool {
+        old.startTs != new.startTs || old.endTs != new.endTs
+    }
+
+    /// True while `addDetectedActivities` runs, so a second call returns at once.
+    private var addingDetectedActivities = false
+
+    /// Whether a saved activity already covers a bout: the same start, or at least half of the shorter span.
+    nonisolated static func savedActivityCovers(startSec: Int, endSec: Int, saved: [WorkoutRow]) -> Bool {
+        saved.contains { row in
+            if row.startTs == startSec { return true }
+            let overlap = min(endSec, row.endTs) - max(startSec, row.startTs)
+            let shorter = min(endSec - startSec, row.endTs - row.startTs)
+            return overlap > 0 && shorter > 0 && Double(overlap) / Double(shorter) >= 0.5
+        }
     }
 
     /// Set once the one-time restore has run. The 12.2.29 re-check deleted real activities whose end had

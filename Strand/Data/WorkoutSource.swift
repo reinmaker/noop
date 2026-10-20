@@ -574,3 +574,9 @@ enum WorkoutMerge {
                           steps: mergedSteps)
     }
 }
+
+extension WorkoutRow {
+    /// A row's identity in a list: its start and its type, the stored key without the strap. Two rows can share
+    /// a start (one session saved under two types), and a list keyed by the start alone drew the first of them twice.
+    var listID: String { "\(startTs)|\(sport)" }
+}
