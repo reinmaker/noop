@@ -576,7 +576,7 @@ struct WhoopStrainScreen: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, NoopMetrics.space2)
                     VStack(spacing: NoopMetrics.space2) {
-                        ForEach(workouts, id: \.startTs) { w in
+                        ForEach(workouts, id: \.listID) { w in
                             NavigationLink(value: TabRoute.activity(WhoopActivityRoute(row: w))) {
                                 WhoopActivityRowView(
                                     icon: sportSymbol(w.sport),

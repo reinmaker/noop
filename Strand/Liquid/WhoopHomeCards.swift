@@ -165,7 +165,7 @@ struct WhoopActivitiesCard: View {
                     }
                     .buttonStyle(.plain)
                 }
-                ForEach(workouts, id: \.startTs) { w in
+                ForEach(workouts, id: \.listID) { w in
                     // Every activity opens its WHOOP-style page; the user's own can be re-typed or deleted
                     // from its menu there, imported history is read-only.
                     NavigationLink(value: TabRoute.activity(WhoopActivityRoute(row: w))) { workoutRow(w) }

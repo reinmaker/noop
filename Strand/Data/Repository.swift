@@ -3539,6 +3539,13 @@ final class Repository: ObservableObject {
     @discardableResult
     func addDetectedActivities() async -> Bool {
         guard PuffinExperiment.whoopScoresEnabled, PuffinExperiment.autoDetectWorkoutsEnabled else { return false }
+        // One run at a time. It awaits between reading what is saved and saving, and Home's card and every
+        // finished sync call it, so two runs overlapped: one deleted an activity to move its span while the
+        // other, seeing nothing saved there, added the same bout under its own guess (20 Oct 2026: a
+        // Weightlifting and a Jump rope row with one start and one end).
+        guard !addingDetectedActivities else { return false }
+        addingDetectedActivities = true
+        defer { addingDetectedActivities = false }
         let reconciled = await reconcileAutoActivities()
         var added = false
         var history: [WhoopActivityTyper.Example]?
@@ -3559,6 +3566,9 @@ final class Repository: ObservableObject {
                                                  durationMin: Double(found.durationMin),
                                                  startHour: Self.localHour(found.startSec),
                                                  history: history ?? []) ?? "Activity"
+            // Something else may have saved over this bout while its type was being guessed.
+            guard !Self.savedActivityCovers(startSec: found.startSec, endSec: found.endSec,
+                                            saved: await workoutRows(days: 3)) else { break }
             dismissDetectedSuggestion(found)
             guard await saveDetectedWorkout(found, sport: sport) else { break }
             autoTypedStarts = Array((autoTypedStarts + [found.startSec]).suffix(200))
@@ -3570,6 +3580,19 @@ final class Repository: ObservableObject {
         }
         if added || reconciled { await refresh() }
         return added || reconciled
+    }
+
+    /// True while `addDetectedActivities` runs, so a second call returns at once.
+    private var addingDetectedActivities = false
+
+    /// Whether a saved activity already covers a bout: the same start, or at least half of the shorter span.
+    nonisolated static func savedActivityCovers(startSec: Int, endSec: Int, saved: [WorkoutRow]) -> Bool {
+        saved.contains { row in
+            if row.startTs == startSec { return true }
+            let overlap = min(endSec, row.endTs) - max(startSec, row.startTs)
+            let shorter = min(endSec - startSec, row.endTs - row.startTs)
+            return overlap > 0 && shorter > 0 && Double(overlap) / Double(shorter) >= 0.5
+        }
     }
 
     /// Set once the one-time restore has run. The 12.2.29 re-check deleted real activities whose end had
