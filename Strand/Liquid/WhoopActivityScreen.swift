@@ -28,6 +28,7 @@ struct WhoopActivityRoute: Hashable {
 
 struct WhoopActivityScreen: View {
     @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var intelligence: IntelligenceEngine
     @Environment(\.dismiss) private var dismiss
     @StateObject private var profile = ProfileStore()
 
@@ -40,6 +41,7 @@ struct WhoopActivityScreen: View {
     /// The time under the reader's finger on the heart-rate graph.
     @State private var hrSelection: Date?
     @State private var retyping = false
+    @State private var editing = false
     /// The user's effort rating, mirrored here so a tap shows at once; `Repository` keeps it.
     @State private var effort: Int?
 
@@ -84,7 +86,7 @@ struct WhoopActivityScreen: View {
     private var durationSeconds: Double { row.durationS ?? Double(max(0, row.endTs - row.startTs)) }
     /// Activity Strain as every screen shows it: heart rate, plus the muscle load an effort rating adds.
     private var strain: Double? { repo.activityStrain(row).map(AICoachEngine.strain21) }
-    /// Yoop's own activities can be re-typed and deleted; imported history is read-only.
+    /// Yoop's own activities can be edited, re-typed and deleted; imported history is read-only.
     private var isOwn: Bool { WorkoutSource.classify(row.source) == .manual }
 
     private var distanceUnitSystem: UnitSystem {
@@ -117,6 +119,9 @@ struct WhoopActivityScreen: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { WhoopCoachPill(screen: .strain) }
+        .sheet(isPresented: $editing) {
+            ManualWorkoutSheet(editing: row) { edited, replacing in save(edited, replacing: replacing) }
+        }
         .workoutSelectionCover(isPresented: $retyping) {
             StartWorkoutSheet(title: String(localized: "Change activity"),
                               subtitle: String(localized: "Pick what this was. Yoop learns from your choice for the next ones."),
@@ -155,6 +160,9 @@ struct WhoopActivityScreen: View {
 
     private var actionsMenu: some View {
         Menu {
+            Button { editing = true } label: {
+                Label("Edit activity", systemImage: "pencil")
+            }
             Button { retyping = true } label: {
                 Label("Change activity type", systemImage: "arrow.triangle.2.circlepath")
             }
@@ -716,6 +724,19 @@ struct WhoopActivityScreen: View {
                              durationS: old.durationS, energyKcal: old.energyKcal, avgHr: old.avgHr,
                              maxHr: old.maxHr, strain: old.strain, distanceM: old.distanceM,
                              zonesJSON: old.zonesJSON, notes: old.notes, steps: old.steps)
+        }
+    }
+
+    /// Saves the edited type, start, end, heart rate, energy or distance, as the Workouts list does, then reads the
+    /// row back so the page shows what was stored once the pass has re-scored its heart rate and energy.
+    private func save(_ edited: WorkoutRow, replacing old: WorkoutRow?) {
+        Task {
+            await repo.saveManualWorkout(edited, replacing: old)
+            await intelligence.analyzeRecent()
+            await repo.refresh()
+            let stored = await repo.workoutRows(days: 400)
+                .first { $0.startTs == edited.startTs && $0.sport == edited.sport }
+            row = stored ?? edited
         }
     }
 
