@@ -42,4 +42,12 @@ final class ActivityDuplicateTests: XCTestCase {
                                                       saved: [row(end - 60, end + 3_600, "Tennis")]),
                        "a minute of overlap with a long row")
     }
+
+    /// Shortening an activity's end, or moving its start, hands the span to the wearer; a retype does not.
+    func testACorrectedSpanIsDetectedByStartOrEnd() {
+        let old = row(start, end, "Jump rope")
+        XCTAssertTrue(Repository.spanWasCorrected(old: old, new: row(start, start + 1_140, "Jump rope")))
+        XCTAssertTrue(Repository.spanWasCorrected(old: old, new: row(start + 1_140, end, "Weightlifting")))
+        XCTAssertFalse(Repository.spanWasCorrected(old: old, new: row(start, end, "Weightlifting")))
+    }
 }

@@ -3104,6 +3104,13 @@ final class Repository: ObservableObject {
     ///    history is never touched.
     func saveManualWorkout(_ row: WorkoutRow, replacing old: WorkoutRow? = nil) async {
         await writeManualWorkout(row, replacing: old)
+        // A span the wearer corrected is theirs: the detector must not move it back on the next sync
+        // (`reconcileAutoActivities`), which it did to an activity whose end was shortened but whose start was
+        // the bout's (21 Oct 2026: jump rope 21:01 to 21:20 inside a 21:01 to 22:28 bout).
+        if let old, Self.spanWasCorrected(old: old, new: row) {
+            autoTypedStarts.removeAll { $0 == old.startTs }
+            userTypedDetectedStarts.removeAll { $0 == old.startTs }
+        }
         // A strength session's default muscle load lands at once, not on the next refresh.
         await rebuildStrainBook()
     }
@@ -3580,6 +3587,11 @@ final class Repository: ObservableObject {
         }
         if added || reconciled { await refresh() }
         return added || reconciled
+    }
+
+    /// Whether a save moved the activity's start or end (a retype or a rename keeps both).
+    nonisolated static func spanWasCorrected(old: WorkoutRow, new: WorkoutRow) -> Bool {
+        old.startTs != new.startTs || old.endTs != new.endTs
     }
 
     /// True while `addDetectedActivities` runs, so a second call returns at once.
