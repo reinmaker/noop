@@ -103,4 +103,45 @@ final class WhoopActivityDetectorTests: XCTestCase {
         XCTAssertEqual(WhoopActivityDetector.detect(hr: hr, restingBpm: 48, excluded: []).first?.endSec,
                        1_800_000_000 + 29 * 60 + 59)
     }
+
+    /// 22 Oct 2026, from the wearer's own heart rate, one mean per minute from 17:50: a run at 138 to 192 bpm from
+    /// minute 30 (18:20) to about minute 73 (19:03), then walking and sitting at 95 to 115 bpm until minute 210.
+    /// That tail never fell under the active bar (92 bpm), so the activity ran to the end of the data (187 minutes,
+    /// 18:12 to 21:18) and was typed Tennis; it now ends where the hard part ends.
+    private let runAndCoolDown: [Int] = [
+        64, 68, 71, 69, 70, 73, 71, 70, 78, 72, 77, 81, 79, 81, 81,
+        77, 79, 72, 82, 80, 80, 85, 92, 90, 97, 93, 94, 86, 81, 117,
+        138, 147, 156, 159, 162, 160, 162, 170, 175, 182, 182, 179, 180, 184, 187,
+        187, 186, 185, 186, 187, 187, 188, 185, 171, 178, 185, 188, 186, 185, 187,
+        188, 188, 191, 192, 192, 176, 168, 158, 157, 181, 173, 161, 153, 144, 142,
+        130, 122, 127, 131, 139, 129, 120, 115, 111, 108, 109, 108, 105, 103, 104,
+        99, 100, 102, 102, 103, 103, 108, 106, 111, 112, 116, 109, 114, 113, 109,
+        104, 100, 112, 113, 110, 104, 100, 96, 93, 95, 92, 96, 92, 95, 88,
+        86, 99, 104, 98, 102, 104, 102, 104, 107, 104, 98, 100, 100, 103, 102,
+        102, 106, 96, 99, 103, 105, 103, 102, 97, 93, 98, 103, 107, 109, 105,
+        105, 105, 107, 108, 106, 106, 103, 102, 105, 101, 88, 96, 92, 94, 93,
+        85, 79, 72, 72, 81, 93, 100, 109, 107, 102, 92, 96, 99, 100, 84,
+        87, 94, 98, 94, 92, 99, 100, 98, 96, 97, 94, 94, 96, 94, 96,
+        96, 94, 96, 97, 95, 96, 100, 101, 90, 93, 95, 98, 92, 96, 82,
+        80,
+    ]
+
+    func testAHardRunIsNotStretchedByTheEasyHoursAfterIt() throws {
+        let base = 1_800_000_000
+        let hr = runAndCoolDown.enumerated().filter { $0.element > 0 }.map { (ts: base + $0.offset * 60, bpm: $0.element) }
+        let found = try XCTUnwrap(WhoopActivityDetector.detect(hr: hr, restingBpm: 50, excluded: []).first)
+        XCTAssertEqual((found.startSec - base) / 60, 22, accuracy: 3, "starts as the effort starts")
+        XCTAssertLessThan((found.endSec - base) / 60, 95, "ends within a few minutes of the hard part")
+        XCTAssertGreaterThan((found.endSec - base) / 60, 73, "keeps the hard part")
+        XCTAssertLessThan(found.durationMin, 80)
+        XCTAssertGreaterThan(found.avgBpm, 140, "the hard part sets the average, not the walk home")
+    }
+
+    /// A walk-off close to the effort level stays with the session (the cool-down cut is for a long, much easier tail).
+    func testABriskWalkOffStaysInTheSession() {
+        var hr = block(150, from: 0, minutes: 30)
+        hr += block(112, from: 30, minutes: 20)
+        let found = WhoopActivityDetector.detect(hr: hr, restingBpm: 50, excluded: [])
+        XCTAssertEqual(found.first?.endSec, 1_800_000_000 + 49 * 60 + 59)
+    }
 }

@@ -39,6 +39,17 @@ enum WhoopActivityDetector {
     /// A cool-down cut that would drop more than this share of the bout's minutes is not believed.
     static let maxCooldownCutShare = 0.5
     static let minMinutes = 12
+    /// The easy tail after a hard effort is not part of it. A bout's effort level is its 90th percentile minute;
+    /// once the average of five minutes has fallen under `coolDownShare` of the way from rest to that level and
+    /// stays there for at least `minCoolDownTailMinutes` to the bout's end, the rest is cool-down and is cut,
+    /// keeping `coolDownGraceMinutes` of it. On 22 Oct 2026 a run at 175 to 190 bpm (18:20 to 19:05) was followed
+    /// by 100 bpm of walking and sitting that never fell under the bar of 92, so the activity ran 18:14 to 20:34
+    /// (and on to 21:18 as the data came in) and was typed Tennis. Lifting and a game keep their breaks: their
+    /// five-minute average stays above this level until the end.
+    static let coolDownShare = 0.5
+    static let coolDownWindowMinutes = 5
+    static let minCoolDownTailMinutes = 10
+    static let coolDownGraceMinutes = 3
     /// Rest between sets. Three minutes split the 12 Oct lifting (13:30 to 14:20, four minutes at 80-90 bpm
     /// after the first set) in two, and the second half alone never reached 50 % of the reserve. Five
     /// bridges it and still not the six-minute break behind the 10 Oct shoot-around; over every day of the
@@ -84,6 +95,12 @@ enum WhoopActivityDetector {
                 last = previous
                 active -= 1
             }
+            let boutLast = last
+            if let core = coreEnd(minutes: minutes.filter { $0 >= first && $0 <= last }, mean: mean, rest: rest),
+               last - core >= minCoolDownTailMinutes {
+                last = core + coolDownGraceMinutes
+                active = minutes.filter { $0 >= first && $0 <= last && mean($0) >= threshold }.count
+            }
             let inBout = minutes.filter { $0 >= first && $0 <= last }
             // The warm-up: walk back from the first active minute over exercise-like motion.
             var start = first
@@ -120,9 +137,25 @@ enum WhoopActivityDetector {
                 out.append(DetectedWorkout(startSec: span.lowerBound, endSec: span.upperBound,
                                            avgBpm: Int(avg.rounded()), peakBpm: peak, durationMin: length))
             }
-            // Continue after the bout's last minute.
-            i = minutes.firstIndex(where: { $0 > last }) ?? minutes.count
+            // Continue after the bout's last minute, the cut cool-down included.
+            i = minutes.firstIndex(where: { $0 > boutLast }) ?? minutes.count
         }
         return out
+    }
+
+    /// The last minute whose five-minute average heart rate is still at the bout's effort level (the cool-down
+    /// bar above), or nil when the bout has no clear hard part.
+    private static func coreEnd(minutes: [Int], mean: (Int) -> Double, rest: Double) -> Int? {
+        let means = minutes.map(mean).sorted()
+        guard means.count >= minMinutes else { return nil }
+        let effort = means[Int(Double(means.count - 1) * 0.9)]
+        let bar = rest + coolDownShare * (effort - rest)
+        var core: Int?
+        for minute in minutes {
+            let window = minutes.filter { $0 > minute - coolDownWindowMinutes && $0 <= minute }
+            let average = window.map(mean).reduce(0, +) / Double(max(1, window.count))
+            if average >= bar { core = minute }
+        }
+        return core
     }
 }
