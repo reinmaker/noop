@@ -1075,6 +1075,9 @@ final class IntelligenceEngine: ObservableObject {
         // PSG data cannot check and which put this user's REM at 34-37 % (lab-validated recipe: 22-28 %).
         SleepStagerV2.respWeightOverride = PuffinExperiment.whoopScoresEnabled ? 0 : nil
         let respWeightGlobal = SleepStagerV2.respWeightOverride.map { "\($0)" } ?? "default"
+        // Yoop: the wearer's own deep and REM shares (`yoopDeepLogShift`, `yoopRemLogShift`).
+        Self.applyYoopStagePriors(PuffinExperiment.whoopScoresEnabled)
+        let stagePriorsGlobal = "\(SleepStagerV2.deepLogShift)|\(SleepStagerV2.remLogShift)"
         // Yoop: resting HR, HRV, breathing rate and skin temperature over the time asleep, not the whole
         // time in bed, and one resting HR for the display, Strain, calories and the baseline.
         SleepStager.asleepVitalsEnabled = PuffinExperiment.whoopScoresEnabled
@@ -1157,6 +1160,7 @@ final class IntelligenceEngine: ObservableObject {
             "\(mainNightMinGlobal)",
             "\(bandBoundsGlobal)",
             "\(respWeightGlobal)",
+            stagePriorsGlobal,
             "\(asleepVitalsGlobal)",
             "\(yoopStepsGlobal)",
             "\(yoopEnergyGlobal)",
@@ -3640,6 +3644,22 @@ final class IntelligenceEngine: ObservableObject {
     private static func recomputeSkinTempDev(_ nightly: Double?, _ base: BaselineState?) -> Double? {
         guard let v = nightly, let b = base, b.usable else { return nil }
         return (Baselines.deviation(v, state: b).delta * 100.0).rounded() / 100.0
+    }
+
+    /// Yoop: log-prior shifts for deep and REM in the staging recipe (`SleepStagerV2.deepLogShift`,
+    /// `remLogShift`). The recipe's priors are population base rates (deep 15 %, REM 22 %) and it lets light
+    /// win weak evidence, so on this wearer's nights it read deep 15 % and REM 17 % of the time asleep against
+    /// WHOOP's 23 % and 25 % over 121 nights (and 25 and 19 % deep, 31 and 30 % REM, on the WHOOP-scored nights
+    /// of 14 and 15 Oct, a week from the Yoop-scored ones). Replayed through the recipe on the 12 sleep sessions
+    /// of 9 to 22 Oct, +0.24 and +0.13 give deep 23.6 %, REM 24.3 %, light 52.1 % (WHOOP: 23.4, 24.6, 52.0).
+    /// Fitted to totals only, not epoch by epoch: nothing here tells which epochs WHOOP calls deep or REM.
+    nonisolated static let yoopDeepLogShift = 0.24
+    nonisolated static let yoopRemLogShift = 0.13
+
+    /// Sets the staging priors for the Yoop path, and the recipe's own for every other path.
+    nonisolated static func applyYoopStagePriors(_ on: Bool) {
+        SleepStagerV2.deepLogShift = on ? yoopDeepLogShift : 0
+        SleepStagerV2.remLogShift = on ? yoopRemLogShift : 0
     }
 
     /// Yoop: the calendar days of nights the skin-temperature baseline reads, the span of WHOOP's own typical range.

@@ -1889,6 +1889,7 @@ final class Repository: ObservableObject {
         let useV2 = PuffinExperiment.experimentalSleepV2Enabled
         // Yoop: the same lab-validated recipe the engine stages with (no wrist R-R breathing term).
         SleepStagerV2.respWeightOverride = PuffinExperiment.whoopScoresEnabled ? 0 : nil
+        IntelligenceEngine.applyYoopStagePriors(PuffinExperiment.whoopScoresEnabled)
         let segs = await Task.detached(priority: .utility) {
             let staged = useV2
                 ? SleepStagerV2.stageSession(start: start, end: end, grav: grav, hr: hr, rr: rr, resp: resp)
