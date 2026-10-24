@@ -29,6 +29,10 @@ import WhoopProtocol
 // Every number is a first estimate set from the two nights that carry a real walk before bed, not a fit
 // (the thresholds' comments say what each was set against); the rule does nothing unless the app sets
 // `bedtimeFromWalkEnabled`. Swift only: the fork ships no Android build.
+//
+// 24 Oct 2026: with `inBedFromOnsetEnabled` (SleepStager+InBed.swift) the night is counted from its first
+// asleep epoch, as WHOOP counts time in bed, and that step runs after this one, so it cuts the time this adds
+// before the onset. This rule alone is what a build without that switch keeps.
 
 extension SleepStager {
 
