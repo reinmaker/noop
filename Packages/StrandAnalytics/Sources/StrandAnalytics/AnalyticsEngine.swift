@@ -523,8 +523,12 @@ public enum AnalyticsEngine {
             : detectedSessions
         // Yoop (`SleepStager.bedtimeFromWalkEnabled`): a night starts where the wearer got into bed, after the
         // walk to it, and not at the first stillness. Off, this is the identity.
-        let refinedSessions = SleepStager.refineBedtime(motionRefinedSessions, steps: steps, hr: hr,
+        let bedtimeSessions = SleepStager.refineBedtime(motionRefinedSessions, steps: steps, hr: hr,
                                                         grav: gravity, bandSleepState: bandSleepState)
+        // Yoop (`SleepStager.inBedFromOnsetEnabled`): WHOOP's time in bed runs from the first asleep epoch to
+        // the last, so the wake before and after is cut, which replaces the earlier start above. Off, this is
+        // the identity.
+        let refinedSessions = SleepStager.trimToSleep(bedtimeSessions)
         // #804 Fix A: fold in the caller's device-provided hypnogram (see `providedSleep`). Empty = the
         // byte-identical motion-only path. Otherwise enrich each provided session's nightly restingHR/avgHRV
         // from THIS day's hr/rr over its window (the stored ring row carries neither), using the SAME helpers

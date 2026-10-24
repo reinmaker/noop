@@ -524,6 +524,22 @@
       "identity_sha256": "603f9cdafc3187673a461475fa7c36c92019572363387691aee191f8f0f5413f",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: the intercept of the empirical fit to the wearer's own WHOOP export, kcal per minute, read only by the Yoop energy estimators. The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-file",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+InBed.swift",
+      "identity_sha256": "f406938d5ffd41326d35c5930f17e36cf41fd87979bfd2128ad0b813388000c2",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: counts a night from its first asleep epoch to its last, as WHOOP counts time in bed (inBedFromOnsetEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+InBed.swift::trimToSleep/2#1",
+      "identity_sha256": "584c1870ece0409dda1902da1fd120b2a6ddf9fea7b0d293154a9f8b531d95ad",
+      "platform": "swift",
+      "rationale": "Yoop fork, iOS only: counts a night from its first asleep epoch to its last, as WHOOP counts time in bed (inBedFromOnsetEnabled, default off, byte-identical when off). The fork ships no Android build, so there is no Kotlin twin."
     }
   ]
 }

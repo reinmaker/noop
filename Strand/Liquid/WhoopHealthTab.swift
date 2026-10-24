@@ -96,26 +96,37 @@ struct WhoopAgeBubble: View {
     var compact = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var motion = NoopMotionState.shared
+
+    /// The blob and its specks at time `t` (seconds); `t` 0 is the resting frame.
+    private func blob(tint: Color, at t: Double) -> some View {
+        let phase = t * 0.8
+        return ZStack {
+            WhoopBlobShape(phase: phase)
+                .fill(RadialGradient(gradient: Gradient(stops: [
+                    .init(color: StrandPalette.surfaceBase, location: 0),
+                    .init(color: StrandPalette.surfaceBase.opacity(0.94), location: 0.42),
+                    .init(color: tint.opacity(0.35), location: 0.74),
+                    .init(color: tint.opacity(0.8), location: 1),
+                ]), center: .center, startRadius: 0, endRadius: diameter * 0.52))
+            WhoopBlobParticles(tint: tint, time: t)
+                .clipShape(WhoopBlobShape(phase: phase))
+            WhoopBlobShape(phase: phase).stroke(tint.opacity(0.85), lineWidth: 1.5)
+        }
+    }
 
     var body: some View {
         let result = snapshot?.isUnlocked == true ? snapshot?.result : nil
         let younger = (result?.yearsYounger ?? 0) >= 0
         let tint = result == nil ? StrandPalette.textTertiary : (younger ? WhoopStyle.rangeGreen : WhoopStyle.rangeAmber)
         ZStack {
-            TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: reduceMotion || compact)) { timeline in
-                let t = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
-                let phase = t * 0.8
-                ZStack {
-                    WhoopBlobShape(phase: phase)
-                        .fill(RadialGradient(gradient: Gradient(stops: [
-                            .init(color: StrandPalette.surfaceBase, location: 0),
-                            .init(color: StrandPalette.surfaceBase.opacity(0.94), location: 0.42),
-                            .init(color: tint.opacity(0.35), location: 0.74),
-                            .init(color: tint.opacity(0.8), location: 1),
-                        ]), center: .center, startRadius: 0, endRadius: diameter * 0.52))
-                    WhoopBlobParticles(tint: tint, time: t)
-                        .clipShape(WhoopBlobShape(phase: phase))
-                    WhoopBlobShape(phase: phase).stroke(tint.opacity(0.85), lineWidth: 1.5)
+            if compact || motion.poseStill(reduceMotion) {
+                // The resting frame with no timeline behind it: a timeline that is only paused still keeps the
+                // render server busy (`QuietMotionCoverageTests`).
+                blob(tint: tint, at: 0)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
+                    blob(tint: tint, at: timeline.date.timeIntervalSinceReferenceDate)
                 }
             }
             VStack(spacing: NoopMetrics.space1) {
