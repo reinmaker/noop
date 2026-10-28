@@ -73,4 +73,40 @@ final class WhoopNotificationsTests: XCTestCase {
         XCTAssertFalse(WhoopNotifications.isActivityNews(startSec: now - 4_000, endSec: now - 600, now: now,
                                                          posted: [now - 4_000]))
     }
+
+    /// The sleep note waits until the strap has recorded a quarter of an hour after the last sleep: a night
+    /// still going has its last asleep minute at the newest data, so it is not over; one the wearer has got up
+    /// from is. Data that ran behind the clock counts as the data, not the clock.
+    func testNightIsOverOnlyAfterDataFollowsTheLastSleep() {
+        let now = 2_000_000
+        // Asleep: the last sleep is the newest data.
+        XCTAssertFalse(WhoopNotifications.nightIsOver(nightEnd: now - 60, newestSample: now - 30, now: now))
+        // A sync delivered the buffer two hours behind the clock, ending with the last sleep: still going.
+        XCTAssertFalse(WhoopNotifications.nightIsOver(nightEnd: now - 7_200, newestSample: now - 7_190, now: now))
+        // Up for fourteen minutes: not yet; for fifteen: over.
+        XCTAssertFalse(WhoopNotifications.nightIsOver(nightEnd: now - 840, newestSample: now, now: now))
+        XCTAssertTrue(WhoopNotifications.nightIsOver(nightEnd: now - 900, newestSample: now, now: now))
+        // The night ended long ago and the strap has recorded since.
+        XCTAssertTrue(WhoopNotifications.nightIsOver(nightEnd: now - 5 * 3600, newestSample: now - 60, now: now))
+        // Data stamped after the clock (a skewed strap) cannot make a night over early.
+        XCTAssertFalse(WhoopNotifications.nightIsOver(nightEnd: now - 300, newestSample: now + 3_600, now: now))
+    }
+
+    /// An activity is added only after the strap has recorded ten minutes since its last raised minute, counted
+    /// from the newest sample as well as the clock.
+    func testActivityHasSettledOnlyAfterDataFollowsIt() {
+        let now = 3_000_000
+        let settle = Repository.activityAddSettleSec
+        XCTAssertEqual(settle, 600)
+        // Going: its last raised minute is the newest data.
+        XCTAssertFalse(Repository.activityHasSettled(endSec: now - 60, now: now, newestSample: now, settleSec: settle))
+        // A sync delivered the buffer ten minutes behind the clock, ending with the last raised minute.
+        XCTAssertFalse(Repository.activityHasSettled(endSec: now - 600, now: now, newestSample: now - 590,
+                                                     settleSec: settle))
+        // Ten minutes of quiet recorded after it: finished.
+        XCTAssertTrue(Repository.activityHasSettled(endSec: now - 600, now: now, newestSample: now, settleSec: settle))
+        XCTAssertFalse(Repository.activityHasSettled(endSec: now - 599, now: now, newestSample: now, settleSec: settle))
+        // The detector's own five minutes still apply where nothing longer is asked.
+        XCTAssertTrue(Repository.activityHasSettled(endSec: now - 300, now: now, newestSample: now, settleSec: 300))
+    }
 }
