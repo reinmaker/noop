@@ -3416,7 +3416,8 @@ final class Repository: ObservableObject {
             }
             candidates = results
         } else if PuffinExperiment.whoopScoresEnabled {
-            candidates = await yoopActivityBouts(daysBack: daysBack, ignoring: [])
+            candidates = await yoopActivityBouts(daysBack: daysBack, ignoring: [],
+                                                 settleSec: Self.activityAddSettleSec)
         } else {
             candidates = AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
                                                     motion: nil, savedSpans: savedSpans,
@@ -3431,13 +3432,16 @@ final class Repository: ObservableObject {
     /// Yoop: the activity bouts in the last `daysBack` days by `WhoopActivityDetector`, which keeps a bout
     /// through set breaks, against the median resting HR of the last two weeks (one low night cannot move
     /// it), with the wrist's motion to place the warm-up, never over a sleep or a saved workout other than
-    /// those whose start time is in `ignoring`. Only bouts that have ended (no raised minute in the last
-    /// five): one still going is added once it finishes, with its full length.
-    func yoopActivityBouts(daysBack: Int, ignoring: Set<Int>) async -> [DetectedWorkout] {
+    /// those whose start time is in `ignoring`. Only bouts that have ended: the strap has recorded `settleSec`
+    /// of heart rate since the last raised minute (`activityHasSettled`). One still going is added once it
+    /// finishes, with its full length.
+    func yoopActivityBouts(daysBack: Int, ignoring: Set<Int>,
+                           settleSec: Int = 5 * 60) async -> [DetectedWorkout] {
         let now = Int(Date().timeIntervalSince1970)
         let from = now - daysBack * 86_400
         let samples = await hrSamples(from: from, to: now, limit: 200_000)
         guard samples.count >= 2 else { return [] }
+        let newestSample = samples.map(\.ts).max() ?? 0
         let hr = samples.map { (ts: $0.ts, bpm: $0.bpm) }
         let recent = days.suffix(14).compactMap(\.restingHr).sorted()
         let latest = days.last(where: { $0.restingHr != nil })?.restingHr
@@ -3453,7 +3457,22 @@ final class Repository: ObservableObject {
         }
         let motion = motionSums.mapValues { $0.total / Double($0.count) }
         return WhoopActivityDetector.detect(hr: hr, restingBpm: reference, excluded: excluded, motion: motion)
-            .filter { $0.endSec <= now - 5 * 60 }
+            .filter { Self.activityHasSettled(endSec: $0.endSec, now: now, newestSample: newestSample,
+                                              settleSec: settleSec) }
+    }
+
+    /// How long Yoop waits after an activity's last raised minute before it adds the activity and says so.
+    /// Longer than the detector's five-minute bridge over a set break, so a pause in a session does not
+    /// close it early.
+    nonisolated static let activityAddSettleSec = 10 * 60
+
+    /// Whether a bout has ended: the strap recorded at least `settleSec` of heart rate after its last raised
+    /// minute. Measured from the newest sample as well as the clock, because a sync can deliver the strap's
+    /// buffer with the newest minutes still missing: against the clock alone, a session still going looked
+    /// finished once its data ran five minutes behind (the activity note arrived in the middle of a workout,
+    /// reported 28 Oct 2026). Pure.
+    nonisolated static func activityHasSettled(endSec: Int, now: Int, newestSample: Int, settleSec: Int) -> Bool {
+        endSec <= min(now, newestSample) - settleSec
     }
 
     /// Yoop: re-check the activities Yoop added by itself (not ones the user typed or logged) against the
@@ -3564,7 +3583,8 @@ final class Repository: ObservableObject {
         for _ in 0..<5 {
             let next: DetectedWorkout?
             if restoring {
-                next = Self.selectAutoDetectCandidate(await yoopActivityBouts(daysBack: 2, ignoring: []),
+                next = Self.selectAutoDetectCandidate(await yoopActivityBouts(daysBack: 2, ignoring: [],
+                                                                              settleSec: Self.activityAddSettleSec),
                                                       autoDismissedTokens: [],
                                                       detectedDismissedTokens: dismissedDetectedSpans)
             } else {

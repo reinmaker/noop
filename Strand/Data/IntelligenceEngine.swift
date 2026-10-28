@@ -3164,7 +3164,11 @@ final class IntelligenceEngine: ObservableObject {
         if !dailies.isEmpty || !healDropped.isEmpty { await repo.refresh() }
         // Yoop: tell the wearer once a day when the night has been scored, as WHOOP does.
         if PuffinExperiment.whoopScoresEnabled {
-            WhoopNotifications.sleepScored(dailies, todayKey: Repository.logicalDayKey(Date()))
+            let todayKey = Repository.logicalDayKey(Date())
+            let nightEnd = scoredNights.filter { $0.daily.day == todayKey }.flatMap(\.cachedSleep).map(\.endTs).max()
+            let newestSample = (try? await store.hrFingerprint())?.maxTs
+            WhoopNotifications.sleepScored(dailies, todayKey: todayKey, nightEnd: nightEnd,
+                                           newestSample: newestSample)
         }
 
         markPostLoopPhase("workouts")

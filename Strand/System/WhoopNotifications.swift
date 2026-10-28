@@ -131,12 +131,29 @@ enum WhoopNotifications {
     /// Once a day: the first time `todayKey` has been announced.
     static func isNewSleepDay(last: String?, todayKey: String) -> Bool { last != todayKey }
 
-    /// After a scoring pass: the first time today's night is scored, say so once for the day. WHOOP tells you when
-    /// your sleep has been analysed; Yoop did not.
-    static func sleepScored(_ dailies: [DailyMetric], todayKey: String) {
+    /// How long the strap must have recorded after the night's last sleep before the night counts as over.
+    static let sleepSettleSec = 15 * 60
+
+    /// Whether the night has ended: the strap recorded at least `sleepSettleSec` of data after its last
+    /// asleep minute. A night still going is scored as it stands, two hours in, with a duration and a Recovery
+    /// that the finished night then contradicts; its last asleep minute is the newest data, so this is false
+    /// until the wearer is up. Measured from the newest sample as well as the clock, as `activityHasSettled`
+    /// is. Pure.
+    static func nightIsOver(nightEnd: Int, newestSample: Int, now: Int) -> Bool {
+        min(now, newestSample) - nightEnd >= sleepSettleSec
+    }
+
+    /// After a scoring pass: the first time today's night is scored AND over, say so once for the day. WHOOP
+    /// tells you when your sleep has been analysed; Yoop did not, and then told you during the night.
+    /// `nightEnd` is the end of today's last sleep session and `newestSample` the newest heart-rate time the
+    /// strap has delivered; without either there is no evidence the night is over, so nothing is said.
+    static func sleepScored(_ dailies: [DailyMetric], todayKey: String, nightEnd: Int?, newestSample: Int?,
+                            now: Int = Int(Date().timeIntervalSince1970)) {
         guard isOn(sleepReadyKey),
               let night = dailies.first(where: { $0.day == todayKey }),
-              let body = sleepReadyBody(night) else { return }
+              let body = sleepReadyBody(night),
+              let nightEnd, let newestSample,
+              nightIsOver(nightEnd: nightEnd, newestSample: newestSample, now: now) else { return }
         let defaults = UserDefaults.standard
         guard isNewSleepDay(last: defaults.string(forKey: sleepReadyDayKey), todayKey: todayKey) else { return }
         defaults.set(todayKey, forKey: sleepReadyDayKey)
