@@ -109,4 +109,40 @@ final class WhoopNotificationsTests: XCTestCase {
         // The detector's own five minutes still apply where nothing longer is asked.
         XCTAssertTrue(Repository.activityHasSettled(endSec: now - 300, now: now, newestSample: now, settleSec: 300))
     }
+
+    private var utc: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal
+    }
+
+    private func at(_ day: Int, _ hour: Int, _ minute: Int, month: Int = 10) -> Date {
+        utc.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour, minute: minute))!
+    }
+
+    /// The Day In Review note goes out at the minute Home's row turns into the Review: the training cutoff,
+    /// 19:00 without a plan, and never before noon or after 23:30.
+    func testDayReviewMinuteFollowsTheCutoff() {
+        XCTAssertEqual(WhoopNotifications.dayReviewMinute(cutoff: at(29, 21, 30), calendar: utc), 21 * 60 + 30)
+        XCTAssertEqual(WhoopNotifications.dayReviewMinute(cutoff: nil, calendar: utc), 19 * 60)
+        XCTAssertEqual(WhoopNotifications.dayReviewMinute(cutoff: at(29, 23, 50), calendar: utc), 23 * 60 + 30)
+        // Between midnight and 04:00 is the evening before, the latest minute; not noon.
+        XCTAssertEqual(WhoopNotifications.dayReviewMinute(cutoff: at(30, 0, 30), calendar: utc), 23 * 60 + 30)
+        XCTAssertEqual(WhoopNotifications.dayReviewMinute(cutoff: at(29, 10, 0), calendar: utc), 12 * 60)
+    }
+
+    /// The coming evenings at that minute, soonest first, and never one that has passed.
+    func testDayReviewDatesAreTheNextEvenings() {
+        let minute = 21 * 60 + 30
+        XCTAssertEqual(WhoopNotifications.dayReviewDates(now: at(29, 20, 0), minute: minute, calendar: utc),
+                       [at(29, 21, 30), at(30, 21, 30), at(31, 21, 30)])
+        // Already past tonight's: the first is tomorrow's.
+        XCTAssertEqual(WhoopNotifications.dayReviewDates(now: at(29, 22, 0), minute: minute, calendar: utc),
+                       [at(30, 21, 30), at(31, 21, 30), at(1, 21, 30, month: 11)])
+        // At the minute itself it has gone.
+        XCTAssertEqual(WhoopNotifications.dayReviewDates(now: at(29, 21, 30), minute: minute, calendar: utc).first,
+                       at(30, 21, 30))
+        XCTAssertEqual(WhoopNotifications.dayReviewDates(now: at(29, 8, 0), minute: minute, count: 1, calendar: utc),
+                       [at(29, 21, 30)])
+    }
 }

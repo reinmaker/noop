@@ -22,6 +22,7 @@ enum WhoopNotifications {
     static let routeKey = "yoop.route"
 
     private static let dayReviewId = "yoop-day-review"
+    private static let dayReviewMinuteKey = "whoopNotif.dayReviewMinute"
     private static let stressSummaryId = "yoop-stress-summary"
     private static let offBodyId = "yoop-off-body"
     private static let travelId = "yoop-travel"
@@ -57,20 +58,76 @@ enum WhoopNotifications {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
     }
 
-    // MARK: Day In Review (every evening at 8:30pm)
+    // MARK: Day In Review (when Home's row turns into the Review)
 
-    /// Idempotent: re-adding the same id replaces it. Call on launch and when the switch changes.
+    /// The minute of the day the Home row turns from the Daily Outlook into the Day In Review when there is no
+    /// sleep plan to read it from (`WhoopMyDaySection.isOutlook`: 19:00).
+    static let dayReviewFallbackMinute = 19 * 60
+
+    /// The earliest and latest minute of the day the note is sent at, so an odd plan cannot send it at noon or
+    /// after midnight.
+    static let dayReviewMinuteRange = (12 * 60)...(23 * 60 + 30)
+
+    /// How many coming evenings are scheduled at once: the app may not be opened for a few days, and a note
+    /// that was scheduled once is not repeated (the time moves with the plan).
+    static let dayReviewDaysAhead = 3
+
+    /// The minute of the day of the training cutoff, which is when Home's row becomes the Review, kept within
+    /// `dayReviewMinuteRange`; the fallback minute without a cutoff. A cutoff between midnight and 04:00 (the
+    /// logical day's rollover) belongs to the evening before, so it is the latest minute. Pure.
+    static func dayReviewMinute(cutoff: Date?, calendar: Calendar = .current) -> Int {
+        guard let cutoff else { return dayReviewFallbackMinute }
+        let c = calendar.dateComponents([.hour, .minute], from: cutoff)
+        let minute = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        if minute < 4 * 60 { return dayReviewMinuteRange.upperBound }
+        return min(dayReviewMinuteRange.upperBound, max(dayReviewMinuteRange.lowerBound, minute))
+    }
+
+    /// The next `count` times the clock reads `minute` after `now`, soonest first. Pure.
+    static func dayReviewDates(now: Date, minute: Int, count: Int = dayReviewDaysAhead,
+                               calendar: Calendar = .current) -> [Date] {
+        var out: [Date] = []
+        var day = calendar.startOfDay(for: now)
+        for _ in 0..<(count + 2) where out.count < count {
+            if let at = calendar.date(byAdding: .minute, value: minute, to: day), at > now { out.append(at) }
+            day = calendar.date(byAdding: .day, value: 1, to: day) ?? day.addingTimeInterval(86_400)
+        }
+        return out
+    }
+
+    /// Home tells the note when the row turns into the Review (the training cutoff of tonight's plan, or nil
+    /// without a plan), and the note is scheduled again if that minute moved. It used to be a fixed 8:30 pm,
+    /// so "Your Day In Review is ready" arrived while Home still showed the Daily Outlook.
+    static func setDayReviewMinute(cutoff: Date?) {
+        let minute = dayReviewMinute(cutoff: cutoff)
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: dayReviewMinuteKey) == nil || defaults.integer(forKey: dayReviewMinuteKey) != minute
+        else { return }
+        defaults.set(minute, forKey: dayReviewMinuteKey)
+        scheduleDayReview()
+    }
+
+    /// Idempotent: re-adding the same id replaces it, and the first id is the one the old repeating 8:30 pm
+    /// note used, so it is replaced too. Call on launch and when the switch changes.
     static func scheduleDayReview() {
-        guard isOn(dayReviewKey) else { cancel([dayReviewId]); return }
-        var when = DateComponents()
-        when.hour = 20
-        when.minute = 30
-        add(UNNotificationRequest(
-            identifier: dayReviewId,
-            content: content(String(localized: "Your Day In Review is ready"),
-                             String(localized: "See how today went and what tonight's sleep needs."),
-                             route: "dayReview"),
-            trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: true)))
+        let ids = (0..<dayReviewDaysAhead).map { $0 == 0 ? dayReviewId : "\(dayReviewId)-\($0 + 1)" }
+        guard isOn(dayReviewKey) else { cancel(ids); return }
+        let defaults = UserDefaults.standard
+        let minute = defaults.object(forKey: dayReviewMinuteKey) == nil
+            ? dayReviewFallbackMinute : defaults.integer(forKey: dayReviewMinuteKey)
+        let cal = Calendar.current
+        let dates = dayReviewDates(now: Date(), minute: minute, calendar: cal)
+        cancel(ids)
+        for (id, date) in zip(ids, dates) {
+            add(UNNotificationRequest(
+                identifier: id,
+                content: content(String(localized: "Your Day In Review is ready"),
+                                 String(localized: "See how today went and what tonight's sleep needs."),
+                                 route: "dayReview"),
+                trigger: UNCalendarNotificationTrigger(
+                    dateMatching: cal.dateComponents([.year, .month, .day, .hour, .minute], from: date),
+                    repeats: false)))
+        }
     }
 
     // MARK: Daily Stress Summary (9pm, today's numbers as of the last update)

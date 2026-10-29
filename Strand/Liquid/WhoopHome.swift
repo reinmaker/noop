@@ -374,6 +374,7 @@ struct WhoopMyDaySection: View {
     @State private var showReview = false
 
     var body: some View {
+        let reviewCutoff = WhoopSleepPlan.current(repo: repo, behavior: behavior, model: model)?.trainingCutoff
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
             HStack {
                 Text("My Day")
@@ -432,6 +433,10 @@ struct WhoopMyDaySection: View {
             }
             .buttonStyle(.plain)
             }
+        }
+        .task(id: WhoopNotifications.dayReviewMinute(cutoff: reviewCutoff)) {
+            // The Day In Review note goes out when this row turns into the Review, not at a fixed hour.
+            WhoopNotifications.setDayReviewMinute(cutoff: reviewCutoff)
         }
         .sheet(isPresented: $showReview) { DayInReviewSheet() }
     }
