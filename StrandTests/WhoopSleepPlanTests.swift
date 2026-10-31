@@ -6,8 +6,8 @@ import WhoopStore
 
 /// Tonight's plan (`WhoopSleepPlan`): when to be in bed and when to wake for the day the user had.
 ///
-/// The need says how long to be in bed; the plan places that time on the user's usual middle of the night,
-/// within 2 h of their usual wake time and bedtime. One call resolves it (`WhoopSleepPlan.current`) for the
+/// The need says how long to be in bed; the plan counts the bedtime back from the wake time by that, and the
+/// usual middle of the night only places the optimal window. One call resolves it (`WhoopSleepPlan.current`) for the
 /// Home card, the Sleep Planner, the Alarms screen, the Coach, the wind-down reminder and the Home insight's
 /// cache key, so these also pin that nothing else can resolve a second plan.
 @MainActor
@@ -105,71 +105,36 @@ final class WhoopSleepPlanTests: XCTestCase {
         XCTAssertNil(WhoopSleepPlan.rhythm(of: []))
     }
 
-    private let usual = WhoopSleepPlan.Rhythm(wake: 1_320, onset: 870, midpoint: 1_095, nights: 7)
-
-    /// The time in bed is centred on the usual middle of the night, so a longer one starts earlier and ends
-    /// later by the same amount.
-    func testALongerNightIsCentredOnTheMiddleOfTheNight() {
-        for inBed in [400.0, 500, 556, 640] {
-            let placed = WhoopSleepPlan.placedWake(timeInBedMin: inBed, rhythm: usual)
-            XCTAssertEqual(placed.wake - inBed / 2, usual.midpoint, accuracy: 1e-9, "\(inBed)")
-            XCTAssertEqual(placed.wake, placed.centred, accuracy: 1e-9, "\(inBed) is inside the limits")
-        }
-    }
-
-    /// Neither end moves more than 2 h from the usual one.
-    func testNeitherEndMovesMoreThanTwoHours() {
-        for inBed in stride(from: 360.0, through: 700, by: 10) {
-            let placed = WhoopSleepPlan.placedWake(timeInBedMin: inBed, rhythm: usual)
-            XCTAssertLessThanOrEqual(abs(placed.wake - usual.wake), WhoopSleepPlan.maxShiftMin + 1e-9, "\(inBed)")
-        }
-        for inBed in stride(from: 380.0, through: 620, by: 10) {
-            let placed = WhoopSleepPlan.placedWake(timeInBedMin: inBed, rhythm: usual)
-            let bedtime = placed.wake - inBed
-            XCTAssertLessThanOrEqual(abs(bedtime - usual.onset), WhoopSleepPlan.maxShiftMin + 1e-9, "\(inBed)")
-        }
-    }
-
-    /// A need too long for both limits keeps the wake limit and lets the bedtime go as early as the need
-    /// asks; it is never shortened to fit.
-    func testATooLongNeedKeepsTheWakeLimitAndMovesTheBedtime() {
-        let placed = WhoopSleepPlan.placedWake(timeInBedMin: 760, rhythm: usual)
-        XCTAssertEqual(placed.wake, usual.wake + WhoopSleepPlan.maxShiftMin, accuracy: 1e-9)
-        XCTAssertGreaterThan(placed.centred, placed.wake)
-        XCTAssertEqual(placed.wake - 760, 680, accuracy: 1e-9, "the whole 760 min are still in bed")
-    }
-
     // MARK: Hard day, easy day
 
-    /// The same user, the same nights, a hard day and an easy one: the hard day starts the night earlier and
-    /// ends it later, each by half of the extra time, around the same middle.
-    func testAHardDayStartsEarlierAndEndsLaterAroundTheSameMiddle() throws {
+    /// The same user, the same nights, a hard day and an easy one: the wake time stays where the user keeps it and
+    /// the hard day, which asks for more sleep, starts the night earlier by all of the extra time.
+    func testAHardDayStartsEarlierAndKeepsTheWakeTime() throws {
         let easy = try tonight(repo(strain21: 4))
         let hard = try tonight(repo(strain21: 20))
         XCTAssertEqual(easy.wakeSource, .recommended)
         XCTAssertEqual(hard.wakeSource, .recommended)
         let extra = hard.timeInBedMin - easy.timeInBedMin
         XCTAssertEqual(extra, SleepModel.needMinPerStrainPoint * 10 / 0.9, accuracy: 1e-6, "10 points of Strain above the floor")
-        XCTAssertEqual(minutes(easy.bedtime, hard.bedtime), extra / 2, accuracy: 1e-6, "the bedtime moves earlier")
-        XCTAssertEqual(minutes(hard.wake, easy.wake), extra / 2, accuracy: 1e-6, "the wake time moves later")
-        let easyMiddle = easy.bedtime.addingTimeInterval(easy.timeInBedMin * 30)
-        let hardMiddle = hard.bedtime.addingTimeInterval(hard.timeInBedMin * 30)
-        XCTAssertEqual(hardMiddle.timeIntervalSince(easyMiddle), 0, accuracy: 1e-6)
+        XCTAssertEqual(easy.wake, hard.wake, "the wake time does not move")
+        XCTAssertEqual(minutes(easy.bedtime, hard.bedtime), extra, accuracy: 1e-6, "the bedtime moves earlier by all of it")
         XCTAssertEqual(minutes(hard.wake, hard.bedtime), hard.timeInBedMin, accuracy: 1e-6, "bedtime is the wake minus the time in bed")
     }
 
-    /// The numbers this user sees: mid-sleep 06:15 and a 9 h 15 m night give 01:37 to 10:52.
+    /// The numbers on the fixture: the usual wake 10:00 and a 9 h 15 m night give 00:44 to 10:00, where centring
+    /// on the middle of the night gave 01:37 to 10:52.
     func testTheEasyDayTimesOnTheFixture() throws {
         let easy = try tonight(repo(strain21: 4))
         XCTAssertEqual(dayKey(easy.wake), "2026-10-12")
         XCTAssertEqual(easy.timeInBedMin, 500 / 0.9, accuracy: 1e-9)
-        let wake = clock(easy.wake), bed = clock(easy.bedtime)
-        XCTAssertEqual(wake.hour * 60 + wake.minute, 10 * 60 + 52)
-        XCTAssertEqual(bed.hour * 60 + bed.minute, 60 + 37 + 0)
+        XCTAssertEqual(easy.wake, at("2026-10-12", 10, 0))
+        XCTAssertEqual(easy.bedtime, easy.wake.addingTimeInterval(-easy.timeInBedMin * 60))
         XCTAssertEqual(easy.recommendedWake, easy.wake)
+        let optimal = try XCTUnwrap(easy.optimalStart)
+        XCTAssertEqual(minutes(optimal, easy.bedtime), 52.78, accuracy: 0.01, "the optimal window starts later, on the usual middle of the night")
     }
 
-    /// A day the usual times would not carry: the wake is held within 2 h of the usual one however big the debt.
+    /// However big the debt, the wake time stays the usual one and the bedtime goes as early as the need asks.
     func testAHugeDebtCannotMoveTheWakeMoreThanTwoHours() throws {
         let tired = Repository(deviceId: "test-sleep-plan-debt")
         tired.days = (28...30).map { key in
@@ -184,8 +149,8 @@ final class WhoopSleepPlanTests: XCTestCase {
         tired.sleeps = nightKeys.map { night(endingOn: $0) }
         let plan = try tonight(tired)
         XCTAssertGreaterThan(plan.needMin, 600, "a large need to hold the limit against")
-        XCTAssertLessThanOrEqual(minutes(plan.wake, at("2026-10-12", 10, 0)), WhoopSleepPlan.maxShiftMin + 1e-6)
-        XCTAssertEqual(minutes(plan.wake, plan.bedtime), plan.timeInBedMin, accuracy: 1e-6, "the need is never shortened to fit")
+        XCTAssertEqual(plan.wake, at("2026-10-12", 10, 0))
+        XCTAssertEqual(minutes(plan.wake, plan.bedtime), plan.timeInBedMin, accuracy: 1e-6, "the whole need is in bed")
     }
 
     // MARK: Few nights, no nights
@@ -201,7 +166,7 @@ final class WhoopSleepPlanTests: XCTestCase {
         XCTAssertNotNil(plan.optimalStart, "the window of the nights on record is still drawn, as before")
     }
 
-    /// With three nights the placement starts.
+    /// With three nights the usual wake time is the recommended one and the optimal window is drawn.
     func testThreeNightsAreEnoughToPlaceTheWindow() throws {
         XCTAssertEqual(try tonight(repo(strain21: 4, nights: 3)).wakeSource, .recommended)
     }
@@ -315,7 +280,7 @@ final class WhoopSleepPlanTests: XCTestCase {
         let plan = try tonight(repo(strain21: 14))
         let line = plan.coachLine
         XCTAssertTrue(line.contains("get in bed by \(WhoopTime.clock(plan.bedtime)) to wake at \(WhoopTime.clock(plan.wake))"), line)
-        XCTAssertTrue(line.contains("recommended wake time"), line)
+        XCTAssertTrue(line.contains("usual wake time"), line)
         let hero = SmartAlarmView.needSummary(plan)
         XCTAssertTrue(hero.contains(WhoopTime.duration(minutes: plan.needMin)), hero)
         XCTAssertTrue(hero.contains(WhoopTime.duration(minutes: plan.baselineMin)), hero)
@@ -404,12 +369,12 @@ final class WhoopSleepPlanTests: XCTestCase {
         }
     }
 
-    /// A hard day moves the reminder earlier, with the bedtime.
+    /// A hard day moves the reminder earlier, with the bedtime, by all of the extra time in bed.
     func testAHardDayMovesTheReminderEarlier() throws {
         let easy = try tonight(repo(strain21: 4))
         let hard = try tonight(repo(strain21: 20))
         let moved = minutes(WindDownNudge.fireDate(for: easy, leadMinutes: 30), WindDownNudge.fireDate(for: hard, leadMinutes: 30))
-        XCTAssertEqual(moved, (hard.timeInBedMin - easy.timeInBedMin) / 2, accuracy: 1e-6)
+        XCTAssertEqual(moved, hard.timeInBedMin - easy.timeInBedMin, accuracy: 1e-6)
         XCTAssertGreaterThan(moved, 10, "a day like this is worth a re-plan")
     }
 
@@ -509,7 +474,7 @@ final class WhoopSleepPlanTests: XCTestCase {
     /// recommended wake instead, the user's own chosen time if they set one, and never a chosen alarm time.
     func testTheStrapAlarmTakesItsFirstTimeFromThePlan() throws {
         let placed = try tonight(repo(strain21: 4))
-        XCTAssertEqual(WhoopSleepPlan.strapAlarmSeed(plan: placed, timeIsChosen: false), 10 * 60 + 52)
+        XCTAssertEqual(WhoopSleepPlan.strapAlarmSeed(plan: placed, timeIsChosen: false), 10 * 60)
         XCTAssertNil(WhoopSleepPlan.strapAlarmSeed(plan: placed, timeIsChosen: true), "a time somebody picked stays")
         XCTAssertNil(WhoopSleepPlan.strapAlarmSeed(plan: nil, timeIsChosen: false), "no plan, nothing to take it from")
         let mine = try tonight(repo(strain21: 4), chosen: 8 * 60 + 15)
