@@ -1039,6 +1039,8 @@ final class AICoachEngine: ObservableObject {
             ctx += "\n\n" + line
         }
         ctx += "\n\n" + (await recentWorkoutsBlock())
+        let routineRows = await repo.workoutRows(days: 90).map { (startTs: $0.startTs, sport: $0.sport) }
+        if let routine = Self.weekdayRoutineLine(rows: routineRows, now: Date()) { ctx += "\n\n" + routine }
         if let today = await todayTrainingLine() { ctx += "\n\n" + today }
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
         // way StressView does. Gated here under `dataConsent` (the caller only reaches buildFullContext()
@@ -1643,12 +1645,25 @@ final class AICoachEngine: ObservableObject {
     About 80 words in short paragraphs, no headings, at most one emoji.
     """
 
-    private static let dailyOutlookInstruction = """
-    Write my Daily Outlook for today, the way the WHOOP coach does in the morning: start with my name if \
-    you know it and a warm line with how ready I am and why, in plain words (last night's sleep, how I \
-    recovered, yesterday's effort). Then what that means for training today, bolding my optimal Strain range \
-    and at most two other figures. Then two suggested activities as one-line bullets with one emoji each, and \
-    tonight's bedtime. About 70 words, no headings. End by asking which activity I will do.
+    /// The morning note, shaped on WHOOP's Daily Outlook as read from the app on 31 Oct 2026: a short headline
+    /// with the name and an emoji, one paragraph with the Recovery, HRV and resting heart rate and how it
+    /// compares with yesterday's colour, "Today's activity picks" as three bullets that each give a reason from
+    /// the wearer's own data (their routine for the weekday, the Strain range, what hurts), and a closing line
+    /// that hands the choice back. The bedtime is left out because the Tonight's Sleep card shows it.
+    nonisolated static let dailyOutlookInstruction = """
+    Write my Daily Outlook for today, the way the WHOOP coach does. For this one message the bold figures, the \
+    list and the emoji below are asked for. Open with a short headline of 3 to 6 words that fits how I am \
+    doing, then my first name if you know it and one emoji, like "Steady and strong, Daniel". Then one short \
+    paragraph: my Recovery with its colour, my HRV and my resting heart rate in bold each against my usual \
+    ("**HRV 103 ms** against 86"), how that compares with yesterday's colour (a rebound, a dip or steady) and \
+    one honest reaction. If today is not scored yet because nothing has synced, say so in one short clause and \
+    use the latest score and its date instead. Then the line "Today's activity picks" and three bullets, each \
+    with one emoji, the activity and one short reason from my own data: what I usually do on this weekday \
+    (the ROUTINE line), the Strain range today's Recovery earns, what is already logged today, anything I told \
+    you hurts or limits me, and the last sensible time to train. If today is at or past my optimal Strain \
+    range, or it is too late to train, make the three picks recovery moves. Leave out my bedtime, the \
+    Tonight's Sleep card shows it. End with one line asking which pick I lean toward and saying you will help \
+    shape the rest of the day. About 100 words, no other headings, no dashes as punctuation.
     """
 
     nonisolated static let sleepReadInstruction = """
@@ -1854,6 +1869,7 @@ final class AICoachEngine: ObservableObject {
                      + "(its Strain is still rising).")
         if let normal = Self.todayVsNormalLine(days, todayKey: todayKey) { lines.append(normal) }
         lines.append(Self.recoveryLine(days: days, todayKey: todayKey))
+        if let yesterday = Self.yesterdayRecoveryLine(days: days, todayKey: todayKey) { lines.append(yesterday) }
         // Today's Strain and steps as Home shows them; the stored row stands in until Home has loaded today.
         // With muscle load on, Strain comes from the one funnel Home's ring reads, so a rating made since
         // Home last loaded is counted too.
@@ -2156,6 +2172,40 @@ final class AICoachEngine: ObservableObject {
                 + "\(band.lowerBound)-\(band.upperBound) of 21."
         }
         return line
+    }
+
+    /// "Yesterday's Recovery: 58% (yellow)." from the row of the day before `todayKey`, so the Coach can say
+    /// whether today is a rebound, a dip or steady against it, as WHOOP's Outlook does. Nil without that row.
+    nonisolated static func yesterdayRecoveryLine(days: [DailyMetric], todayKey: String) -> String? {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        guard let today = f.date(from: todayKey),
+              let before = Calendar.current.date(byAdding: .day, value: -1, to: today),
+              let recovery = days.first(where: { $0.day == f.string(from: before) })?.recovery else { return nil }
+        let band = recovery >= 67 ? "green" : (recovery >= 34 ? "yellow" : "red")
+        return "Yesterday's Recovery: \(Int(recovery.rounded()))% (\(band))."
+    }
+
+    /// What the wearer usually does on today's weekday: the activities recorded on the same weekday in the last
+    /// `weeks` weeks, counted by type, "ROUTINE (Saturdays, last 12 weeks): Tennis 4 of 12, Walking 2 of 12.
+    /// A habit to weigh, not a rule." Nil when none of those days had an activity. Pure.
+    nonisolated static func weekdayRoutineLine(rows: [(startTs: Int, sport: String)], now: Date, weeks: Int = 12,
+                                               calendar: Calendar = .current) -> String? {
+        let names = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
+        let weekday = calendar.component(.weekday, from: now)
+        let today = calendar.startOfDay(for: now)
+        guard let from = calendar.date(byAdding: .day, value: -7 * weeks, to: today) else { return nil }
+        var counts: [String: Int] = [:]
+        for row in rows {
+            let at = Date(timeIntervalSince1970: TimeInterval(row.startTs))
+            guard at >= from, at < today, calendar.component(.weekday, from: at) == weekday else { continue }
+            counts[WorkoutSource.displaySport(row.sport), default: 0] += 1
+        }
+        let top = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(3)
+        guard !top.isEmpty else { return nil }
+        let items = top.map { "\($0.key) \($0.value) of \(weeks)" }.joined(separator: ", ")
+        return "ROUTINE (\(names[weekday - 1]), last \(weeks) weeks): \(items). A habit to weigh, not a rule."
     }
 
     /// Today's Strain (stored 0-100 scale, shown on 0-21), steps and active energy so far, as Home shows
