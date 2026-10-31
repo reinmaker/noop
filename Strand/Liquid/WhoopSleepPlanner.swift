@@ -11,23 +11,19 @@ import WhoopStore
 /// half of the last night's shortfall against that night's own need (`WhoopSleepDebt`, fitted to the same
 /// export), the figure the Sleep Debt tile and the ledger show.
 ///
-/// Where the time in bed goes. The need says how long to be in bed, not when. Absent an alarm the plan puts
-/// that time on the user's circadian anchor, the usual middle of their night (the median mid-sleep of the
-/// last 7 nights). Mid-sleep is the standard marker of a person's chronotype (Roenneberg, Wirz-Justice and
-/// Merrow 2003, J Biol Rhythms 18:80-90), and the clock gates sleep timing along with how long sleep has
-/// lasted (the two-process model: Borbely 1982; Daan, Beersma and Borbely 1984, Am J Physiol 246:R161).
-/// So a hard day, which asks for more sleep, starts it earlier and ends it later, and an easy day does the
-/// reverse, both around the same middle. Splitting the change evenly around that middle, and the 2 h limit
-/// below, are this plan's own choices, checked against the user's data and not findings of those papers: on
-/// 117 of their own nights, mid-sleep strayed from its 7-night median by 35 min typically and 98 min on
-/// the worst tenth, against 38 and 127 for the wake time and 40 and 107 for sleep onset.
+/// Where the time in bed goes. The need says how long to be in bed, so the plan counts the bedtime back from
+/// the wake time by that: a recommendation, not a copy of the user's habit. The wake time stays where the user
+/// keeps it, and a hard day, which asks for more sleep, starts the night earlier and leaves its end alone. WHOOP
+/// does the same (read from its Sleep Planner on 31 Oct 2026: bed 22:59 for the wake time set to 8:30, 9:31 in
+/// bed, with the optimal window 01:55 to 08:40 shown beside it). The usual middle of the night, the standard
+/// marker of a person's chronotype (Roenneberg, Wirz-Justice and Merrow 2003, J Biol Rhythms 18:80-90), only
+/// places that optimal window. An earlier version centred the time in bed on it, which put the suggested
+/// bedtime and wake time where the user already slept (01:47 and 10:07 against their usual 01:40 and 09:40) and
+/// moved the wake time later on a hard day.
 ///
-/// The plan never moves the wake time or the bedtime more than `maxShiftMin` (2 h, about the distance the
-/// user's own wake time strays from its median on one night in ten) from their usual ones, so one hard day
-/// cannot swing the whole rhythm. If the need is too long to fit both limits the wake time keeps its limit
-/// and the bedtime moves as far as the need requires. With fewer than `minNightsForWindow` recent nights
-/// there is no rhythm to anchor to, and the plan falls back to the usual wake time of the nights it has,
-/// with the bedtime counted back from it.
+/// With no alarm and no chosen wake time the wake is the usual one, the median of the last 7 nights. With
+/// fewer than `minNightsForWindow` recent nights there is no usual middle to draw the optimal window from, but
+/// the usual wake time of the nights there are still stands.
 ///
 /// The wake time is, in order: the strap alarm that fires tonight, a wake time the user chose (a weekday's
 /// own time, else the one wake time they set), the end of the placed time in bed, the usual wake time. No
@@ -39,7 +35,7 @@ struct WhoopSleepPlan {
         case alarm
         /// A wake time the user chose: a weekday's own time, else the one wake time they set.
         case chosen
-        /// The end of the time in bed placed on the usual middle of the night (`placedWake`).
+        /// The usual wake time, kept, with the bedtime counted back from it by the sleep need.
         case recommended
         /// The usual wake time of the few recent nights on record.
         case usual
@@ -53,9 +49,8 @@ struct WhoopSleepPlan {
     let wakeSource: WakeSource
     /// Start of the time in bed centred on the usual middle of the night, when recent nights exist.
     let optimalStart: Date?
-    /// The end of the time in bed placed on the usual middle of the night and kept near the usual times, whatever
-    /// the wake time follows (an armed alarm, say): what the strap alarm is set to on request. Nil with fewer
-    /// than `minNightsForWindow` recent nights.
+    /// The usual wake time of the recent nights, whatever the wake time follows (an armed alarm, say): what the
+    /// strap alarm is set to on request. Nil with fewer than `minNightsForWindow` recent nights.
     let recommendedWake: Date?
 
     var needMin: Double { baselineMin + strainMin + debtMin }
@@ -109,12 +104,8 @@ struct WhoopSleepPlan {
     static let recentNights = 7
     /// Fewest recent nights that give a rhythm to anchor the time in bed to.
     static let minNightsForWindow = 3
-    /// The most the wake time or the bedtime moves from the usual one, minutes. About the 90th percentile of
-    /// the distance the user's own wake time (127 min) and sleep onset (107 min) stray from their 7-night
-    /// medians on a single night.
-    static let maxShiftMin = 120.0
 
-    // MARK: Rhythm and placement (pure)
+    // MARK: Rhythm (pure)
 
     /// The user's usual night on a noon-to-noon clock: minutes after the 12:00 before it, so a night that
     /// runs past midnight stays on one axis. Each field is a median over the recent nights.
@@ -150,20 +141,6 @@ struct WhoopSleepPlan {
               let midpoint = median(nights.map { noonClock($0.start, calendar: calendar) + Double($0.end - $0.start) / 120 })
         else { return nil }
         return Rhythm(wake: wake, onset: onset, midpoint: midpoint, nights: nights.count)
-    }
-
-    /// Where a night of `timeInBedMin` ends: the end of that time centred on the usual middle of the night,
-    /// held within `maxShift` of the usual wake time and, where the need allows, of the usual bedtime.
-    /// `centred` is the end before any limit, so a caller can tell the limit moved it.
-    static func placedWake(timeInBedMin: Double, rhythm: Rhythm,
-                           maxShift: Double = maxShiftMin) -> (wake: Double, centred: Double) {
-        let centred = rhythm.midpoint + timeInBedMin / 2
-        // The wake time that keeps both the wake time and the bedtime (wake - time in bed) within the limit.
-        let lowest = max(rhythm.wake - maxShift, rhythm.onset + timeInBedMin - maxShift)
-        let highest = min(rhythm.wake + maxShift, rhythm.onset + timeInBedMin + maxShift)
-        if lowest <= highest { return (min(max(centred, lowest), highest), centred) }
-        // The need is longer (or shorter) than both limits can hold: the wake time keeps its limit.
-        return (min(max(centred, rhythm.wake - maxShift), rhythm.wake + maxShift), centred)
     }
 
     /// The time to put on the strap alarm when it is switched on with none ever chosen, so the alarm is not armed
@@ -237,15 +214,12 @@ struct WhoopSleepPlan {
         var optimalStart: Date?
         var recommended: Date?
         if let habit, let night {
-            // Dates for the night's usual wake time, moved by the difference between where the plan puts the
-            // end of the night and where it usually ends.
+            // The night's usual wake time; the optimal window is the time in bed centred on the usual middle of
+            // the night, drawn beside the plan and not the plan itself.
             let usualWake = instant(clockMinutes: clockMinute(ofNoonClock: habit.wake), on: night.day, calendar: cal)
             let centredEnd = usualWake.addingTimeInterval((habit.midpoint + inBed / 2 - habit.wake) * 60)
             optimalStart = centredEnd.addingTimeInterval(-inBed * 60)
-            if habit.nights >= minNightsForWindow {
-                let placed = placedWake(timeInBedMin: inBed, rhythm: habit)
-                recommended = usualWake.addingTimeInterval((placed.wake - habit.wake) * 60)
-            }
+            if habit.nights >= minNightsForWindow { recommended = usualWake }
         }
 
         let wake: Date
@@ -313,7 +287,7 @@ struct WhoopSleepPlan {
         switch wakeSource {
         case .alarm: source = "alarm"
         case .chosen: source = "wake time the user set"
-        case .recommended: source = "recommended wake time, placed on the usual middle of the night"
+        case .recommended: source = "usual wake time, with the bedtime counted back from it by the sleep need"
         case .usual: source = "usual wake time"
         }
         let percent = Int((efficiency * 100).rounded())
@@ -420,19 +394,12 @@ struct WhoopSleepPlannerScreen: View {
                     .background(Capsule().fill(StrandPalette.surfaceBase))
                     .overlay(Capsule().strokeBorder(WhoopStyle.rangeGreen, lineWidth: 1.5))
             }
-            // The optimal window is the same window unless an alarm, a time the user chose or the limit on
-            // how far the plan moves from the usual times placed it elsewhere; then both are worth showing.
+            // The optimal window is the plan's own only when the wake time is the usual one and the need is the
+            // usual length; otherwise both are worth showing, as WHOOP shows them.
             if let start = plan.optimalStart, let end = plan.optimalEnd, plan.optimalDiffersFromPlan {
                 Text(String(localized: "OPTIMAL \(WhoopTime.clock(start)) - \(WhoopTime.clock(end))"))
                     .font(WhoopStyle.smallLabel)
                     .foregroundStyle(StrandPalette.textSecondary)
-            }
-            if plan.wakeSource == .recommended {
-                Text("Centred on the usual middle of your night, never more than \(Int(WhoopSleepPlan.maxShiftMin / 60)) h from your usual wake time and bedtime.")
-                    .font(WhoopStyle.smallLabel)
-                    .foregroundStyle(StrandPalette.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(WhoopStyle.cardPadding)
