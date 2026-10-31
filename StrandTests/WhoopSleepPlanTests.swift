@@ -280,7 +280,7 @@ final class WhoopSleepPlanTests: XCTestCase {
         let plan = try tonight(repo(strain21: 14))
         let line = plan.coachLine
         XCTAssertTrue(line.contains("get in bed by \(WhoopTime.clock(plan.bedtime)) to wake at \(WhoopTime.clock(plan.wake))"), line)
-        XCTAssertTrue(line.contains("recommended wake time"), line)
+        XCTAssertTrue(line.contains("usual wake time"), line)
         let hero = SmartAlarmView.needSummary(plan)
         XCTAssertTrue(hero.contains(WhoopTime.duration(minutes: plan.needMin)), hero)
         XCTAssertTrue(hero.contains(WhoopTime.duration(minutes: plan.baselineMin)), hero)
@@ -369,12 +369,12 @@ final class WhoopSleepPlanTests: XCTestCase {
         }
     }
 
-    /// A hard day moves the reminder earlier, with the bedtime.
+    /// A hard day moves the reminder earlier, with the bedtime, by all of the extra time in bed.
     func testAHardDayMovesTheReminderEarlier() throws {
         let easy = try tonight(repo(strain21: 4))
         let hard = try tonight(repo(strain21: 20))
         let moved = minutes(WindDownNudge.fireDate(for: easy, leadMinutes: 30), WindDownNudge.fireDate(for: hard, leadMinutes: 30))
-        XCTAssertEqual(moved, (hard.timeInBedMin - easy.timeInBedMin) / 2, accuracy: 1e-6)
+        XCTAssertEqual(moved, hard.timeInBedMin - easy.timeInBedMin, accuracy: 1e-6)
         XCTAssertGreaterThan(moved, 10, "a day like this is worth a re-plan")
     }
 
@@ -474,7 +474,7 @@ final class WhoopSleepPlanTests: XCTestCase {
     /// recommended wake instead, the user's own chosen time if they set one, and never a chosen alarm time.
     func testTheStrapAlarmTakesItsFirstTimeFromThePlan() throws {
         let placed = try tonight(repo(strain21: 4))
-        XCTAssertEqual(WhoopSleepPlan.strapAlarmSeed(plan: placed, timeIsChosen: false), 10 * 60 + 52)
+        XCTAssertEqual(WhoopSleepPlan.strapAlarmSeed(plan: placed, timeIsChosen: false), 10 * 60)
         XCTAssertNil(WhoopSleepPlan.strapAlarmSeed(plan: placed, timeIsChosen: true), "a time somebody picked stays")
         XCTAssertNil(WhoopSleepPlan.strapAlarmSeed(plan: nil, timeIsChosen: false), "no plan, nothing to take it from")
         let mine = try tonight(repo(strain21: 4), chosen: 8 * 60 + 15)
