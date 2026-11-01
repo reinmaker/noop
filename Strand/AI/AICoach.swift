@@ -975,12 +975,16 @@ final class AICoachEngine: ObservableObject {
     /// K5: The brief instruction shared by the interactive `startBriefIfNeeded()` (streamed into the
     /// chat) and the headless `generateBrief()` below (used by the scheduled morning-brief notification).
     /// Kept in one place so the two paths never drift.
-    private static let briefInstruction = """
-    Based on the data above, give me my Daily Outlook for today, the way the WHOOP coach does in the \
-    morning: a warm verdict on how ready I am and why, in plain words; what that means for training today; \
-    two suggested activities as short bullets with one emoji each; and tonight's bedtime. About 70 words, \
-    bold the two or three figures that matter, motivating.
-    """
+    /// The same Outlook the Home row opens (`dailyOutlookInstruction`), so the morning note and the Coach's first
+    /// message say the same kind of thing.
+    private static let briefInstruction = dailyOutlookInstruction
+
+    /// Whether today's row holds a scored night (a Recovery or sleep), the point at which an Outlook has
+    /// something to say. Pure.
+    nonisolated static func briefHasData(days: [DailyMetric], todayKey: String) -> Bool {
+        guard let today = days.last(where: { $0.day == todayKey }) else { return false }
+        return today.recovery != nil || (today.totalSleepMin ?? 0) > 0
+    }
 
     /// K5: Generate today's coaching brief WITHOUT touching the visible chat transcript. Used by the
     /// scheduled morning-brief notification (`CoachBriefScheduler`), which can run with no Coach screen
@@ -993,6 +997,9 @@ final class AICoachEngine: ObservableObject {
         // the AI switched off.
         guard CoachBriefScheduler.coachMasterEnabled else { return nil }
         guard isConfigured, dataConsent, let key = resolvedKey else { return nil }
+        // Nothing synced for today yet: there is no readiness to write about (the notes of 29 Oct to 1 Nov said
+        // "nothing has synced" and nothing else), so nothing is generated and the next wake tries again.
+        guard Self.briefHasData(days: repo.days, todayKey: coachTodayKey) else { return nil }
         let context = await buildFullContext()
         let wire: [(role: ChatMessage.Role, content: String)] =
             [(.user, context + "\n\n---\n\n" + Self.briefInstruction)]
