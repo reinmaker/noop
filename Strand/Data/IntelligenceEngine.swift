@@ -3167,8 +3167,11 @@ final class IntelligenceEngine: ObservableObject {
             let todayKey = Repository.logicalDayKey(Date())
             let nightEnd = scoredNights.filter { $0.daily.day == todayKey }.flatMap(\.cachedSleep).map(\.endTs).max()
             let newestSample = (try? await store.hrFingerprint())?.maxTs
+            // Only read once the note is in play: the step ticks since the night's last sleep.
+            var ticksSinceEnd: Int?
+            if let nightEnd { ticksSinceEnd = await repo.strapStepTicks(from: nightEnd, to: Int(Date().timeIntervalSince1970)) }
             WhoopNotifications.sleepScored(dailies, todayKey: todayKey, nightEnd: nightEnd,
-                                           newestSample: newestSample)
+                                           newestSample: newestSample, stepTicksSinceEnd: ticksSinceEnd)
         }
 
         markPostLoopPhase("workouts")

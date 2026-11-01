@@ -266,6 +266,9 @@ enum CoachBriefScheduler {
         let comps = cal.dateComponents([.hour, .minute], from: now)
         let nowMinutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
         guard nowMinutes >= timeMinutes else { return true }                                  // not yet time today
+        // A morning brief: past its window the day has moved on (an iOS wake at 18:58 sent "Your Daily Outlook"
+        // in the evening), so nothing is generated and the next morning's slot stands.
+        guard nowMinutes - timeMinutes <= windowMinutes else { return true }
         guard UserDefaults.standard.string(forKey: K.lastRun) != dayKey(now) else { return true } // already ran today
 
         // One attempt at a time; see `generationInFlight` for why the day guard alone is not enough.
@@ -274,12 +277,10 @@ enum CoachBriefScheduler {
         await releaseGeneration()
 
         guard let text = generated else {
-            // No key/consent/network, or the provider returned nothing. Never mark the day done, so the
-            // next wake (BGTask retry, or the next foreground open) tries again. Post a low-key retry
-            // notification rather than silently doing nothing — the PRD's "unavailable, tap to retry".
-            postNotification(title: String(localized: "Coach brief unavailable"),
-                              body: String(localized: "Couldn't generate today's brief. Tap to try again in Coach."),
-                              isRetry: true)
+            // No key/consent/network, nothing synced to write about yet, or the provider returned nothing. Never
+            // mark the day done, so the next wake (BGTask retry, or the next foreground open) tries again, and
+            // say nothing meanwhile: "Coach brief unavailable" notes (two in three days) told the wearer nothing
+            // they could act on.
             return false
         }
 
@@ -294,17 +295,39 @@ enum CoachBriefScheduler {
         return true
     }
 
-    /// Pure: the notification body is the brief's first non-empty line, trimmed and length-capped so it
-    /// fits a notification banner. Unit-testable without any I/O.
-    static func oneLineSummary(from brief: String, maxLength: Int = 120) -> String {
-        let firstLine = brief
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .first
-            .map(String.init) ?? brief
-        let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > maxLength else { return trimmed }
-        let cut = trimmed.index(trimmed.startIndex, offsetBy: maxLength)
-        return trimmed[..<cut].trimmingCharacters(in: .whitespaces) + "…"
+    /// How long after the chosen time a brief is still a morning brief, minutes.
+    nonisolated static let windowMinutes = 5 * 60
+
+    /// Pure: the notification body from the brief, in plain text: its markdown marks are dropped, and when its
+    /// first line is only a short headline ("Steady and strong, Daniel") the first sentence of the next line
+    /// follows it. Cut at a word, with an ellipsis, past `maxLength`. Unit-testable without any I/O.
+    nonisolated static func oneLineSummary(from brief: String, maxLength: Int = 140) -> String {
+        let lines = brief.split(whereSeparator: \.isNewline).map { plainText(String($0)) }.filter { !$0.isEmpty }
+        guard let first = lines.first else { return "" }
+        var text = first
+        if first.count <= 60, lines.count > 1 { text += " " + firstSentence(of: lines[1]) }
+        guard text.count > maxLength else { return text }
+        let cut = text.index(text.startIndex, offsetBy: maxLength)
+        let head = text[..<cut]
+        let atWord = head.lastIndex(of: " ").map { head[..<$0] } ?? head
+        return atWord.trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
+    }
+
+    /// A line without its markdown: bold and italic marks, heading hashes, list bullets and code ticks.
+    nonisolated static func plainText(_ line: String) -> String {
+        var t = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
+        t = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let c = t.first, c == "#" || c == "*" || c == "-" || c == ">" { t.removeFirst() }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The text up to and including the first ". ", "! " or "? ", or all of it.
+    nonisolated static func firstSentence(of line: String) -> String {
+        for end in [". ", "! ", "? "] {
+            if let r = line.range(of: end) { return String(line[..<r.lowerBound]) + String(end.first!) }
+        }
+        return line
     }
 
     private static func postNotification(title: String, body: String, isRetry: Bool = false) {

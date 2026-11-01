@@ -132,19 +132,27 @@ enum WhoopNotifications {
 
     // MARK: Daily Stress Summary (9pm, today's numbers as of the last update)
 
+    /// Minutes of the day that must have a stress reading before the summary is worth sending.
+    static let stressSummaryMinScoredMinutes = 120
+
     /// Called whenever today's stress is computed; replaces tonight's summary with the latest figures.
     static func updateStressSummary(highMinutes: Int, scoredMinutes: Int) {
-        guard isOn(stressSummaryKey) else { cancel([stressSummaryId]); return }
+        // Under two hours scored there is no day to summarise (1 Nov 2026: "0 min in the high stress zone today
+        // (0% of the day so far)" with nothing synced): nothing is said.
+        guard isOn(stressSummaryKey), scoredMinutes >= stressSummaryMinScoredMinutes else { cancel([stressSummaryId]); return }
         let cal = Calendar.current
         let now = Date()
         guard let nine = cal.date(bySettingHour: 21, minute: 0, second: 0, of: now), nine > now else { return }
         let h = highMinutes / 60, m = highMinutes % 60
         let high = h > 0 ? String(localized: "\(h) hr \(m) min") : String(localized: "\(m) min")
         let share = scoredMinutes > 0 ? Int((Double(highMinutes) / Double(scoredMinutes) * 100).rounded()) : 0
+        let body = highMinutes == 0
+            ? String(localized: "A calm day so far: no time in the high stress zone.")
+            : String(localized: "You spent \(high) in the high stress zone today (\(share)% of the day so far).")
         add(UNNotificationRequest(
             identifier: stressSummaryId,
             content: content(String(localized: "Daily Stress Summary"),
-                             String(localized: "You spent \(high) in the high stress zone today (\(share)% of the day so far)."),
+                             body,
                              route: "stress"),
             trigger: UNCalendarNotificationTrigger(dateMatching: cal.dateComponents([.year, .month, .day, .hour, .minute], from: nine),
                                                    repeats: false)))
@@ -173,9 +181,13 @@ enum WhoopNotifications {
 
     // MARK: Sleep and Recovery ready (the night is scored)
 
-    /// What the note says about a scored night, or nil when it is too short to be a night (under two hours).
+    /// Fewest minutes of sleep the note is about: a night, not the first part of one (a note on 1 Nov 2026 gave
+    /// "Recovery 77% after 2 hr 56 min of sleep" at 6:16 while the wearer was still asleep).
+    static let sleepNoteMinMinutes = 240.0
+
+    /// What the note says about a scored night, or nil when it is too short to be a night (under four hours).
     static func sleepReadyBody(_ night: DailyMetric) -> String? {
-        guard let sleepMin = night.totalSleepMin, sleepMin >= WhoopAge.minNightMinutes else { return nil }
+        guard let sleepMin = night.totalSleepMin, sleepMin >= sleepNoteMinMinutes else { return nil }
         let h = Int(sleepMin) / 60, m = Int(sleepMin) % 60
         let duration = String(localized: "\(h) hr \(m) min")
         guard let recovery = night.recovery else {
@@ -200,17 +212,33 @@ enum WhoopNotifications {
         min(now, newestSample) - nightEnd >= sleepSettleSec
     }
 
+    /// Strap step ticks after the night's last sleep that show the wearer is up and about: a walk to the bathroom is
+    /// fewer.
+    static let sleepUpTicks = 150
+
+    /// With no step ticks to go by (a strap that banks none, or none delivered yet), the wearer counts as up this
+    /// long after the night's end.
+    static let sleepUpFallbackSec = 3 * 3600
+
+    /// Whether the wearer is up and about: enough step ticks since the night's last sleep, else long enough since
+    /// it. A wake in the middle of the night, lying in bed, is neither, so it does not close the night. Pure.
+    static func isUp(ticksSinceEnd: Int?, secondsSinceEnd: Int) -> Bool {
+        if let ticksSinceEnd, ticksSinceEnd >= sleepUpTicks { return true }
+        return secondsSinceEnd >= sleepUpFallbackSec
+    }
+
     /// After a scoring pass: the first time today's night is scored AND over, say so once for the day. WHOOP
     /// tells you when your sleep has been analysed; Yoop did not, and then told you during the night.
     /// `nightEnd` is the end of today's last sleep session and `newestSample` the newest heart-rate time the
     /// strap has delivered; without either there is no evidence the night is over, so nothing is said.
     static func sleepScored(_ dailies: [DailyMetric], todayKey: String, nightEnd: Int?, newestSample: Int?,
-                            now: Int = Int(Date().timeIntervalSince1970)) {
+                            stepTicksSinceEnd: Int?, now: Int = Int(Date().timeIntervalSince1970)) {
         guard isOn(sleepReadyKey),
               let night = dailies.first(where: { $0.day == todayKey }),
               let body = sleepReadyBody(night),
               let nightEnd, let newestSample,
-              nightIsOver(nightEnd: nightEnd, newestSample: newestSample, now: now) else { return }
+              nightIsOver(nightEnd: nightEnd, newestSample: newestSample, now: now),
+              isUp(ticksSinceEnd: stepTicksSinceEnd, secondsSinceEnd: now - nightEnd) else { return }
         let defaults = UserDefaults.standard
         guard isNewSleepDay(last: defaults.string(forKey: sleepReadyDayKey), todayKey: todayKey) else { return }
         defaults.set(todayKey, forKey: sleepReadyDayKey)

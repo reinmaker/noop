@@ -26,11 +26,24 @@ final class WhoopNotificationsTests: XCTestCase {
         XCTAssertFalse(body.contains("%"), body)
     }
 
-    /// Under two hours is a nap, not a night: no note.
+    /// Under four hours is a nap or the first part of a night, not a night: no note. On 1 Nov 2026 a note said
+    /// "Recovery 77% after 2 hr 56 min of sleep" at 6:16 while the wearer was still asleep.
     func testANapIsNotANight() {
-        XCTAssertNil(WhoopNotifications.sleepReadyBody(night(sleepMin: 119, recovery: 60)))
+        XCTAssertNil(WhoopNotifications.sleepReadyBody(night(sleepMin: 176, recovery: 77)))
+        XCTAssertNil(WhoopNotifications.sleepReadyBody(night(sleepMin: 239, recovery: 60)))
         XCTAssertNil(WhoopNotifications.sleepReadyBody(night(sleepMin: nil, recovery: 60)))
-        XCTAssertNotNil(WhoopNotifications.sleepReadyBody(night(sleepMin: 120, recovery: 60)))
+        XCTAssertNotNil(WhoopNotifications.sleepReadyBody(night(sleepMin: 240, recovery: 60)))
+    }
+
+    /// Up and about means enough step ticks since the night's last sleep, else three hours since it; a wake in
+    /// bed, or a walk to the bathroom, is neither.
+    func testTheWearerIsUpOnlyAfterRealMovementOrLongEnough() {
+        XCTAssertFalse(WhoopNotifications.isUp(ticksSinceEnd: 0, secondsSinceEnd: 20 * 60))
+        XCTAssertFalse(WhoopNotifications.isUp(ticksSinceEnd: 60, secondsSinceEnd: 45 * 60), "a trip to the bathroom")
+        XCTAssertTrue(WhoopNotifications.isUp(ticksSinceEnd: 150, secondsSinceEnd: 20 * 60))
+        XCTAssertFalse(WhoopNotifications.isUp(ticksSinceEnd: nil, secondsSinceEnd: 2 * 3600), "no steps to go by yet")
+        XCTAssertTrue(WhoopNotifications.isUp(ticksSinceEnd: nil, secondsSinceEnd: 3 * 3600))
+        XCTAssertTrue(WhoopNotifications.isUp(ticksSinceEnd: 10, secondsSinceEnd: 3 * 3600), "long enough with few steps")
     }
 
     /// Once per day.
