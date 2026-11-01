@@ -1,4 +1,5 @@
 import Foundation
+import WhoopProtocol
 
 // SleepStager+InBed.swift - Yoop: where the night ends, and how long it counts as in bed.
 //
@@ -19,7 +20,37 @@ import Foundation
 // The rule does nothing unless the app sets `inBedFromOnsetEnabled`. Swift only: the fork ships no Android
 // build.
 
+// THE GAP BETWEEN TWO SLEEPS. The day's sleeps that lie less than 90 min apart are folded into one night, the gap
+// counted as awake. That is right for a wake in bed and wrong when the wearer got up: on the night of 31 Oct to
+// 1 Nov 2026 three sleeps (23:15 to 00:18, 01:31 to 02:03, 02:50 to 09:32; mean heart rate 65, 55 and 49) were
+// folded into one "night" from 23:15 to 09:32 with two hours of gaps, 20 wake events, 77 % efficiency, and a bedtime
+// the wearer said was far too early (they fell asleep around 02:00 and woke around 09:45; the strap's steps in the
+// two gaps, 299 and 297 counter ticks at about 70 bpm, show them up and about). Earlier nights tell the gaps apart
+// the same way: 43 ticks for a wake in bed (19 Oct), 220 to 302 for a walk (20 and 28 Oct).
+//
+// THE RULE. A sleep the wearer was up and about before, 150 or more counter ticks (about 75 steps) in the gap since
+// the sleep ahead of it, is not bridged into it (`SleepStageTotals.upBeforeStarts`). The two stay two sleeps, the
+// earlier a nap, and the night is the one the wearer settled into.
+
 extension SleepStager {
+
+    /// Yoop: the onsets of the sleeps, among `sessions`, that the wearer was up and about before: the gap since the
+    /// sleep ahead of it is under 90 min (the longest a gap is bridged) and holds `minTicks` or more of the strap's
+    /// step counter. `steps` is the strap's step stream over the gaps. Off (not `inBedFromOnsetEnabled`) it is
+    /// empty, so NOOP's grouping is unchanged. Pure + deterministic.
+    public static func upBeforeStarts(sessions: [(start: Int, end: Int)], steps: [StepSample],
+                                      minTicks: Int = 150, enabled: Bool = inBedFromOnsetEnabled) -> Set<Int> {
+        guard enabled, sessions.count > 1, !steps.isEmpty else { return [] }
+        let sorted = sessions.sorted { $0.start < $1.start }
+        var out = Set<Int>()
+        for (a, b) in zip(sorted, sorted.dropFirst()) {
+            let gap = b.start - a.end
+            guard gap > 0, gap < SleepStageTotals.nightTailBridgeMaxMin * 60 else { continue }
+            let inGap = steps.filter { $0.ts >= a.end && $0.ts <= b.start }
+            if let ticks = StepsCounter.stepsInWindow(inGap), ticks >= minTicks { out.insert(b.start) }
+        }
+        return out
+    }
 
     /// Yoop: count a night from its first asleep epoch to its last, as WHOOP does. Set by the app; off by
     /// default, so NOOP's output is unchanged.

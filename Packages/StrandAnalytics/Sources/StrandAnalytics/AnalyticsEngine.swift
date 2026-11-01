@@ -591,6 +591,9 @@ public enum AnalyticsEngine {
         // excluded and we do NOT invent WASO for it). A day with no bridgeable gap collapses to the single
         // block the bare `mainNightIndex` would pick. Intelligence / the Ledger / the Sleep tab all read
         // this SAME group (the seam below passes the same `gapBridgeMaxMin`), so #525 does not regress.
+        // Yoop: a sleep the wearer was up and about before is not folded into the one before it.
+        SleepStageTotals.registerUpBefore(SleepStager.upBeforeStarts(
+            sessions: allSessions.map { (start: $0.start, end: $0.end) }, steps: steps))
         let mainGroupIdx = SleepStageTotals.mainNightGroupIndices(
             matched.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) },
             offsetSec: tzOffsetSeconds, habitualMidsleepSec: habitualMidsleepSec) ?? []

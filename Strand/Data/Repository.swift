@@ -1020,6 +1020,9 @@ final class Repository: ObservableObject {
         // this now-stale result so it can't clobber the newer caches or re-fire loadAll out of order.
         guard myGen == refreshGen else { return }
 
+        // Yoop: read before the sleeps are published, so a screen that groups them finds the gaps already known.
+        await registerUpBefore(merged.sleeps)
+
         // DIFF before publishing (FIX 3): if this refresh produced byte-identical caches AND we've already
         // loaded once, skip the re-publish and the `refreshSeq` bump entirely , assigning an equal value to
         // an @Published prop still fires objectWillChange, so the skip must cover the assignments too. This
@@ -1374,6 +1377,38 @@ final class Repository: ObservableObject {
             if let ticks = StepsCounter.stepsInWindow(samples) { return ticks }
         }
         return nil
+    }
+
+    /// Gaps already read whose end is at least this old: the strap has delivered its steps for them, so they are
+    /// not read again.
+    private static let upGapSettledSec = 3 * 3600
+    private var upGapSettled: Set<String> = []
+
+    /// Yoop: register the sleeps the wearer was up and about before (`SleepStager.upBeforeStarts`), so every
+    /// screen folds nights together the way the day's score did, with no walk in a gap. Only gaps short enough to
+    /// be bridged are read, a few a week, each from the strap's step record over the gap alone.
+    func registerUpBefore(_ sleeps: [CachedSleepSession]) async {
+        guard PuffinExperiment.whoopScoresEnabled, let store = await ensureStore() else { return }
+        let rows = sleeps.sorted { $0.effectiveStartTs < $1.effectiveStartTs }
+        let now = Int(Date().timeIntervalSince1970)
+        var found = Set<Int>()
+        for (a, b) in zip(rows, rows.dropFirst()) {
+            let gap = b.effectiveStartTs - a.endTs
+            guard gap > 0, gap < SleepStageTotals.nightTailBridgeMaxMin * 60 else { continue }
+            let key = "\(a.endTs)-\(b.effectiveStartTs)"
+            guard !upGapSettled.contains(key) else { continue }
+            var samples: [StepSample] = []
+            for id in importedReadIds {   // active strap FIRST
+                samples = (try? await store.stepSamples(deviceId: id, from: a.endTs, to: b.effectiveStartTs,
+                                                        limit: 20_000)) ?? []
+                if !samples.isEmpty { break }
+            }
+            found.formUnion(SleepStager.upBeforeStarts(
+                sessions: [(start: a.effectiveStartTs, end: a.endTs), (start: b.effectiveStartTs, end: b.endTs)],
+                steps: samples, enabled: true))
+            if now - b.effectiveStartTs > Self.upGapSettledSec { upGapSettled.insert(key) }
+        }
+        SleepStageTotals.registerUpBefore(found)
     }
 
     /// What `countedStepMinutes` read for a window: the accepted ticks by minute, and when the strap's counter
