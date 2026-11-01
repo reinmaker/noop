@@ -178,6 +178,30 @@ public enum SleepStageTotals {
     /// (so `bridgeAdjacent` and its golden tests stay byte-identical). (#861)
     public static let nightTailBridgeMaxMin = 90
 
+    // MARK: - Yoop: no bridge across a gap the wearer was up and about in
+
+    private static let upBeforeLock = NSLock()
+    private static var upBeforeRegistry: Set<Int> = []
+
+    /// Yoop: the onsets of sleeps that the wearer was up and about before, since the sleep ahead of them
+    /// (`SleepStager.upBeforeStarts`). A gap between two sleeps with a walk in it is not a wake in bed, so
+    /// `bridgedNightGroups` never folds such a sleep into the one before. Only ever added to: a start is a
+    /// fact about the strap's own step record, and the lock makes it safe to add from any thread. Empty, so
+    /// NOOP's grouping is unchanged, until the app registers some.
+    public static var upBeforeStarts: Set<Int> {
+        upBeforeLock.lock()
+        defer { upBeforeLock.unlock() }
+        return upBeforeRegistry
+    }
+
+    /// Add onsets to `upBeforeStarts`.
+    public static func registerUpBefore(_ starts: Set<Int>) {
+        guard !starts.isEmpty else { return }
+        upBeforeLock.lock()
+        upBeforeRegistry.formUnion(starts)
+        upBeforeLock.unlock()
+    }
+
     /// One candidate block for main-night selection. The `start` is the EFFECTIVE onset (a user wake/
     /// bed edit moves `end`, never the detected onset key), and `tzOffsetSeconds` turns it local so the
     /// timing test reads the user's clock, not UTC.
@@ -332,6 +356,7 @@ public enum SleepStageTotals {
         let order = blocks.indices.sorted { blocks[$0].start < blocks[$1].start }
         let bridgeS = gapBridgeMaxMin * 60
         let nightTailBridgeS = nightTailBridgeMaxMin * 60
+        let upBefore = upBeforeStarts
         // Build the bridged spans AND the original indices that compose each one, in one pass over `order`.
         var bridged: [NightBlock] = []
         var groups: [[Int]] = []
@@ -347,6 +372,7 @@ public enum SleepStageTotals {
                 // stops one overnight sleep being split into a nap + a main sleep, while a daytime nap
                 // (daytime onset, or a gap at/over nightTailBridgeMaxMin) still stands as its own block.
                 let bridges = gap >= 0
+                    && !upBefore.contains(b.start)
                     && (gap < bridgeS
                         || (gap < nightTailBridgeS && isOvernightOnset(b.start, offsetSec: offsetSec)))
                 if bridges {
