@@ -296,12 +296,12 @@ enum CoachBriefScheduler {
     }
 
     /// How long after the chosen time a brief is still a morning brief, minutes.
-    static let windowMinutes = 5 * 60
+    nonisolated static let windowMinutes = 5 * 60
 
     /// Pure: the notification body from the brief, in plain text: its markdown marks are dropped, and when its
     /// first line is only a short headline ("Steady and strong, Daniel") the first sentence of the next line
     /// follows it. Cut at a word, with an ellipsis, past `maxLength`. Unit-testable without any I/O.
-    static func oneLineSummary(from brief: String, maxLength: Int = 140) -> String {
+    nonisolated static func oneLineSummary(from brief: String, maxLength: Int = 140) -> String {
         let lines = brief.split(whereSeparator: \.isNewline).map { plainText(String($0)) }.filter { !$0.isEmpty }
         guard let first = lines.first else { return "" }
         var text = first
@@ -314,7 +314,7 @@ enum CoachBriefScheduler {
     }
 
     /// A line without its markdown: bold and italic marks, heading hashes, list bullets and code ticks.
-    static func plainText(_ line: String) -> String {
+    nonisolated static func plainText(_ line: String) -> String {
         var t = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
             .replacingOccurrences(of: "`", with: "")
         t = t.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -323,7 +323,7 @@ enum CoachBriefScheduler {
     }
 
     /// The text up to and including the first ". ", "! " or "? ", or all of it.
-    static func firstSentence(of line: String) -> String {
+    nonisolated static func firstSentence(of line: String) -> String {
         for end in [". ", "! ", "? "] {
             if let r = line.range(of: end) { return String(line[..<r.lowerBound]) + String(end.first!) }
         }
