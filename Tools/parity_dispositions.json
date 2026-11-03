@@ -552,8 +552,8 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
-      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+InBed.swift::upBeforeStarts/4#1",
-      "identity_sha256": "caa75825fc5489e78c0848309654a27fe2f76d6f0a6a54feadba3467a7f01cbc",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/SleepStager+InBed.swift::upBeforeStarts/5#1",
+      "identity_sha256": "a684d39bf64c3531863cf60a15b3a7b392d70e034603be267f1b4d1d51605a28",
       "platform": "swift",
       "rationale": "Yoop fork, iOS only: a sleep the wearer was up and about before (a walk in the gap, from the strap's step counter) is not folded into the sleep ahead of it, so a night is not stretched back over an evening of lying still (default empty, byte-identical until the app registers a start). The fork ships no Android build, so there is no Kotlin twin."
     },

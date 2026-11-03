@@ -46,6 +46,18 @@ final class SleepUpBeforeTests: XCTestCase {
         XCTAssertTrue(SleepStager.upBeforeStarts(sessions: s, steps: steps, enabled: true).isEmpty)
     }
 
+    /// Two long sleeps with a walk between them are one night with a wake in the middle (2 to 3 Nov 2026: 02:07 to
+    /// 05:16, up for about 40 min with 340 ticks, then 06:04 to 08:59), and stay bridged.
+    func testAWalkBetweenTwoLongSleepsIsOneNight() {
+        let s = [(start: m(0), end: m(189)), (start: m(237), end: m(412))]
+        let steps = walk(from: s[0].end, to: s[1].start, ticks: 340)
+        XCTAssertTrue(SleepStager.upBeforeStarts(sessions: s, steps: steps, enabled: true).isEmpty)
+        // A doze of under two hours before the same walk is apart from the night.
+        let doze = [(start: m(0), end: m(119)), (start: m(167), end: m(342))]
+        XCTAssertEqual(SleepStager.upBeforeStarts(sessions: doze, steps: walk(from: doze[0].end, to: doze[1].start, ticks: 340),
+                                                  enabled: true), [doze[1].start])
+    }
+
     func testAGapOfNinetyMinutesOrMoreIsNotLookedAt() {
         let s = [(start: m(0), end: m(60)), (start: m(150), end: m(400))]
         let steps = walk(from: s[0].end, to: s[1].start, ticks: 400)

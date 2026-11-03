@@ -29,23 +29,29 @@ import WhoopProtocol
 // the same way: 43 ticks for a wake in bed (19 Oct), 220 to 302 for a walk (20 and 28 Oct).
 //
 // THE RULE. A sleep the wearer was up and about before, 150 or more counter ticks (about 75 steps) in the gap since
-// the sleep ahead of it, is not bridged into it (`SleepStageTotals.upBeforeStarts`). The two stay two sleeps, the
-// earlier a nap, and the night is the one the wearer settled into.
+// the sleep ahead of it, is not bridged into it (`SleepStageTotals.upBeforeStarts`) when the sleep ahead of it is
+// short, under two hours: a doze before the night. The two stay two sleeps, the earlier a nap, and the night is the
+// one the wearer settled into. When both are long it is one night with a wake in the middle, and stays one: on the
+// night of 2 to 3 Nov 2026 the wearer slept 02:07 to 05:16, was up for about 40 min (340 ticks, heart rate 89 to 94)
+// and slept again 06:04 to 08:59, and splitting it left the night at 2 h 59.
 
 extension SleepStager {
 
     /// Yoop: the onsets of the sleeps, among `sessions`, that the wearer was up and about before: the gap since the
-    /// sleep ahead of it is under 90 min (the longest a gap is bridged) and holds `minTicks` or more of the strap's
-    /// step counter. `steps` is the strap's step stream over the gaps. Off (not `inBedFromOnsetEnabled`) it is
-    /// empty, so NOOP's grouping is unchanged. Pure + deterministic.
+    /// sleep ahead of it is under 90 min (the longest a gap is bridged), holds `minTicks` or more of the strap's
+    /// step counter, and the sleep ahead of it is shorter than `maxEarlierMin` (a doze before the night, not the
+    /// first half of one). `steps` is the strap's step stream over the gaps. Off (not `inBedFromOnsetEnabled`) it
+    /// is empty, so NOOP's grouping is unchanged. Pure + deterministic.
     public static func upBeforeStarts(sessions: [(start: Int, end: Int)], steps: [StepSample],
-                                      minTicks: Int = 150, enabled: Bool = inBedFromOnsetEnabled) -> Set<Int> {
+                                      minTicks: Int = 150, maxEarlierMin: Int = 120,
+                                      enabled: Bool = inBedFromOnsetEnabled) -> Set<Int> {
         guard enabled, sessions.count > 1, !steps.isEmpty else { return [] }
         let sorted = sessions.sorted { $0.start < $1.start }
         var out = Set<Int>()
         for (a, b) in zip(sorted, sorted.dropFirst()) {
             let gap = b.start - a.end
-            guard gap > 0, gap < SleepStageTotals.nightTailBridgeMaxMin * 60 else { continue }
+            guard gap > 0, gap < SleepStageTotals.nightTailBridgeMaxMin * 60,
+                  a.end - a.start < maxEarlierMin * 60 else { continue }
             let inGap = steps.filter { $0.ts >= a.end && $0.ts <= b.start }
             if let ticks = StepsCounter.stepsInWindow(inGap), ticks >= minTicks { out.insert(b.start) }
         }
