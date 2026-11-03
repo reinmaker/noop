@@ -3544,10 +3544,12 @@ final class Repository: ObservableObject {
                 var sport = row.sport
                 if !userTyped.contains(row.startTs) {
                     let history = await activityTypeHistory()
-                    sport = WhoopActivityTyper.guess(avgBpm: Double(bout.avgBpm), maxBpm: Double(bout.peakBpm),
-                                                     durationMin: Double(bout.durationMin),
-                                                     startHour: Self.localHour(bout.startSec),
-                                                     history: history) ?? "Activity"
+                    let guess = WhoopActivityTyper.guess(avgBpm: Double(bout.avgBpm), maxBpm: Double(bout.peakBpm),
+                                                         durationMin: Double(bout.durationMin),
+                                                         startHour: Self.localHour(bout.startSec),
+                                                         history: history)
+                    sport = WhoopActivityTyper.refine(guess, shape: await activityStepShape(
+                        startSec: bout.startSec, endSec: bout.endSec)) ?? "Activity"
                 }
                 await deleteWorkout(row)
                 dismissDetectedSuggestion(bout)
@@ -3611,6 +3613,7 @@ final class Repository: ObservableObject {
         addingDetectedActivities = true
         defer { addingDetectedActivities = false }
         let reconciled = await reconcileAutoActivities()
+        let retyped = await retypeAutoActivities()
         var added = false
         var history: [WhoopActivityTyper.Example]?
         let restoring = !UserDefaults.standard.bool(forKey: Self.restoredReconciledKey)
@@ -3627,10 +3630,12 @@ final class Repository: ObservableObject {
             }
             guard let found = next else { break }
             if history == nil { history = await activityTypeHistory() }
-            let sport = WhoopActivityTyper.guess(avgBpm: Double(found.avgBpm), maxBpm: Double(found.peakBpm),
+            let guess = WhoopActivityTyper.guess(avgBpm: Double(found.avgBpm), maxBpm: Double(found.peakBpm),
                                                  durationMin: Double(found.durationMin),
                                                  startHour: Self.localHour(found.startSec),
-                                                 history: history ?? []) ?? "Activity"
+                                                 history: history ?? [])
+            let sport = WhoopActivityTyper.refine(guess, shape: await activityStepShape(
+                startSec: found.startSec, endSec: found.endSec)) ?? "Activity"
             // Something else may have saved over this bout while its type was being guessed.
             guard !Self.savedActivityCovers(startSec: found.startSec, endSec: found.endSec,
                                             saved: await workoutRows(days: 3)) else { break }
@@ -3643,8 +3648,48 @@ final class Repository: ObservableObject {
                                                  startSec: found.startSec, endSec: found.endSec)
             }
         }
-        if added || reconciled { await refresh() }
-        return added || reconciled
+        if added || reconciled || retyped { await refresh() }
+        return added || reconciled || retyped
+    }
+
+    /// The strap's step record over `[startSec, endSec]` as a `WhoopActivityTyper.StepShape`, read from the first id
+    /// that banks steps over it (the active strap first); nil when none does.
+    func activityStepShape(startSec: Int, endSec: Int) async -> WhoopActivityTyper.StepShape? {
+        guard let store = await ensureStore() else { return nil }
+        for id in importedReadIds {
+            let samples = (try? await store.stepSamples(deviceId: id, from: startSec, to: endSec, limit: 200_000)) ?? []
+            if let shape = WhoopActivityTyper.stepShape(samples, startSec: startSec, endSec: endSec) { return shape }
+        }
+        return nil
+    }
+
+    /// Yoop: look again at the types Yoop gave by itself in the last two days, now that the strap's steps say more
+    /// than heart rate did: a run named Tennis becomes Running, a stretch of walking work named Weightlifting
+    /// becomes Activity. Only Yoop's own guesses (never one the wearer set, `userTypedDetectedStarts`) and only
+    /// by `WhoopActivityTyper.refine`, which moves a type for a run or for walking under a strength name. Returns
+    /// whether any row changed.
+    private func retypeAutoActivities(daysBack: Int = 2) async -> Bool {
+        guard PuffinExperiment.whoopScoresEnabled else { return false }
+        let from = Int(Date().timeIntervalSince1970) - daysBack * 86_400
+        let auto = Set(autoTypedStarts)
+        let userTyped = Set(userTypedDetectedStarts)
+        let rows = await workoutRows(days: daysBack + 1).filter {
+            WorkoutSource.classify($0.source) == .manual && $0.startTs >= from
+                && auto.contains($0.startTs) && !userTyped.contains($0.startTs)
+        }
+        var changed = false
+        for row in rows {
+            guard let shape = await activityStepShape(startSec: row.startTs, endSec: row.endTs) else { continue }
+            let sport = WhoopActivityTyper.refine(row.sport, shape: shape) ?? "Activity"
+            guard sport != row.sport else { continue }
+            let renamed = WorkoutRow(startTs: row.startTs, endTs: row.endTs, sport: sport, source: row.source,
+                                     durationS: row.durationS, energyKcal: row.energyKcal, avgHr: row.avgHr,
+                                     maxHr: row.maxHr, strain: row.strain, distanceM: row.distanceM,
+                                     zonesJSON: row.zonesJSON, notes: row.notes, steps: row.steps)
+            await saveManualWorkout(renamed, replacing: row)
+            changed = true
+        }
+        return changed
     }
 
     /// Whether a save moved the activity's start or end (a retype or a rename keeps both).
