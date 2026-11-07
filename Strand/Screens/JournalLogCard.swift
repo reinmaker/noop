@@ -14,6 +14,10 @@ import WhoopStore
 /// answered in WHOOP shows its imported picks, and "Use previous answers" fills an empty past day from
 /// the most recent earlier journal.
 ///
+/// Yoop also asks the right questions, not all of them (`JournalQuestionPicker`): the few whose answers vary for
+/// the wearer or that this morning's numbers point at sit on top as rows with a No / Yes toggle; every other
+/// question waits under "More questions", grouped as before.
+///
 /// v2 (#322): items sit under collapsible groups (Nutrition / Supplements / …); an item can be a
 /// numeric value (with a unit) instead of a toggle; and custom items can be renamed / regrouped /
 /// converted / reordered in edit mode. The stored KEY (`canonical`) never changes on a rename, so all
@@ -39,12 +43,17 @@ struct JournalLogCard: View {
     /// The stored day key the inputs above were read for. A prefill waits until it matches the shown
     /// day, so switching days can never copy answers onto a day whose own answers have not loaded yet.
     let loadedDayKey: String
+    /// Per question, the days it was answered Yes and No (all of the journal, imported and in-app): what the
+    /// picker reads to tell a question whose answer varies from one that never changes.
+    let yesDays: [String: Set<String>]
+    let noDays: [String: Set<String>]
     @Binding var dayOffset: Int            // `JournalDays` offset: 0 = today, 1 = yesterday, up to 7
     let onChanged: () -> Void              // parent re-runs load() after a write
 
     init(importedQuestions: [String], answers: [String: Bool],
          numericAnswers: [String: Double] = [:], importedAnswers: [String: Bool] = [:],
          previousAnswers: [JournalEntry] = [], loadedDayKey: String = "",
+         yesDays: [String: Set<String>] = [:], noDays: [String: Set<String>] = [:],
          dayOffset: Binding<Int>, onChanged: @escaping () -> Void) {
         self.importedQuestions = importedQuestions
         self.answers = answers
@@ -52,10 +61,14 @@ struct JournalLogCard: View {
         self.importedAnswers = importedAnswers
         self.previousAnswers = previousAnswers
         self.loadedDayKey = loadedDayKey
+        self.yesDays = yesDays
+        self.noDays = noDays
         self._dayOffset = dayOffset
         self.onChanged = onChanged
     }
 
+    /// "More questions" open: the questions the picker did not ask, in their groups.
+    @State private var moreOpen = false
     @State private var customDraft = ""
     @State private var customIsNumeric = false
     @State private var customGroup: JournalGroup = .other
@@ -119,8 +132,8 @@ struct JournalLogCard: View {
     }
 
     /// Items grouped by their group, each group ordered by sortIndex then display.
-    private func items(in group: JournalGroup) -> [JournalCatalogItem] {
-        resolved.filter { $0.group == group }
+    private func items(in group: JournalGroup, hiding asked: Set<String> = []) -> [JournalCatalogItem] {
+        resolved.filter { $0.group == group && !asked.contains(JournalCatalogStore.norm($0.canonical)) }
             .sorted { ($0.sortIndex, $0.display) < ($1.sortIndex, $1.display) }
     }
 
@@ -135,7 +148,10 @@ struct JournalLogCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+        let smart = Self.picksQuestions && !editing
+        let askedRows = smart ? asked : []
+        let askedKeys = Set(askedRows.map { JournalCatalogStore.norm($0.item.canonical) })
+        return VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             HStack(alignment: .center) {
                 SectionHeader("Journal", overline: "Log")
                 Spacer()
@@ -178,12 +194,17 @@ struct JournalLogCard: View {
                         dayHeader
                     }
 
-                    ForEach(JournalGroup.displayOrder, id: \.self) { group in
-                        groupBlock(group)
+                    if smart {
+                        askedBlock(askedRows)
+                        moreButton(hiding: askedKeys)
                     }
-
-                    Divider().overlay(StrandPalette.hairline)
-                    addRow
+                    if !smart || moreOpen || editing {
+                        ForEach(JournalGroup.displayOrder, id: \.self) { group in
+                            groupBlock(group, hiding: askedKeys)
+                        }
+                        Divider().overlay(StrandPalette.hairline)
+                        addRow
+                    }
                 }
             }
         }
@@ -265,8 +286,8 @@ struct JournalLogCard: View {
 
     // MARK: - Group block
 
-    @ViewBuilder private func groupBlock(_ group: JournalGroup) -> some View {
-        let groupItems = items(in: group)
+    @ViewBuilder private func groupBlock(_ group: JournalGroup, hiding asked: Set<String>) -> some View {
+        let groupItems = items(in: group, hiding: asked)
         // Empty groups hidden outside edit mode; in edit mode all six show so items can be moved in.
         if !groupItems.isEmpty || editing {
             let collapsed = collapsedGroups.contains(group.rawValue)
@@ -308,11 +329,184 @@ struct JournalLogCard: View {
                 editControls(item)
             } else if item.kind.isNumeric {
                 numericField(item)
+            } else if Self.picksQuestions {
+                yesNoToggle(item.canonical)
             } else {
                 answerPill("Yes", q: item.canonical, value: true)
                 answerPill("No", q: item.canonical, value: false)
             }
         }
+    }
+
+    // MARK: - Asked questions (Yoop)
+
+    /// Whether the card asks a few questions and keeps the rest back. Yoop only: the other build keeps its
+    /// full grouped list.
+    private static var picksQuestions: Bool { PuffinExperiment.whoopScoresEnabled }
+
+    /// A question the picker asks, with the reason when it is not simply one whose answer varies.
+    private struct AskedRow: Identifiable {
+        let item: JournalCatalogItem
+        let why: String?
+        var id: String { item.id }
+    }
+
+    /// The days of a question's answers keyed by `JournalCatalogStore.norm`, so the export's wording and the
+    /// in-app one meet.
+    private static func byQuestionKey(_ days: [String: Set<String>]) -> [String: Set<String>] {
+        var out: [String: Set<String>] = [:]
+        for (q, d) in days { out[JournalCatalogStore.norm(q), default: []].formUnion(d) }
+        return out
+    }
+
+    /// What this morning's numbers say, for the shown day: its Recovery against the last 30 mornings, its night,
+    /// the Strain of the day before it, and how many vitals sit out of range together.
+    private var dayContext: JournalQuestionPicker.DayContext {
+        let key = dayKey
+        let rows = repo.days.filter { $0.day <= key }
+        let morning = rows.first { $0.day == key }
+        let before = rows.filter { $0.day < key }.sorted { $0.day > $1.day }.prefix(30).compactMap(\.recovery)
+        let usual = before.count >= 10 ? before.reduce(0, +) / Double(before.count) : nil
+        let behaviourKey = Repository.localDayKey(JournalDays.behaviourDay(offset: dayOffset, logicalToday: logicalToday))
+        let strain = repo.days.first { $0.day == behaviourKey }
+            .flatMap { repo.dayStrain($0) }.map(AICoachEngine.strain21)
+        let flagged = morning == nil ? 0
+            : HealthMonitorRule.statuses(days: rows, todayKey: key).filter { $0.counts && !$0.isFine }.count
+        return JournalQuestionPicker.context(recovery: morning?.recovery, usualRecovery: usual,
+                                             sleepMin: morning?.totalSleepMin, efficiency: morning?.efficiency,
+                                             strain21: strain, flaggedVitals: flagged)
+    }
+
+    /// The questions to ask for the shown day. The counts leave the shown day out, so answering one never
+    /// reorders or removes the questions on screen.
+    private var asked: [AskedRow] {
+        let key = dayKey
+        let items = resolved.filter { !$0.kind.isNumeric || $0.custom }
+        let yes = Self.byQuestionKey(yesDays), no = Self.byQuestionKey(noDays)
+        var stats: [String: JournalQuestionPicker.Stats] = [:]
+        for item in items {
+            let k = JournalCatalogStore.norm(item.canonical)
+            stats[k] = JournalQuestionPicker.stats(yesDays: (yes[k] ?? []).subtracting([key]),
+                                                   noDays: (no[k] ?? []).subtracting([key]), today: key)
+        }
+        let context = dayContext
+        let picks = JournalQuestionPicker.pick(candidates: items.map(\.canonical), stats: stats, context: context,
+                                               pinned: Set(items.filter(\.custom).map(\.canonical)))
+        let byKey = Dictionary(items.map { (JournalCatalogStore.norm($0.canonical), $0) }) { first, _ in first }
+        return picks.compactMap { pick in
+            byKey[JournalCatalogStore.norm(pick.question)].map { AskedRow(item: $0, why: why(pick, context)) }
+        }
+    }
+
+    /// One short line on why a question is asked, for those asked on the day's numbers or to check again.
+    private func why(_ pick: JournalQuestionPicker.Pick, _ context: JournalQuestionPicker.DayContext) -> String? {
+        switch pick.reason {
+        case .cue:
+            switch JournalQuestionPicker.cueSource(pick.question, context) {
+            case .illness: return String(localized: "Asked because your vitals were out of range.")
+            case .recovery: return String(localized: "Asked because your Recovery was low.")
+            case .sleep: return String(localized: "Asked because your sleep was poor.")
+            case nil: return nil
+            }
+        case .checkIn: return String(localized: "Asked again to see if your answer changed.")
+        case .pinned, .open, .starter: return nil
+        }
+    }
+
+    @ViewBuilder private func askedBlock(_ rows: [AskedRow]) -> some View {
+        if rows.isEmpty {
+            Text("Nothing stands out today.")
+                .font(StrandFont.subhead)
+                .foregroundStyle(StrandPalette.textSecondary)
+                .padding(.vertical, 6)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    if index > 0 { Divider().overlay(StrandPalette.hairline) }
+                    askedRow(row)
+                }
+            }
+        }
+    }
+
+    private func askedRow(_ row: AskedRow) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: row.item.display)
+                    .font(StrandFont.body)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let why = row.why {
+                    Text(verbatim: why)
+                        .font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            if row.item.kind.isNumeric {
+                numericField(row.item)
+            } else {
+                yesNoToggle(row.item.canonical)
+            }
+        }
+        .padding(.vertical, 12)
+    }
+
+    /// "More questions": the rest of the list, closed until asked for. Not shown when nothing is left.
+    @ViewBuilder private func moreButton(hiding asked: Set<String>) -> some View {
+        let left = JournalGroup.displayOrder.reduce(0) { $0 + items(in: $1, hiding: asked).count }
+        if left > 0 {
+            Button { withAnimation(.easeInOut(duration: 0.2)) { moreOpen.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Text("More questions")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                    Text("\(left)")
+                        .font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                    Spacer()
+                    Image(systemName: moreOpen ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("More questions")
+        }
+    }
+
+    /// WHOOP's answer control: one capsule with No and Yes side by side, the chosen one filled. Re-tapping the
+    /// chosen side clears the in-app answer, as the pills did.
+    private func yesNoToggle(_ q: String) -> some View {
+        let native = answers[q]
+        let shown = native ?? importedAnswers[JournalDays.questionKey(q)]
+        return HStack(spacing: 0) {
+            toggleSide("No", value: false, shown: shown, native: native, q: q)
+            toggleSide("Yes", value: true, shown: shown, native: native, q: q)
+        }
+        .background(StrandPalette.surfaceInset, in: Capsule())
+        .overlay(Capsule().stroke(StrandPalette.hairline, lineWidth: 1))
+        .clipShape(Capsule())
+    }
+
+    private func toggleSide(_ label: LocalizedStringKey, value: Bool, shown: Bool?, native: Bool?,
+                            q: String) -> some View {
+        let selected = shown == value
+        return Button { setAnswer(q, value: value, selected: selected, native: native) } label: {
+            Text(label)
+                .font(StrandFont.footnote)
+                .foregroundStyle(selected ? StrandPalette.surfaceBase : StrandPalette.textSecondary)
+                .frame(minWidth: 44)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(selected ? (value ? StrandPalette.restColor : StrandPalette.textTertiary) : Color.clear,
+                            in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     // MARK: - Numeric field
@@ -554,18 +748,22 @@ struct JournalLogCard: View {
         let shown = native ?? importedAnswers[JournalDays.questionKey(q)]
         let selected = shown == value
         return pillButton(label, selected: selected) {
-            let day = dayKey
-            Task {
-                // Tri-state: re-tapping the filled chip clears the in-app answer (natural-key delete,
-                // scoped to "noop-journal", imported rows can never be removed this way). A chip filled
-                // only by a WHOOP pick is saved in-app instead, so it becomes editable here.
-                if selected, native != nil {
-                    await repo.clearJournalAnswer(day: day, question: q)
-                } else {
-                    await repo.saveJournalAnswer(day: day, question: q, answeredYes: value)
-                }
-                onChanged()
+            setAnswer(q, value: value, selected: selected, native: native)
+        }
+    }
+
+    /// Save a tapped answer for the shown day. Tri-state: re-tapping the filled chip clears the in-app answer
+    /// (natural-key delete, scoped to "noop-journal", imported rows can never be removed this way). A chip
+    /// filled only by a WHOOP pick is saved in-app instead, so it becomes editable here.
+    private func setAnswer(_ q: String, value: Bool, selected: Bool, native: Bool?) {
+        let day = dayKey
+        Task {
+            if selected, native != nil {
+                await repo.clearJournalAnswer(day: day, question: q)
+            } else {
+                await repo.saveJournalAnswer(day: day, question: q, answeredYes: value)
             }
+            onChanged()
         }
     }
 
