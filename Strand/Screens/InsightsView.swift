@@ -251,6 +251,8 @@ struct InsightsView: View {
                                    importedAnswers: importedDayAnswers,
                                    previousAnswers: previousDayAnswers,
                                    loadedDayKey: loadedJournalDayKey,
+                                   yesDays: behaviours,
+                                   noDays: controls,
                                    dayOffset: $journalDayOffset,
                                    onChanged: { Task { await load() } })
                     // Mind, daily mood check-in + mood↔body correlations.
